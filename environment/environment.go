@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/pelican-dev/wings/events"
+	"github.com/mythicalltd/featherwings/events"
 )
 
 const (

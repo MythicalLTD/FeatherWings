@@ -7,10 +7,10 @@ import (
 	"emperror.dev/errors"
 	"gorm.io/gorm"
 
-	"github.com/pelican-dev/wings/internal/database"
-	"github.com/pelican-dev/wings/internal/models"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/internal/database"
+	"github.com/mythicalltd/featherwings/internal/models"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 type sftpCron struct {

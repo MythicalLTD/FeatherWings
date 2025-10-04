@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,11 +14,11 @@ import (
 	"github.com/gammazero/workerpool"
 	"github.com/goccy/go-json"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/environment/docker"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/server/filesystem"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/environment/docker"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 type Manager struct {
@@ -275,8 +274,8 @@ func (m *Manager) init(ctx context.Context) error {
 	// before continuing.
 	pool.StopWait()
 
-	diff := time.Now().Sub(start)
-	log.WithField("duration", fmt.Sprintf("%s", diff)).Info("finished processing server configurations")
+	diff := time.Since(start)
+	log.WithField("duration", diff.String()).Info("finished processing server configurations")
 
 	return nil
 }

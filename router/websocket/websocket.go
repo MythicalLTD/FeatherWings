@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pelican-dev/wings/internal/models"
+	"github.com/mythicalltd/featherwings/internal/models"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
@@ -18,13 +18,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/system"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/environment/docker"
-	"github.com/pelican-dev/wings/router/tokens"
-	"github.com/pelican-dev/wings/server"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/environment/docker"
+	"github.com/mythicalltd/featherwings/router/tokens"
+	"github.com/mythicalltd/featherwings/server"
 )
 
 const (

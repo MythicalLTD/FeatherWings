@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pelican-dev/wings/internal/models"
+	"github.com/mythicalltd/featherwings/internal/models"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/goccy/go-json"
 
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 type Client interface {
@@ -106,7 +106,7 @@ func (c *client) requestOnce(ctx context.Context, method, path string, body io.R
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", fmt.Sprintf("Pelican Wings/v%s (id:%s)", system.Version, c.tokenId))
+	req.Header.Set("User-Agent", fmt.Sprintf("FeatherPanel Wings/v%s (id:%s)", system.Version, c.tokenId))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s.%s", c.tokenId, c.token))

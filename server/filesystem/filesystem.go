@@ -17,8 +17,8 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	ignore "github.com/sabhiram/go-gitignore"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/internal/ufs"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/internal/ufs"
 )
 
 type Filesystem struct {
@@ -366,7 +366,7 @@ func (fs *Filesystem) Ext(n string) string {
 	// but this is a good workaround for now.
 	if strings.HasSuffix(baseName, ".tar") {
 		extension = ".tar" + extension
-		baseName = strings.TrimSuffix(baseName, ".tar")
+		_ = strings.TrimSuffix(baseName, ".tar")
 	}
 	return extension
 }

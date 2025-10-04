@@ -18,11 +18,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/pelican-dev/wings/router/middleware"
-	"github.com/pelican-dev/wings/router/tokens"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/server/installer"
-	"github.com/pelican-dev/wings/server/transfer"
+	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/router/tokens"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/installer"
+	"github.com/mythicalltd/featherwings/server/transfer"
 )
 
 // postTransfers .

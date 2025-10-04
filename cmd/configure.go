@@ -13,7 +13,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/goccy/go-json"
-	"github.com/pelican-dev/wings/config"
+	"github.com/mythicalltd/featherwings/config"
 	"github.com/spf13/cobra"
 )
 
@@ -183,7 +183,7 @@ func validateField(name string, str string) error {
 			return fmt.Errorf("please provide a valid panel URL")
 		}
 	case "token":
-		if !regexp.MustCompile(`^(peli|papp)_(\w{43})$`).Match([]byte(str)) {
+		if !regexp.MustCompile(`^fp_(\w{43})$`).Match([]byte(str)) {
 			return fmt.Errorf("please provide a valid authentication token")
 		}
 	case "node":

@@ -12,9 +12,9 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/server/filesystem"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 const (
@@ -107,7 +107,7 @@ func (h *Handler) Filewrite(request *sftp.Request) (io.WriterAt, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	
+
 	if err := h.fs.IsIgnored(request.Filepath); err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (h *Handler) Filecmd(request *sftp.Request) error {
 	if err := h.fs.IsIgnored(request.Filepath); err != nil {
 		return err
 	}
-	
+
 	switch request.Method {
 	// Allows a user to make changes to the permissions of a given file or directory
 	// on their server using their SFTP client.

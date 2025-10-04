@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pelican-dev/wings/internal/progress"
+	"github.com/mythicalltd/featherwings/internal/progress"
 )
 
 // PushArchiveToTarget POSTs the archive to the target node and returns the

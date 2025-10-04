@@ -8,17 +8,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pelican-dev/wings/config"
+	"github.com/mythicalltd/featherwings/config"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
-	"github.com/pelican-dev/wings/router/downloader"
-	"github.com/pelican-dev/wings/router/middleware"
-	"github.com/pelican-dev/wings/router/tokens"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/server/transfer"
+	"github.com/mythicalltd/featherwings/router/downloader"
+	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/router/tokens"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/transfer"
 )
 
 // Returns a single server from the collection of servers.
@@ -74,7 +74,6 @@ func getServerInstallLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"data": output})
 }
-
 
 // Handles a request to control the power state of a server. If the action being passed
 // through is invalid a 404 is returned. Otherwise, a HTTP/202 Accepted response is returned

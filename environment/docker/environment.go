@@ -11,10 +11,10 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/events"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/events"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 type Metadata struct {

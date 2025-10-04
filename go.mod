@@ -1,4 +1,4 @@
-module github.com/pelican-dev/wings
+module github.com/mythicalltd/featherwings
 
 go 1.23.0
 

@@ -12,9 +12,9 @@ import (
 
 	. "github.com/franela/goblin"
 
-	"github.com/pelican-dev/wings/internal/ufs"
+	"github.com/mythicalltd/featherwings/internal/ufs"
 
-	"github.com/pelican-dev/wings/config"
+	"github.com/mythicalltd/featherwings/config"
 )
 
 func NewFs() (*Filesystem, *rootFs) {
@@ -26,10 +26,9 @@ func NewFs() (*Filesystem, *rootFs) {
 		},
 	})
 
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "pelican")
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "featherpanel")
 	if err != nil {
 		panic(err)
-		return nil, nil
 	}
 
 	rfs := rootFs{root: tmpDir}
@@ -37,14 +36,12 @@ func NewFs() (*Filesystem, *rootFs) {
 	p := filepath.Join(tmpDir, "server")
 	if err := os.Mkdir(p, 0o755); err != nil {
 		panic(err)
-		return nil, nil
 	}
 
 	fs, _ := New(p, 0, []string{})
 	fs.isTest = true
 	if err := fs.TruncateRootDirectory(); err != nil {
 		panic(err)
-		return nil, nil
 	}
 
 	return fs, &rfs
@@ -285,9 +282,9 @@ func TestFilesystem_Rename(t *testing.T) {
 		})
 
 		g.It("does not allow renaming from a location outside the root", func() {
-			err := rfs.CreateServerFileFromString("/../ext-source.txt", "taget content")
+			_ = rfs.CreateServerFileFromString("/../ext-source.txt", "taget content")
 
-			err = fs.Rename("/../ext-source.txt", "target.txt")
+			err := fs.Rename("/../ext-source.txt", "target.txt")
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
@@ -363,9 +360,9 @@ func TestFilesystem_Copy(t *testing.T) {
 		})
 
 		g.It("should return an error if the source is outside the root", func() {
-			err := rfs.CreateServerFileFromString("/../ext-source.txt", "text content")
+			_ = rfs.CreateServerFileFromString("/../ext-source.txt", "text content")
 
-			err = fs.Copy("../ext-source.txt")
+			err := fs.Copy("../ext-source.txt")
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
@@ -468,9 +465,9 @@ func TestFilesystem_Delete(t *testing.T) {
 		})
 
 		g.It("does not delete files outside the root directory", func() {
-			err := rfs.CreateServerFileFromString("/../ext-source.txt", "external content")
+			_ = rfs.CreateServerFileFromString("/../ext-source.txt", "external content")
 
-			err = fs.Delete("../ext-source.txt")
+			err := fs.Delete("../ext-source.txt")
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})

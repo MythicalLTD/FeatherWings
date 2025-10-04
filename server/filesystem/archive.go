@@ -16,9 +16,9 @@ import (
 	"github.com/klauspost/pgzip"
 	ignore "github.com/sabhiram/go-gitignore"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/internal/progress"
-	"github.com/pelican-dev/wings/internal/ufs"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/internal/progress"
+	"github.com/mythicalltd/featherwings/internal/ufs"
 )
 
 const memory = 4 * 1024
@@ -320,7 +320,7 @@ func (a *Archive) addToArchive(dirfd int, name, relative string, entry ufs.DirEn
 		buf = pool.Get().([]byte)
 		defer func() {
 			buf = make([]byte, memory)
-			pool.Put(buf)
+			pool.Put(&buf[0])
 		}()
 	}
 

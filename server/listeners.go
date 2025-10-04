@@ -10,11 +10,11 @@ import (
 
 	"github.com/apex/log"
 
-	"github.com/pelican-dev/wings/events"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/events"
+	"github.com/mythicalltd/featherwings/system"
 
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/remote"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/remote"
 )
 
 var dockerEvents = []string{
@@ -234,7 +234,6 @@ func (s *Server) onConsoleOutput(data []byte) {
 			}
 		}
 	}
-
 
 	// If the command sent to the server is one that should stop the server we will need to
 	// set the server to be in a stopping state, otherwise crash detection will kick in and

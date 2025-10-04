@@ -1,6 +1,6 @@
 services:
   wings:
-    image: ghcr.io/pelican-dev/wings:latest
+    image: ghcr.io/mythicalltd/featherwings:latest
     restart: always
     networks:
       - wings0
@@ -12,14 +12,14 @@ services:
       TZ: "UTC"
       WINGS_UID: 988
       WINGS_GID: 988
-      WINGS_USERNAME: pelican
+      WINGS_USERNAME: featherpanel
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/var/lib/docker/containers/:/var/lib/docker/containers/"
-      - "/etc/pelican/:/etc/pelican/"
-      - "/var/lib/pelican/:/var/lib/pelican/"
-      - "/var/log/pelican/:/var/log/pelican/"
-      - "/tmp/pelican/:/tmp/pelican/"
+      - "/etc/featherpanel/:/etc/featherpanel/"
+      - "/var/lib/featherpanel/:/var/lib/featherpanel/"
+      - "/var/log/featherpanel/:/var/log/featherpanel/"
+      - "/tmp/featherpanel/:/tmp/featherpanel/"
       - "/etc/ssl/certs:/etc/ssl/certs:ro"
       # you may need /srv/daemon-data if you are upgrading from an old daemon
       #- "/srv/daemon-data/:/srv/daemon-data/"

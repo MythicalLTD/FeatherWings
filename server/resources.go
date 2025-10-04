@@ -4,8 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 // ResourceUsage defines the current resource usage for a given server instance. If a server is offline you

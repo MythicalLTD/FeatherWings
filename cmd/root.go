@@ -27,16 +27,16 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/internal/cron"
-	"github.com/pelican-dev/wings/internal/database"
-	"github.com/pelican-dev/wings/loggers/cli"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/router"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/sftp"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/internal/cron"
+	"github.com/mythicalltd/featherwings/internal/database"
+	"github.com/mythicalltd/featherwings/loggers/cli"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/router"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/sftp"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 var (
@@ -46,7 +46,7 @@ var (
 
 var rootCommand = &cobra.Command{
 	Use:   "wings",
-	Short: "Runs the API server allowing programmatic control of game servers for Pelican Panel.",
+	Short: "Runs the API server allowing programmatic control of game servers for FeatherPanel Panel.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		initConfig()
 		initLogging()
@@ -119,8 +119,14 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		os.Exit(1)
 	}
 
-	if ok, _ := cmd.Flags().GetBool("ignore-certificate-errors"); ok {
-		log.Warn("running with --ignore-certificate-errors: TLS certificate host chains and name will not be verified")
+	// Check for certificate error ignoring from command line flag or config
+	ignoreCertErrors, _ := cmd.Flags().GetBool("ignore-certificate-errors")
+	if !ignoreCertErrors {
+		ignoreCertErrors = config.Get().Api.IgnoreCertificateErrors
+	}
+
+	if ignoreCertErrors {
+		log.Warn("running with certificate error ignoring enabled: TLS certificate host chains and name will not be verified")
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
 			InsecureSkipVerify: true,
 		}
@@ -132,11 +138,11 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	}
 	log.WithField("timezone", config.Get().System.Timezone).Info("configured wings with system timezone")
 	if err := config.ConfigureDirectories(); err != nil {
-		log.WithField("error", err).Fatal("failed to configure system directories for pelican")
+		log.WithField("error", err).Fatal("failed to configure system directories for featherpanel!")
 		return
 	}
-	if err := config.EnsurePelicanUser(); err != nil {
-		log.WithField("error", err).Fatal("failed to create pelican system user")
+	if err := config.EnsureFeatherUser(); err != nil {
+		log.WithField("error", err).Fatal("failed to create featherpanel system user")
 		return
 	}
 	log.WithFields(log.Fields{
@@ -150,12 +156,23 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	}
 
 	t := config.Get().Token
+	httpClient := &http.Client{
+		Timeout: time.Second * time.Duration(config.Get().RemoteQuery.Timeout),
+	}
+
+	// Configure TLS settings for the remote client if certificate errors should be ignored
+	if ignoreCertErrors {
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
 	pclient := remote.New(
 		config.Get().PanelLocation,
 		remote.WithCredentials(t.ID, t.Token),
-		remote.WithHttpClient(&http.Client{
-			Timeout: time.Second * time.Duration(config.Get().RemoteQuery.Timeout),
-		}),
+		remote.WithHttpClient(httpClient),
 	)
 
 	if err := database.Initialize(); err != nil {
@@ -455,8 +472,8 @@ func initLogging() {
 // Prints the wings logo, nothing special here!
 func printLogo() {
 	fmt.Printf(colorstring.Color(`
-                     ____
-__ [blue][bold]Pelican[reset] _____/___/_______ _______ ______
+                      ____
+__ [blue][bold]FeatherPanel[reset] _____/___/_______ _______ ______
 \_____\    \/\/    /   /       /  __   /   ___/
    \___\          /   /   /   /  /_/  /___   /
         \___/\___/___/___/___/___    /______/
@@ -464,9 +481,9 @@ __ [blue][bold]Pelican[reset] _____/___/_______ _______ ______
 
 Copyright © 2018 - %d Dane Everitt & Contributors
 
-Website:  https://pelican.dev
- Source:  https://github.com/pelican-dev/wings
-License:  https://github.com/pelican-dev/wings/blob/main/LICENSE
+Website:  https://featherpanel.com
+ Source:  https://github.com/mythicalltd/featherwings
+License:  https://github.com/mythicalltd/featherwings/blob/main/LICENSE
 
 This software is made available under the terms of the MIT license.
 The above copyright notice and this permission notice shall be included
@@ -481,7 +498,7 @@ Wings was not able to locate your configuration file, and therefore is not
 able to complete its boot process. Please ensure you have copied your instance
 configuration file into the default location below.
 
-Default Location: /etc/pelican/config.yml
+Default Location: /etc/featherpanel/config.yml
 
 [yellow]This is not a bug with this software. Please do not make a bug report
 for this issue, it will be closed.[reset]

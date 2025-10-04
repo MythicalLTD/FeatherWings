@@ -11,10 +11,10 @@ import (
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/router/middleware"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/server/backup"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/backup"
 )
 
 // postServerBackup performs a backup against a given server instance using the

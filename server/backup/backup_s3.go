@@ -15,9 +15,9 @@ import (
 	"github.com/juju/ratelimit"
 	"github.com/mholt/archives"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/server/filesystem"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 type S3Backup struct {

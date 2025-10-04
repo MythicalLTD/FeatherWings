@@ -24,10 +24,10 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/spf13/cobra"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/loggers/cli"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/loggers/cli"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 const (
@@ -100,7 +100,7 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 	dockerVersion, dockerInfo, dockerErr := getDockerInfo()
 
 	output := &strings.Builder{}
-	fmt.Fprintln(output, "Pelican Wings - Diagnostics Report")
+	fmt.Fprintln(output, "FeatherPanel Wings - Diagnostics Report")
 	printHeader(output, "Versions")
 	fmt.Fprintln(output, "               Wings:", system.Version)
 	if dockerErr == nil {
@@ -172,7 +172,7 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 
 	printHeader(output, "Latest Wings Logs")
 	if diagnosticsArgs.IncludeLogs {
-		p := "/var/log/pelican/wings.log"
+		p := "/var/log/featherpanel/wings.log"
 		if cfg != nil {
 			p = path.Join(cfg.System.LogDirectory, "wings.log")
 		}

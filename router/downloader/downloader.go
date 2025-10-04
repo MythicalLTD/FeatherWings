@@ -17,7 +17,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 
-	"github.com/pelican-dev/wings/server"
+	"github.com/mythicalltd/featherwings/server"
 )
 
 var client *http.Client
@@ -189,7 +189,7 @@ func (dl *Download) Execute() error {
 		return errors.WrapIf(err, "downloader: failed to create request")
 	}
 
-	req.Header.Set("User-Agent", "Pelican Panel (https://pelican.dev)")
+	req.Header.Set("User-Agent", "FeatherPanel Panel (https://featherpanel.com)")
 	res, err := client.Do(req)
 	if err != nil {
 		return ErrDownloadFailed

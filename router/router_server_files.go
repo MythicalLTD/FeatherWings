@@ -18,14 +18,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/internal/models"
-	"github.com/pelican-dev/wings/internal/ufs"
-	"github.com/pelican-dev/wings/router/downloader"
-	"github.com/pelican-dev/wings/router/middleware"
-	"github.com/pelican-dev/wings/router/tokens"
-	"github.com/pelican-dev/wings/server"
-	"github.com/pelican-dev/wings/server/filesystem"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/internal/models"
+	"github.com/mythicalltd/featherwings/internal/ufs"
+	"github.com/mythicalltd/featherwings/router/downloader"
+	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/router/tokens"
+	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 // getServerFileContents returns the contents of a file on the server.

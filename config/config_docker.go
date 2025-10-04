@@ -31,11 +31,11 @@ type DockerNetworkConfiguration struct {
 	// The name of the network to use. If this network already exists it will not
 	// be created. If it is not found, a new network will be created using the interface
 	// defined.
-	Name       string                  `default:"pelican_nw"`
+	Name       string                  `default:"featherpanel_nw"`
 	ISPN       bool                    `default:"false" yaml:"ispn"`
 	IPv6       bool                    `default:"true" yaml:"IPv6"`
 	Driver     string                  `default:"bridge"`
-	Mode       string                  `default:"pelican_nw" yaml:"network_mode"`
+	Mode       string                  `default:"featherpanel_nw" yaml:"network_mode"`
 	IsInternal bool                    `default:"false" yaml:"is_internal"`
 	EnableICC  bool                    `default:"true" yaml:"enable_icc"`
 	NetworkMTU int64                   `default:"1500" yaml:"network_mtu"`
@@ -85,7 +85,7 @@ type DockerConfiguration struct {
 	// enabled.
 	//
 	// If the value is blank, the daemon's user namespace remapping configuration is used,
-	// if the value is "host", then the pelican containers are started with user namespace
+	// if the value is "host", then the featherpanel containers are started with user namespace
 	// remapping disabled
 	UsernsMode string `default:"" json:"userns_mode" yaml:"userns_mode"`
 

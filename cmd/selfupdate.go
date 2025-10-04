@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/system"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ func newSelfupdateCommand() *cobra.Command {
 		Run:   selfupdateCmdRun,
 	}
 
-	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "pelican-dev", "GitHub repository owner")
+	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "featherpanel-dev", "GitHub repository owner")
 	command.Flags().StringVar(&updateArgs.repoName, "repo-name", "wings", "GitHub repository name")
 	command.Flags().BoolVar(&updateArgs.force, "force", false, "Force update even if on latest version")
 
@@ -123,24 +123,24 @@ func performUpdate(version, binaryName string) error {
 	if err != nil {
 		// If rename fails (likely due to cross-filesystem), use copy instead
 		fmt.Println("Direct replacement failed, using copy method...")
-		
+
 		// Open source file
 		src, err := os.Open(binaryPath)
 		if err != nil {
 			return fmt.Errorf("failed to open source file: %v", err)
 		}
 		defer src.Close()
-		
+
 		// Create a temporary file in the same directory as the executable
 		execDir := filepath.Dir(currentExecutable)
 		tempExec := filepath.Join(execDir, fmt.Sprintf(".%s.new", filepath.Base(currentExecutable)))
-		
+
 		// Create the new executable file
 		dst, err := os.OpenFile(tempExec, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 		if err != nil {
 			return fmt.Errorf("failed to create new executable: %v", err)
 		}
-		
+
 		// Copy the content
 		_, err = io.Copy(dst, src)
 		dst.Close()
@@ -148,7 +148,7 @@ func performUpdate(version, binaryName string) error {
 			os.Remove(tempExec) // Clean up on failure
 			return fmt.Errorf("failed to copy new binary: %v", err)
 		}
-		
+
 		// Replace the old executable with the new one
 		err = os.Rename(tempExec, currentExecutable)
 		if err != nil {

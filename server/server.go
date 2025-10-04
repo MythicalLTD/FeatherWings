@@ -17,12 +17,12 @@ import (
 	"github.com/creasty/defaults"
 	"github.com/goccy/go-json"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/events"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/server/filesystem"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/events"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/server/filesystem"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 // Server is the high level definition for a server instance being controlled
@@ -54,7 +54,7 @@ type Server struct {
 	emitter *events.Bus
 
 	// Defines the process configuration for the server instance. This is dynamically
-	// fetched from the Pelican Server instance each time the server process is
+	// fetched from the FeatherPanel Server instance each time the server process is
 	// started, and then cached here.
 	procConfig *remote.ProcessConfiguration
 
@@ -165,7 +165,6 @@ func DetermineServerTimezone(envvars map[string]interface{}, defaultTimezone str
 	// Return the defaultTimezone if SERVER_TIMEZONE is not set, empty, or invalid
 	return defaultTimezone
 }
-
 
 // parseInvocation parses the start command in the same way we already do in the entrypoint
 // We can use this to set the container command with all variables replaced.

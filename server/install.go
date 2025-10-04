@@ -20,10 +20,10 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/parsers/kernel"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/remote"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 // Install executes the installation stack for a server process. Bubbles any
@@ -361,7 +361,7 @@ func (ip *InstallationProcess) AfterExecute(containerId string) error {
 	// variables passed into the container to make debugging things a little easier.
 	ip.Server.Log().WithField("path", ip.GetLogPath()).Debug("writing most recent installation logs to disk")
 
-	tmpl, err := template.New("header").Parse(`Pelican Server Installation Log
+	tmpl, err := template.New("header").Parse(`FeatherPanel Server Installation Log
 
 |
 | Details
@@ -425,7 +425,7 @@ func (ip *InstallationProcess) Execute() (string, error) {
 		Image:        ip.Script.ContainerImage,
 		Env:          ip.Server.GetEnvironmentVariables(),
 		Labels: map[string]string{
-			"Service":       "Pelican",
+			"Service":       "FeatherPanel",
 			"ContainerType": "server_installer",
 		},
 	}

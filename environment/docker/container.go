@@ -18,9 +18,9 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 
-	"github.com/pelican-dev/wings/config"
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/system"
+	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 var ErrNotAttached = errors.Sentinel("not attached to instance")
@@ -159,7 +159,7 @@ func (e *Environment) Create() error {
 	// If port is 0 then we have a server with no allocation and this should stay 127.0.0.1 and not the docker network interface ip.
 	if a.DefaultMapping.Port != 0 {
 		for i, v := range evs {
-			// Convert 127.0.0.1 to the pelican0 network interface if the environment is Docker
+			// Convert 127.0.0.1 to the featherpanel0 network interface if the environment is Docker
 			// so that the server operates as expected.
 			if v == "SERVER_IP=127.0.0.1" {
 				evs[i] = "SERVER_IP=" + cfg.Docker.Network.Interface
@@ -174,7 +174,7 @@ func (e *Environment) Create() error {
 	for key := range confLabels {
 		labels[key] = confLabels[key]
 	}
-	labels["Service"] = "Pelican"
+	labels["Service"] = "FeatherPanel"
 	labels["ContainerType"] = "server_process"
 
 	conf := &container.Config{

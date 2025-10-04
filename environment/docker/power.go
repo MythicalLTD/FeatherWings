@@ -11,8 +11,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 
-	"github.com/pelican-dev/wings/environment"
-	"github.com/pelican-dev/wings/remote"
+	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/remote"
 )
 
 // OnBeforeStart run before the container starts and get the process
@@ -338,7 +338,7 @@ func (e *Environment) Terminate(ctx context.Context, signal string) error {
 			e.log().WithFields(log.Fields{
 				"id": e.Id,
 			}).Debug("Sent SIGKILL to container: graceful shutdown timed out")
-			
+
 			// Update state to offline after SIGKILL.
 			e.SetState(environment.ProcessOfflineState)
 			return nil

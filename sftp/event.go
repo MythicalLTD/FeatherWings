@@ -4,8 +4,8 @@ import (
 	"emperror.dev/errors"
 	"github.com/apex/log"
 
-	"github.com/pelican-dev/wings/internal/database"
-	"github.com/pelican-dev/wings/internal/models"
+	"github.com/mythicalltd/featherwings/internal/database"
+	"github.com/mythicalltd/featherwings/internal/models"
 )
 
 type eventHandler struct {
@@ -34,7 +34,7 @@ func (eh *eventHandler) Log(e models.Event, fa FileAction) error {
 	if fa.Target != "" {
 		metadata = map[string]interface{}{
 			"from": fa.Entity,
-			"to": fa.Target,
+			"to":   fa.Target,
 		}
 	}
 

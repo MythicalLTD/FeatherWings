@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pelican-dev/wings/internal/progress"
-	"github.com/pelican-dev/wings/server/filesystem"
+	"github.com/mythicalltd/featherwings/internal/progress"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 // Archive returns an archive that can be used to stream the contents of the
