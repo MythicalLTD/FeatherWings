@@ -11,8 +11,8 @@ import (
 
 type dockerNetworkInterfaces struct {
 	V4 struct {
-		Subnet  string `default:"172.18.0.0/16"`
-		Gateway string `default:"172.18.0.1"`
+		Subnet  string `default:"172.19.0.0/16"`
+		Gateway string `default:"172.19.0.1"`
 	}
 	V6 struct {
 		Subnet  string `default:"fdba:17c8:6c94::/64"`
@@ -23,7 +23,7 @@ type dockerNetworkInterfaces struct {
 type DockerNetworkConfiguration struct {
 	// The interface that should be used to create the network. Must not conflict
 	// with any other interfaces in use by Docker or on the system.
-	Interface string `default:"172.18.0.1" json:"interface" yaml:"interface"`
+	Interface string `default:"172.19.0.1" json:"interface" yaml:"interface"`
 
 	// The DNS settings for containers.
 	Dns []string `default:"[\"1.1.1.1\", \"1.0.0.1\"]"`
