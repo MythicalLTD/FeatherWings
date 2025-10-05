@@ -99,47 +99,6 @@ func (fs *Filesystem) Touch(p string, flag int) (ufs.File, error) {
 	return fs.unixFS.Touch(p, flag, 0o644)
 }
 
-// Writefile writes a file to the system. If the file does not already exist one
-// will be created. This will also properly recalculate the disk space used by
-// the server when writing new files or modifying existing ones.
-//
-// DEPRECATED: use `Write` instead.
-func (fs *Filesystem) Writefile(p string, r io.Reader) error {
-	var currentSize int64
-	st, err := fs.unixFS.Stat(p)
-	if err != nil && !errors.Is(err, ufs.ErrNotExist) {
-		return errors.Wrap(err, "server/filesystem: writefile: failed to stat file")
-	} else if err == nil {
-		if st.IsDir() {
-			// TODO: resolved
-			return errors.WithStack(&Error{code: ErrCodeIsDirectory, resolved: ""})
-		}
-		currentSize = st.Size()
-	}
-
-	// Touch the file and return the handle to it at this point. This will
-	// create or truncate the file, and create any necessary parent directories
-	// if they are missing.
-	file, err := fs.unixFS.Touch(p, ufs.O_RDWR|ufs.O_TRUNC, 0o644)
-	if err != nil {
-		return fmt.Errorf("error touching file: %w", err)
-	}
-	defer file.Close()
-
-	// Do not use CopyBuffer here, it is wasteful as the file implements
-	// io.ReaderFrom, which causes it to not use the buffer anyways.
-	n, err := io.Copy(file, r)
-
-	// Adjust the disk usage to account for the old size and the new size of the file.
-	fs.unixFS.Add(n - currentSize)
-
-	if err := fs.chownFile(p); err != nil {
-		return fmt.Errorf("error chowning file: %w", err)
-	}
-	// Return the error from io.Copy.
-	return err
-}
-
 func (fs *Filesystem) Write(p string, r io.Reader, newSize int64, mode ufs.FileMode) error {
 	var currentSize int64
 	st, err := fs.unixFS.Stat(p)
@@ -147,7 +106,6 @@ func (fs *Filesystem) Write(p string, r io.Reader, newSize int64, mode ufs.FileM
 		return errors.Wrap(err, "server/filesystem: writefile: failed to stat file")
 	} else if err == nil {
 		if st.IsDir() {
-			// TODO: resolved
 			return errors.WithStack(&Error{code: ErrCodeIsDirectory, resolved: ""})
 		}
 		currentSize = st.Size()
@@ -400,33 +358,6 @@ func (fs *Filesystem) TruncateRootDirectory() error {
 func (fs *Filesystem) Delete(p string) error {
 	return fs.unixFS.RemoveAll(p)
 }
-
-//type fileOpener struct {
-//	fs   *Filesystem
-//	busy uint
-//}
-//
-//// Attempts to open a given file up to "attempts" number of times, using a backoff. If the file
-//// cannot be opened because of a "text file busy" error, we will attempt until the number of attempts
-//// has been exhaused, at which point we will abort with an error.
-//func (fo *fileOpener) open(path string, flags int, perm ufs.FileMode) (ufs.File, error) {
-//	for {
-//		f, err := fo.fs.unixFS.OpenFile(path, flags, perm)
-//
-//		// If there is an error because the text file is busy, go ahead and sleep for a few
-//		// hundred milliseconds and then try again up to three times before just returning the
-//		// error back to the caller.
-//		//
-//		// Based on code from: https://github.com/golang/go/issues/22220#issuecomment-336458122
-//		if err != nil && fo.busy < 3 && strings.Contains(err.Error(), "text file busy") {
-//			time.Sleep(100 * time.Millisecond << fo.busy)
-//			fo.busy++
-//			continue
-//		}
-//
-//		return f, err
-//	}
-//}
 
 // ListDirectory lists the contents of a given directory and returns stat
 // information about each file and folder within it.

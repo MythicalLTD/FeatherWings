@@ -30,7 +30,7 @@ func (s *Stat) MarshalJSON() ([]byte, error) {
 		Mime      string `json:"mime"`
 	}{
 		Name:     s.Name(),
-		Created:  s.CTime().Format(time.RFC3339),
+		Created:  s.ModTime().Format(time.RFC3339), // Using ModTime since CTime is unreliable
 		Modified: s.ModTime().Format(time.RFC3339),
 		Mode:     s.Mode().String(),
 		// Using `&ModePerm` on the file's mode will cause the mode to only have the permission values, and nothing else.

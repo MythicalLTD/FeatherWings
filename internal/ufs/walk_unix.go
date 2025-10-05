@@ -12,7 +12,6 @@ import (
 	iofs "io/fs"
 	"os"
 	"path"
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -132,30 +131,21 @@ func nameFromDirent(de *unix.Dirent) (name []byte) {
 	ml := int(de.Reclen) - nameOffset
 
 	// Convert syscall.Dirent.Name, which is array of int8, to []byte, by
-	// overwriting Cap, Len, and Data slice header fields to the max possible
-	// name length computed above, and finding the terminating NULL byte.
-	//
-	// TODO: is there an alternative to the deprecated SliceHeader?
-	// SliceHeader was mainly deprecated due to it being misused for avoiding
-	// allocations when converting a byte slice to a string, ref;
-	// https://go.dev/issue/53003
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&name))
-	sh.Cap = ml
-	sh.Len = ml
-	sh.Data = uintptr(unsafe.Pointer(&de.Name[0]))
+	// using unsafe.Slice to create a byte slice from the dirent name array.
+	// This replaces the deprecated reflect.SliceHeader approach.
+	nameBytes := unsafe.Slice((*byte)(unsafe.Pointer(&de.Name[0])), ml)
 
-	if index := bytes.IndexByte(name, 0); index >= 0 {
-		// Found NULL byte; set slice's cap and len accordingly.
-		sh.Cap = index
-		sh.Len = index
+	if index := bytes.IndexByte(nameBytes, 0); index >= 0 {
+		// Found NULL byte; truncate slice to the actual name length.
+		nameBytes = nameBytes[:index]
+		name = nameBytes
 		return
 	}
 
 	// NOTE: This branch is not expected, but included for defensive
 	// programming, and provides a hard stop on the name based on the structure
 	// field array size.
-	sh.Cap = len(de.Name)
-	sh.Len = sh.Cap
+	name = nameBytes[:len(de.Name)]
 	return
 }
 

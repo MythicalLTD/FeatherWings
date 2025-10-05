@@ -59,7 +59,7 @@ func TestFilesystem_Blocks_Symlinks(t *testing.T) {
 		g.It("cannot write to a file symlinked outside the root", func() {
 			r := bytes.NewReader([]byte("testing"))
 
-			err := fs.Writefile("symlinked.txt", r)
+			err := fs.Write("symlinked.txt", r, int64(r.Len()), 0o644)
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
@@ -67,7 +67,7 @@ func TestFilesystem_Blocks_Symlinks(t *testing.T) {
 		g.It("cannot write to a non-existent file symlinked outside the root", func() {
 			r := bytes.NewReader([]byte("testing what the fuck"))
 
-			err := fs.Writefile("symlinked_does_not_exist.txt", r)
+			err := fs.Write("symlinked_does_not_exist.txt", r, int64(r.Len()), 0o644)
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
@@ -75,7 +75,7 @@ func TestFilesystem_Blocks_Symlinks(t *testing.T) {
 		g.It("cannot write to chained symlinks with target that does not exist outside the root", func() {
 			r := bytes.NewReader([]byte("testing what the fuck"))
 
-			err := fs.Writefile("symlinked_does_not_exist2.txt", r)
+			err := fs.Write("symlinked_does_not_exist2.txt", r, int64(r.Len()), 0o644)
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
@@ -83,7 +83,7 @@ func TestFilesystem_Blocks_Symlinks(t *testing.T) {
 		g.It("cannot write a file to a directory symlinked outside the root", func() {
 			r := bytes.NewReader([]byte("testing"))
 
-			err := fs.Writefile("external_dir/foo.txt", r)
+			err := fs.Write("external_dir/foo.txt", r, int64(r.Len()), 0o644)
 			g.Assert(err).IsNotNil()
 			g.Assert(errors.Is(err, ufs.ErrNotDirectory)).IsTrue("err is not ErrNotDirectory")
 		})
