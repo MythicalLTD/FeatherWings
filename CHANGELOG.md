@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0-net
+
+### Fixed
+* Fixes networkings inside the wings network!
+
 ## v1.0.0
 
 ### Fixed
