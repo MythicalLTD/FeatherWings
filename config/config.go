@@ -125,6 +125,11 @@ type RemoteQueryConfiguration struct {
 	// 50 servers is likely just as quick as two for 100 or one for 400, and will certainly
 	// be less likely to cause performance issues on the Panel.
 	BootServersPerPage int `default:"50" yaml:"boot_servers_per_page"`
+
+	// CustomHeaders is a map of custom headers that will be included in all requests
+	// made to the Panel API. This is useful for authentication with services like
+	// Cloudflare Access using service tokens (e.g., CF-Access-Client-Id and CF-Access-Client-Secret).
+	CustomHeaders map[string]string `yaml:"custom_headers"`
 }
 
 // SystemConfiguration defines basic system configuration settings.

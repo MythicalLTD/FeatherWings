@@ -173,6 +173,7 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		config.Get().PanelLocation,
 		remote.WithCredentials(t.ID, t.Token),
 		remote.WithHttpClient(httpClient),
+		remote.WithCustomHeaders(config.Get().RemoteQuery.CustomHeaders),
 	)
 
 	if err := database.Initialize(); err != nil {

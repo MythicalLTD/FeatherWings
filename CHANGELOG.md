@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0-netv2
+
+### Added
+* Support for custom headers for wings!
+
 ## v1.0.0-net
 
 ### Fixed
