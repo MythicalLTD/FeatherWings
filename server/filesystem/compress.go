@@ -68,6 +68,9 @@ func (fs *Filesystem) CompressFiles(dir string, name string, paths []string) (uf
 
 	cw := ufs.NewCountedWriter(f)
 	if err := a.Stream(context.Background(), cw); err != nil {
+		// Clean up the partial archive file on error to prevent multiple
+		// incomplete archives from accumulating when clients retry the request
+		_ = fs.unixFS.Remove(d)
 		return nil, err
 	}
 

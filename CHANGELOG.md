@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1
+
+### Fixed
+* **CRITICAL:** Fixed sync.Pool panic in archive compression causing "interface conversion: interface {} is *uint8, not []uint8" error - was incorrectly putting `&buf[0]` instead of `buf` into the pool
+* Fixed file compression endpoint creating multiple archives instead of single archive - partial archives are now cleaned up on error to prevent accumulation when clients retry failed requests
+
 ## v1.0.0-netv2
 
 ### Added

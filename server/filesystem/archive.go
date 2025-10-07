@@ -319,8 +319,9 @@ func (a *Archive) addToArchive(dirfd int, name, relative string, entry ufs.DirEn
 		// Get a fixed-size buffer from the pool to save on allocations.
 		buf = pool.Get().([]byte)
 		defer func() {
+			// Reset the buffer to the standard size before returning it to the pool
 			buf = make([]byte, memory)
-			pool.Put(&buf[0])
+			pool.Put(buf)
 		}()
 	}
 
