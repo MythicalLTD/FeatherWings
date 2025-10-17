@@ -132,6 +132,12 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		}
 	}
 
+	err := os.MkdirAll("/etc/featherpanel", 0755)
+	if err != nil {
+		log.WithField("error", err).Fatal("failed to create /etc/featherpanel directory")
+		return
+	}
+
 	if err := config.ConfigureTimezone(); err != nil {
 		log.WithField("error", err).Fatal("failed to detect system timezone or use supplied configuration value")
 		return

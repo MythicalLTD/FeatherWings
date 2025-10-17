@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.2
+
+### Fixed
+
+- The default dir now gets created on wings launch!
+
 ## v1.0.1
 
 ### Fixed
