@@ -4,7 +4,15 @@
 
 ### Fixed
 
-- The default dir now gets created on wings launch!
+* The default dir now gets created on wings launch!
+
+### Added
+
+* Ability to create more types of archives!
+
+### Improved
+
+* Support for the latest go version!
 
 ## v1.0.1
 
