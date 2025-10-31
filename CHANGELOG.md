@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3
+
+### Fixed
+
+* Can't make archives inside new dirs!
+
 ## v1.0.2
 
 ### Fixed
