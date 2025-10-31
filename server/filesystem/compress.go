@@ -83,9 +83,16 @@ func (fs *Filesystem) CompressFiles(dir string, name string, paths []string, ext
 
 	destPath := path.Join(dir, name)
 
+	// Normalize dir to ensure it's a clean relative path (no leading slash for SafePath)
+	cleanDir := strings.TrimPrefix(path.Clean(dir), "/")
+	
 	filesMap := make(map[string]string)
 	for _, file := range validPaths {
-		_, p, closeFd, err := fs.unixFS.SafePath(path.Join(dir, file))
+		// Build the relative path from the clean dir
+		relPath := path.Join(cleanDir, file)
+		
+		// Validate the path is safe (this will error if path is outside sandbox)
+		_, _, closeFd, err := fs.unixFS.SafePath(relPath)
 		if err != nil {
 			if closeFd != nil {
 				closeFd()
@@ -93,9 +100,9 @@ func (fs *Filesystem) CompressFiles(dir string, name string, paths []string, ext
 			return nil, "", err
 		}
 
-		// SafePath returns paths relative to the sandbox root, so we need to
-		// make them absolute by joining with the filesystem root path
-		absolutePath := filepath.Join(fs.Path(), p)
+		// Construct absolute path using relPath (not the name returned by SafePath,
+		// which is just the filename component)
+		absolutePath := filepath.Join(fs.Path(), relPath)
 		filesMap[absolutePath] = file
 
 		if closeFd != nil {
