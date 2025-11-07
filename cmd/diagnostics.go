@@ -19,15 +19,15 @@ import (
 )
 
 const (
-	DefaultHastebinUrl = "https://logs.pelican.dev"
-	DefaultLogLines    = 200
+	DefaultMclogsAPIURL = "https://api.mclo.gs/1/log"
+	DefaultLogLines     = 200
 )
 
 var diagnosticsArgs struct {
 	IncludeEndpoints   bool
 	IncludeLogs        bool
 	ReviewBeforeUpload bool
-	HastebinURL        string
+	MclogsURL          string
 	LogLines           int
 }
 
@@ -42,7 +42,7 @@ func newDiagnosticsCommand() *cobra.Command {
 		Run: diagnosticsCmdRun,
 	}
 
-	command.Flags().StringVar(&diagnosticsArgs.HastebinURL, "hastebin-url", DefaultHastebinUrl, "the url of the hastebin instance to use")
+	command.Flags().StringVar(&diagnosticsArgs.MclogsURL, "mclogs-api-url", DefaultMclogsAPIURL, "the mclo.gs API endpoint to use for uploads")
 	command.Flags().IntVar(&diagnosticsArgs.LogLines, "log-lines", DefaultLogLines, "the number of log lines to include in the report")
 
 	return command
@@ -72,7 +72,7 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 				Accessor(defaultTrueConfirmAccessor()).
 				Value(&diagnosticsArgs.IncludeLogs),
 			huh.NewConfirm().
-				Title(fmt.Sprintf("Do you want to review the collected data before uploading to %s ?", diagnosticsArgs.HastebinURL)).
+				Title(fmt.Sprintf("Do you want to review the collected data before uploading to %s?", diagnosticsArgs.MclogsURL)).
 				Description("The data, especially the logs, might contain sensitive information, so you should review it. You will be asked again if you want to upload.").
 				Accessor(defaultTrueConfirmAccessor()).
 				Value(&diagnosticsArgs.ReviewBeforeUpload),
@@ -101,46 +101,71 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 
 	if diagnosticsArgs.ReviewBeforeUpload {
 		upload := false
-		huh.NewConfirm().Title("Upload to " + diagnosticsArgs.HastebinURL + "?").Value(&upload).Run()
+		huh.NewConfirm().Title("Upload to " + diagnosticsArgs.MclogsURL + "?").Value(&upload).Run()
 		if !upload {
 			return
 		}
 	}
 
-	u, err := uploadToHastebin(diagnosticsArgs.HastebinURL, report)
+	u, err := uploadToMclogs(diagnosticsArgs.MclogsURL, report)
 	if err == nil {
 		fmt.Println("Your report is available here: ", u)
 	}
 }
 
-func uploadToHastebin(hbUrl, content string) (string, error) {
-	u, err := url.Parse(hbUrl)
+type mclogsUploadResponse struct {
+	Success bool   `json:"success"`
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	Raw     string `json:"raw"`
+	Error   string `json:"error"`
+}
+
+func uploadToMclogs(apiURL, content string) (string, error) {
+	u, err := url.Parse(apiURL)
 	if err != nil {
 		return "", err
 	}
 
 	formData := new(bytes.Buffer)
 	formWriter := multipart.NewWriter(formData)
-	formWriter.WriteField("c", content)
-	formWriter.WriteField("e", "14d")
+	formWriter.WriteField("content", content)
 	formWriter.Close()
 
 	res, err := http.Post(u.String(), formWriter.FormDataContentType(), formData)
-	if err != nil || res.StatusCode != 200 {
-		fmt.Println("Failed to upload report to ", u.String(), err, res.StatusCode)
-		myb, _ := io.ReadAll(res.Body)
-		fmt.Println(string(myb))
+	if err != nil {
+		fmt.Println("Failed to upload report to", u.String(), err)
 		return "", err
 	}
-	pres := make(map[string]interface{})
+	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println("Failed to parse response.", err)
 		return "", err
 	}
-	json.Unmarshal(body, &pres)
-	if pasteUrl, ok := pres["url"].(string); ok {
-		return pasteUrl, nil
+
+	if res.StatusCode != http.StatusOK {
+		fmt.Println("Failed to upload report to", u.String(), "status:", res.Status)
+		fmt.Println(string(body))
+		return "", fmt.Errorf("upload failed with status %s", res.Status)
 	}
-	return "", errors.New("failed to find key in response")
+
+	var uploadResponse mclogsUploadResponse
+	if err := json.Unmarshal(body, &uploadResponse); err != nil {
+		fmt.Println("Failed to decode response.", err)
+		return "", err
+	}
+
+	if !uploadResponse.Success {
+		if uploadResponse.Error != "" {
+			return "", errors.New(uploadResponse.Error)
+		}
+		return "", errors.New("mclogs upload failed")
+	}
+
+	if uploadResponse.URL == "" {
+		return "", errors.New("mclogs response missing URL")
+	}
+
+	return uploadResponse.URL, nil
 }

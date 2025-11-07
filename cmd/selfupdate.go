@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -16,11 +17,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var updateArgs struct {
-	repoOwner string
-	repoName  string
-	force     bool
-}
+var (
+	updateArgs struct {
+		repoOwner string
+		repoName  string
+		force     bool
+	}
+	checksumPattern = regexp.MustCompile(`[a-fA-F0-9]{64}`)
+)
 
 func newSelfupdateCommand() *cobra.Command {
 	command := &cobra.Command{
@@ -29,8 +33,8 @@ func newSelfupdateCommand() *cobra.Command {
 		Run:   selfupdateCmdRun,
 	}
 
-	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "featherpanel-dev", "GitHub repository owner")
-	command.Flags().StringVar(&updateArgs.repoName, "repo-name", "wings", "GitHub repository name")
+	command.Flags().StringVar(&updateArgs.repoOwner, "repo-owner", "mythicalltd", "GitHub repository owner")
+	command.Flags().StringVar(&updateArgs.repoName, "repo-name", "featherwings", "GitHub repository name")
 	command.Flags().BoolVar(&updateArgs.force, "force", false, "Force update even if on latest version")
 
 	return command
@@ -233,13 +237,15 @@ func verifyChecksum(binaryPath, checksumPath, binaryName string) error {
 
 	var expectedChecksum string
 	for _, line := range strings.Split(string(checksumData), "\n") {
-		if strings.HasSuffix(line, binaryName) {
-			parts := strings.Fields(line)
-			if len(parts) > 0 {
-				expectedChecksum = parts[0]
-			}
-			break
+		if !strings.Contains(line, binaryName) {
+			continue
 		}
+		matches := checksumPattern.FindStringSubmatch(line)
+		if len(matches) == 0 {
+			continue
+		}
+		expectedChecksum = strings.ToLower(matches[0])
+		break
 	}
 	if expectedChecksum == "" {
 		return fmt.Errorf("checksum not found for %s", binaryName)

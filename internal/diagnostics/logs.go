@@ -24,7 +24,7 @@ func GenerateDiagnosticsReport(includeEndpoints bool, includeLogs bool, logLines
 	dockerVersion, dockerInfo, dockerErr := getDockerInfo()
 	output := &strings.Builder{}
 
-	fmt.Fprintln(output, "Pelican Wings - Diagnostics Report")
+	fmt.Fprintln(output, "FeatherWings - Diagnostics Report")
 	printHeader(output, "Versions")
 	fmt.Fprintln(output, "               Wings:", system.Version)
 	if dockerErr == nil {

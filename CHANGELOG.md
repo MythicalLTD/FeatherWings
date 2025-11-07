@@ -5,10 +5,13 @@
 ### Added
 
 * Ability to request logs from a route!
+* Added a dedicated route to generate and retrieve detailed diagnostic reports.
+* Diagnostics reports are now uploaded using mclogs instead of the old pelican pastebin server :)
 
 ### Fixed
 
 * Resolved an issue that prevented archives from being created within subdirectories due to safepath restrictions
+* Fixed an issue where the self-update command failed due to incorrect repository ownership configuration.
 
 ## v1.0.3
 
