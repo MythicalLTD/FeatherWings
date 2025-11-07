@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -14,11 +15,14 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/internal/diagnostics"
+	"github.com/mythicalltd/featherwings/internal/selfupdate"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/installer"
 	"github.com/mythicalltd/featherwings/system"
 )
+
+const restartCommandTimeout = 30 * time.Second
 
 // getSystemInformation returns information about the system that wings is running on.
 // @Summary Get system information
@@ -312,6 +316,55 @@ type postUpdateConfigurationResponse struct {
 	Applied bool `json:"applied"`
 }
 
+func respondSelfUpdateError(c *gin.Context, err error) bool {
+	if errors.Is(err, selfupdate.ErrChecksumRequired) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "checksum is required for direct URL updates"})
+		return true
+	}
+	if errors.Is(err, selfupdate.ErrChecksumNotFound) {
+		c.AbortWithStatusJSON(http.StatusBadGateway, ErrorResponse{Error: "checksum not found for requested binary; retry with disable_checksum=true to bypass verification"})
+		return true
+	}
+
+	var httpErr *selfupdate.HTTPError
+	if errors.As(err, &httpErr) {
+		status := http.StatusBadGateway
+		if httpErr.StatusCode == http.StatusNotFound {
+			status = http.StatusBadRequest
+		}
+
+		message := fmt.Sprintf("upstream request to %s failed with status %d (%s)", httpErr.URL, httpErr.StatusCode, http.StatusText(httpErr.StatusCode))
+		c.AbortWithStatusJSON(status, ErrorResponse{Error: message})
+		return true
+	}
+
+	return false
+}
+
+func queueRestartCommand(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+
+	go func(cmd string) {
+		ctx, cancel := context.WithTimeout(context.Background(), restartCommandTimeout)
+		defer cancel()
+		output, err := selfupdate.RunRestartCommand(ctx, cmd)
+		fields := log.Fields{"command": cmd}
+		if output != "" {
+			fields["output"] = output
+		}
+		if err != nil {
+			log.WithError(err).WithFields(fields).Error("self-update restart command failed")
+			return
+		}
+		log.WithFields(fields).Info("self-update restart command executed successfully")
+	}(command)
+
+	return true
+}
+
 // postUpdateConfiguration updates the running configuration for this Wings instance.
 // @Summary Update runtime configuration
 // @Tags System
@@ -358,5 +411,192 @@ func postUpdateConfiguration(c *gin.Context) {
 	config.Set(cfg)
 	c.JSON(http.StatusOK, postUpdateConfigurationResponse{
 		Applied: true,
+	})
+}
+
+// postSystemSelfUpdate triggers a self-update for the running daemon instance.
+// @Summary Trigger self-update
+// @Description Triggers a Wings self-update either from GitHub or a direct URL. Requires system.updates.allow_api to be enabled.
+// @Tags System
+// @Accept json
+// @Produce json
+// @Param request body router.SelfUpdateRequest true "Self-update options"
+// @Success 202 {object} router.SelfUpdateResponse "Update accepted"
+// @Success 200 {object} router.SelfUpdateResponse "Already running requested version"
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system/self-update [post]
+func postSystemSelfUpdate(c *gin.Context) {
+	cfg := config.Get()
+	if !cfg.System.Updates.AllowAPI {
+		c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "self-update via API is disabled"})
+		return
+	}
+
+	var req SelfUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request payload"})
+		return
+	}
+
+	skipChecksumGitHub := cfg.System.Updates.DisableChecksum || req.DisableChecksum
+	skipChecksumURL := req.DisableChecksum
+	restartCommand := cfg.System.Updates.RestartCommand
+
+	currentVersion := system.Version
+	if currentVersion == "" {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ErrorResponse{Error: "current version is not defined"})
+		return
+	}
+
+	if currentVersion == "develop" && !req.Force {
+		c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "running in development mode; set force=true to override"})
+		return
+	}
+
+	binaryName, err := selfupdate.DetermineBinaryName()
+	if err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+	defer cancel()
+
+	source := strings.ToLower(strings.TrimSpace(req.Source))
+	downloadURL := strings.TrimSpace(req.URL)
+	if downloadURL == "" {
+		downloadURL = cfg.System.Updates.DefaultURL
+	}
+
+	if source == "url" || downloadURL != "" {
+		if !cfg.System.Updates.EnableURL {
+			c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: "URL-based updates are disabled"})
+			return
+		}
+		if downloadURL == "" {
+			c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "url is required when source=url"})
+			return
+		}
+
+		checksum := strings.TrimSpace(req.SHA256)
+		if checksum == "" {
+			checksum = cfg.System.Updates.DefaultSHA256
+		}
+
+		if checksum == "" && !skipChecksumURL {
+			c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "checksum is required for URL updates"})
+			return
+		}
+
+		log.WithFields(log.Fields{
+			"source":        "url",
+			"url":           downloadURL,
+			"skip_checksum": skipChecksumURL,
+		}).Info("self-update requested via API")
+
+		if err := selfupdate.UpdateFromURL(ctx, downloadURL, binaryName, checksum, skipChecksumURL); err != nil {
+			if respondSelfUpdateError(c, err) {
+				return
+			}
+			middleware.CaptureAndAbort(c, err)
+			return
+		}
+
+		restartTriggered := queueRestartCommand(restartCommand)
+		message := "Self-update triggered from direct URL."
+		if restartTriggered {
+			message += " Restart command queued."
+		}
+
+		c.JSON(http.StatusAccepted, SelfUpdateResponse{
+			Message:          message,
+			Source:           "url",
+			CurrentVersion:   currentVersion,
+			ChecksumSkipped:  skipChecksumURL,
+			RestartTriggered: restartTriggered,
+		})
+		return
+	}
+
+	repoOwner := strings.TrimSpace(req.RepoOwner)
+	if repoOwner == "" {
+		repoOwner = cfg.System.Updates.RepoOwner
+	}
+	if repoOwner == "" {
+		repoOwner = "mythicalltd"
+	}
+
+	repoName := strings.TrimSpace(req.RepoName)
+	if repoName == "" {
+		repoName = cfg.System.Updates.RepoName
+	}
+	if repoName == "" {
+		repoName = "featherwings"
+	}
+
+	targetVersion := strings.TrimSpace(req.Version)
+	if targetVersion != "" && !strings.HasPrefix(targetVersion, "v") && targetVersion != "develop" {
+		targetVersion = "v" + targetVersion
+	}
+
+	if targetVersion == "" {
+		var fetchErr error
+		targetVersion, fetchErr = selfupdate.FetchLatestRelease(ctx, repoOwner, repoName)
+		if fetchErr != nil {
+			if respondSelfUpdateError(c, fetchErr) {
+				return
+			}
+			middleware.CaptureAndAbort(c, fetchErr)
+			return
+		}
+	}
+
+	currentVersionTag := "v" + currentVersion
+	if currentVersion == "develop" {
+		currentVersionTag = currentVersion
+	}
+
+	if !req.Force && targetVersion == currentVersionTag {
+		c.JSON(http.StatusOK, SelfUpdateResponse{
+			Message:        "Already running target version.",
+			Source:         "github",
+			CurrentVersion: currentVersion,
+			TargetVersion:  targetVersion,
+		})
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"source":        "github",
+		"repo_owner":    repoOwner,
+		"repo_name":     repoName,
+		"target":        targetVersion,
+		"skip_checksum": skipChecksumGitHub,
+	}).Info("self-update requested via API")
+
+	if err := selfupdate.UpdateFromGitHub(ctx, repoOwner, repoName, targetVersion, binaryName, skipChecksumGitHub); err != nil {
+		if respondSelfUpdateError(c, err) {
+			return
+		}
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	restartTriggered := queueRestartCommand(restartCommand)
+	message := "Self-update triggered from GitHub release."
+	if restartTriggered {
+		message += " Restart command queued."
+	}
+
+	c.JSON(http.StatusAccepted, SelfUpdateResponse{
+		Message:          message,
+		Source:           "github",
+		CurrentVersion:   currentVersion,
+		TargetVersion:    targetVersion,
+		ChecksumSkipped:  skipChecksumGitHub,
+		RestartTriggered: restartTriggered,
 	})
 }

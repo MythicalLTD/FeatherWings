@@ -9,6 +9,8 @@
 * Diagnostics reports are now uploaded using mclogs instead of the old pelican pastebin server :)
 * Generated OpenAPI documentation is now available at `/api/docs/ui`, with specs exposed via `/api/docs/openapi.json`. Set `api.docs.enabled: false` in `config.yml` to disable serving the documentation.
 * Introduced the ability to upload diagnostics reports directly to a user-specified URL!
+* Added support for updating Wings from a custom download URL when permitted via `system.updates.enable_url`, including optional SHA256 verification.
+* Added a protected `/api/system/self-update` endpoint with detailed upstream error feedback, mandatory checksums for direct URL updates, optional `disable_checksum` overrides, and new configuration toggles under `system.updates`.
 
 ### Fixed
 

@@ -191,6 +191,10 @@ definitions:
         type: string
       transfers:
         $ref: '#/definitions/config.Transfers'
+      updates:
+        allOf:
+        - $ref: '#/definitions/config.UpdateConfiguration'
+        description: Updates controls runtime update capabilities.
       user:
         description: |-
           Definitions for the user that gets created to ensure that we can quickly access
@@ -255,6 +259,42 @@ definitions:
 
           Defaults to 0 (unlimited)
         type: integer
+    type: object
+  config.UpdateConfiguration:
+    properties:
+      allowAPI:
+        default: true
+        description: AllowAPI controls whether the HTTP API may invoke self-updates.
+        type: boolean
+      defaultSHA256:
+        description: DefaultSHA256 optionally provides a checksum for DefaultURL.
+        type: string
+      defaultURL:
+        description: DefaultURL, when set, is used as the fallback direct download
+          source for URL based updates.
+        type: string
+      disableChecksum:
+        default: false
+        description: DisableChecksum skips checksum verification for all self-updates.
+        type: boolean
+      enableURL:
+        default: false
+        description: EnableURL controls whether URL driven self-updates are permitted.
+        type: boolean
+      repoName:
+        default: featherwings
+        description: RepoName defines the default GitHub repository name used for
+          self-updates.
+        type: string
+      repoOwner:
+        default: mythicalltd
+        description: RepoOwner defines the default GitHub repository owner used for
+          self-updates.
+        type: string
+      restartCommand:
+        default: systemctl restart featherwings
+        description: RestartCommand, when set, is executed after a successful self-update.
+        type: string
     type: object
   downloader.Download:
     properties:
@@ -377,6 +417,40 @@ definitions:
   router.RemoteDownloadAcceptedResponse:
     properties:
       identifier:
+        type: string
+    type: object
+  router.SelfUpdateRequest:
+    properties:
+      disable_checksum:
+        type: boolean
+      force:
+        type: boolean
+      repo_name:
+        type: string
+      repo_owner:
+        type: string
+      sha256:
+        type: string
+      source:
+        type: string
+      url:
+        type: string
+      version:
+        type: string
+    type: object
+  router.SelfUpdateResponse:
+    properties:
+      checksum_skipped:
+        type: boolean
+      current_version:
+        type: string
+      message:
+        type: string
+      restart_triggered:
+        type: boolean
+      source:
+        type: string
+      target_version:
         type: string
     type: object
   router.ServerArchiveRequest:
@@ -2057,6 +2131,47 @@ paths:
       security:
       - NodeToken: []
       summary: List system IP addresses
+      tags:
+      - System
+  /api/system/self-update:
+    post:
+      consumes:
+      - application/json
+      description: Triggers a Wings self-update either from GitHub or a direct URL.
+        Requires system.updates.allow_api to be enabled.
+      parameters:
+      - description: Self-update options
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/router.SelfUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Already running requested version
+          schema:
+            $ref: '#/definitions/router.SelfUpdateResponse'
+        "202":
+          description: Update accepted
+          schema:
+            $ref: '#/definitions/router.SelfUpdateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Trigger self-update
       tags:
       - System
   /api/system/utilization:

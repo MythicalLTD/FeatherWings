@@ -1884,6 +1884,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/system/self-update": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Triggers a Wings self-update either from GitHub or a direct URL. Requires system.updates.allow_api to be enabled.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Trigger self-update",
+                "parameters": [
+                    {
+                        "description": "Self-update options",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.SelfUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already running requested version",
+                        "schema": {
+                            "$ref": "#/definitions/router.SelfUpdateResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Update accepted",
+                        "schema": {
+                            "$ref": "#/definitions/router.SelfUpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/system/utilization": {
             "get": {
                 "security": [
@@ -2408,6 +2471,14 @@ const docTemplate = `{
                 "transfers": {
                     "$ref": "#/definitions/config.Transfers"
                 },
+                "updates": {
+                    "description": "Updates controls runtime update capabilities.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.UpdateConfiguration"
+                        }
+                    ]
+                },
                 "user": {
                     "description": "Definitions for the user that gets created to ensure that we can quickly access\nthis information without constantly having to do a system lookup.",
                     "type": "object",
@@ -2469,6 +2540,49 @@ const docTemplate = `{
                     "description": "DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
                     "type": "integer",
                     "default": 0
+                }
+            }
+        },
+        "config.UpdateConfiguration": {
+            "type": "object",
+            "properties": {
+                "allowAPI": {
+                    "description": "AllowAPI controls whether the HTTP API may invoke self-updates.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "defaultSHA256": {
+                    "description": "DefaultSHA256 optionally provides a checksum for DefaultURL.",
+                    "type": "string"
+                },
+                "defaultURL": {
+                    "description": "DefaultURL, when set, is used as the fallback direct download source for URL based updates.",
+                    "type": "string"
+                },
+                "disableChecksum": {
+                    "description": "DisableChecksum skips checksum verification for all self-updates.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "enableURL": {
+                    "description": "EnableURL controls whether URL driven self-updates are permitted.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "repoName": {
+                    "description": "RepoName defines the default GitHub repository name used for self-updates.",
+                    "type": "string",
+                    "default": "featherwings"
+                },
+                "repoOwner": {
+                    "description": "RepoOwner defines the default GitHub repository owner used for self-updates.",
+                    "type": "string",
+                    "default": "mythicalltd"
+                },
+                "restartCommand": {
+                    "description": "RestartCommand, when set, is executed after a successful self-update.",
+                    "type": "string",
+                    "default": "systemctl restart featherwings"
                 }
             }
         },
@@ -2627,6 +2741,58 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "identifier": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.SelfUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "disable_checksum": {
+                    "type": "boolean"
+                },
+                "force": {
+                    "type": "boolean"
+                },
+                "repo_name": {
+                    "type": "string"
+                },
+                "repo_owner": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.SelfUpdateResponse": {
+            "type": "object",
+            "properties": {
+                "checksum_skipped": {
+                    "type": "boolean"
+                },
+                "current_version": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "restart_triggered": {
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target_version": {
                     "type": "string"
                 }
             }

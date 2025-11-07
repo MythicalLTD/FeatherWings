@@ -24,6 +24,28 @@ type SystemSummaryResponse struct {
 	Version       string `json:"version"`
 }
 
+// SelfUpdateRequest defines the payload for triggering a self-update through the API.
+type SelfUpdateRequest struct {
+	Source          string `json:"source,omitempty"`
+	RepoOwner       string `json:"repo_owner,omitempty"`
+	RepoName        string `json:"repo_name,omitempty"`
+	Version         string `json:"version,omitempty"`
+	Force           bool   `json:"force,omitempty"`
+	URL             string `json:"url,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
+	DisableChecksum bool   `json:"disable_checksum,omitempty"`
+}
+
+// SelfUpdateResponse conveys the outcome of a self-update attempt.
+type SelfUpdateResponse struct {
+	Message          string `json:"message"`
+	Source           string `json:"source"`
+	CurrentVersion   string `json:"current_version"`
+	TargetVersion    string `json:"target_version,omitempty"`
+	ChecksumSkipped  bool   `json:"checksum_skipped"`
+	RestartTriggered bool   `json:"restart_triggered"`
+}
+
 // DiagnosticsUploadResponse contains the URL to an uploaded diagnostics bundle.
 type DiagnosticsUploadResponse struct {
 	URL string `json:"url"`

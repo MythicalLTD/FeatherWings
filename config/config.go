@@ -139,6 +139,33 @@ type RemoteQueryConfiguration struct {
 	CustomHeaders map[string]string `yaml:"custom_headers"`
 }
 
+// UpdateConfiguration controls how binary updates are handled.
+type UpdateConfiguration struct {
+	// EnableURL controls whether URL driven self-updates are permitted.
+	EnableURL bool `default:"false" yaml:"enable_url"`
+
+	// AllowAPI controls whether the HTTP API may invoke self-updates.
+	AllowAPI bool `default:"true" yaml:"allow_api"`
+
+	// DisableChecksum skips checksum verification for all self-updates.
+	DisableChecksum bool `default:"false" yaml:"disable_checksum"`
+
+	// RestartCommand, when set, is executed after a successful self-update.
+	RestartCommand string `default:"systemctl restart featherwings" yaml:"restart_command"`
+
+	// RepoOwner defines the default GitHub repository owner used for self-updates.
+	RepoOwner string `default:"mythicalltd" yaml:"repo_owner"`
+
+	// RepoName defines the default GitHub repository name used for self-updates.
+	RepoName string `default:"featherwings" yaml:"repo_name"`
+
+	// DefaultURL, when set, is used as the fallback direct download source for URL based updates.
+	DefaultURL string `yaml:"default_url"`
+
+	// DefaultSHA256 optionally provides a checksum for DefaultURL.
+	DefaultSHA256 string `yaml:"default_sha256"`
+}
+
 // SystemConfiguration defines basic system configuration settings.
 type SystemConfiguration struct {
 	// The root directory where all of the featherpanel data is stored at.
@@ -240,6 +267,9 @@ type SystemConfiguration struct {
 	Transfers Transfers `yaml:"transfers"`
 
 	OpenatMode string `default:"auto" yaml:"openat_mode"`
+
+	// Updates controls runtime update capabilities.
+	Updates UpdateConfiguration `yaml:"updates"`
 }
 
 type CrashDetection struct {
