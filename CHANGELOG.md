@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.4
+
+### Added
+
+* Ability to request logs from a route!
+
+### Fixed
+
+* Resolved an issue that prevented archives from being created within subdirectories due to safepath restrictions
+
 ## v1.0.3
 
 ### Fixed

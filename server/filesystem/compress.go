@@ -70,9 +70,14 @@ func (fs *Filesystem) CompressFiles(dir string, name string, paths []string, ext
 		name = fmt.Sprintf("archive-%s%s", strings.ReplaceAll(time.Now().Format(time.RFC3339), ":", ""), ext)
 	} else {
 		dirfd, _, closeFd, err := fs.unixFS.SafePath(path.Join(dir, name) + ext)
-		defer closeFd()
 		if err != nil {
+			if closeFd != nil {
+				closeFd()
+			}
 			return nil, "", err
+		}
+		if closeFd != nil {
+			defer closeFd()
 		}
 
 		name, err = fs.findCopySuffix(dirfd, name, ext)
@@ -83,31 +88,20 @@ func (fs *Filesystem) CompressFiles(dir string, name string, paths []string, ext
 
 	destPath := path.Join(dir, name)
 
-	// Normalize dir to ensure it's a clean relative path (no leading slash for SafePath)
-	cleanDir := strings.TrimPrefix(path.Clean(dir), "/")
-	
 	filesMap := make(map[string]string)
 	for _, file := range validPaths {
-		// Build the relative path from the clean dir
-		relPath := path.Join(cleanDir, file)
-		
-		// Validate the path is safe (this will error if path is outside sandbox)
-		_, _, closeFd, err := fs.unixFS.SafePath(relPath)
+		_, p, closeFd, err := fs.unixFS.SafePath(path.Join(dir, file))
+		if closeFd != nil {
+			defer closeFd()
+		}
 		if err != nil {
-			if closeFd != nil {
-				closeFd()
-			}
 			return nil, "", err
 		}
 
-		// Construct absolute path using relPath (not the name returned by SafePath,
-		// which is just the filename component)
-		absolutePath := filepath.Join(fs.Path(), relPath)
+		// Construct the absolute path on disk for reading the file
+		absolutePath := filepath.Join(fs.Path(), dir, p)
+		// Only use the bare filename inside the archive
 		filesMap[absolutePath] = file
-
-		if closeFd != nil {
-			closeFd()
-		}
 	}
 
 	ctx := context.Background()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/apex/log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/internal/diagnostics"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/installer"
 	"github.com/mythicalltd/featherwings/system"
@@ -43,6 +45,46 @@ func getSystemInformation(c *gin.Context) {
 		OS:            i.System.OSType,
 		Version:       i.Version,
 	})
+}
+
+func getDiagnostics(c *gin.Context) {
+	// Optional query params: ?include_endpoints=true&include_logs=true&log_lines=300
+
+	// Parse boolean query parameter with default
+	parseBoolQuery := func(param string, defaultVal bool) bool {
+		q := strings.ToLower(c.Query(param))
+		switch q {
+		case "true":
+			return true
+		case "false":
+			return false
+		default:
+			return defaultVal
+		}
+	}
+
+	includeEndpoints := parseBoolQuery("include_endpoints", false)
+	includeLogs := parseBoolQuery("include_logs", true)
+
+	// Parse log_lines query parameter with bounds
+	logLines := 200
+	if q := c.Query("log_lines"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil {
+			if n > 500 {
+				logLines = 500
+			} else if n > 0 {
+				logLines = n
+			}
+		}
+	}
+
+	report, err := diagnostics.GenerateDiagnosticsReport(includeEndpoints, includeLogs, logLines)
+	if err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(report))
 }
 
 // Returns list of host machine IP addresses
