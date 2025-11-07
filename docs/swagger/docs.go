@@ -2569,6 +2569,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "default": false
                 },
+                "gitHubBinaryTemplate": {
+                    "description": "GitHubBinaryTemplate defines the asset name template (supports {arch} placeholder).",
+                    "type": "string",
+                    "default": "wings_linux_{arch}"
+                },
                 "repoName": {
                     "description": "RepoName defines the default GitHub repository name used for self-updates.",
                     "type": "string",

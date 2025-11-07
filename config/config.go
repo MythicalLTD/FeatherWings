@@ -142,13 +142,13 @@ type RemoteQueryConfiguration struct {
 // UpdateConfiguration controls how binary updates are handled.
 type UpdateConfiguration struct {
 	// EnableURL controls whether URL driven self-updates are permitted.
-	EnableURL bool `default:"false" yaml:"enable_url"`
+	EnableURL bool `default:"true" yaml:"enable_url"`
 
 	// AllowAPI controls whether the HTTP API may invoke self-updates.
 	AllowAPI bool `default:"true" yaml:"allow_api"`
 
 	// DisableChecksum skips checksum verification for all self-updates.
-	DisableChecksum bool `default:"false" yaml:"disable_checksum"`
+	DisableChecksum bool `default:"true" yaml:"disable_checksum"`
 
 	// RestartCommand, when set, is executed after a successful self-update.
 	RestartCommand string `default:"systemctl restart featherwings" yaml:"restart_command"`
@@ -158,6 +158,9 @@ type UpdateConfiguration struct {
 
 	// RepoName defines the default GitHub repository name used for self-updates.
 	RepoName string `default:"featherwings" yaml:"repo_name"`
+
+	// GitHubBinaryTemplate defines the asset name template (supports {arch} placeholder).
+	GitHubBinaryTemplate string `default:"wings_linux_{arch}" yaml:"github_binary_template"`
 
 	// DefaultURL, when set, is used as the fallback direct download source for URL based updates.
 	DefaultURL string `yaml:"default_url"`

@@ -445,6 +445,12 @@ func postSystemSelfUpdate(c *gin.Context) {
 	skipChecksumURL := req.DisableChecksum
 	restartCommand := cfg.System.Updates.RestartCommand
 
+	preferredBinaryName, err := selfupdate.DetermineBinaryName(cfg.System.Updates.GitHubBinaryTemplate)
+	if err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
 	currentVersion := system.Version
 	if currentVersion == "" {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, ErrorResponse{Error: "current version is not defined"})
@@ -453,12 +459,6 @@ func postSystemSelfUpdate(c *gin.Context) {
 
 	if currentVersion == "develop" && !req.Force {
 		c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "running in development mode; set force=true to override"})
-		return
-	}
-
-	binaryName, err := selfupdate.DetermineBinaryName()
-	if err != nil {
-		middleware.CaptureAndAbort(c, err)
 		return
 	}
 
@@ -497,7 +497,7 @@ func postSystemSelfUpdate(c *gin.Context) {
 			"skip_checksum": skipChecksumURL,
 		}).Info("self-update requested via API")
 
-		if err := selfupdate.UpdateFromURL(ctx, downloadURL, binaryName, checksum, skipChecksumURL); err != nil {
+		if err := selfupdate.UpdateFromURL(ctx, downloadURL, preferredBinaryName, checksum, skipChecksumURL); err != nil {
 			if respondSelfUpdateError(c, err) {
 				return
 			}
@@ -542,16 +542,29 @@ func postSystemSelfUpdate(c *gin.Context) {
 		targetVersion = "v" + targetVersion
 	}
 
+	var releaseInfo selfupdate.ReleaseInfo
 	if targetVersion == "" {
-		var fetchErr error
-		targetVersion, fetchErr = selfupdate.FetchLatestRelease(ctx, repoOwner, repoName)
-		if fetchErr != nil {
-			if respondSelfUpdateError(c, fetchErr) {
-				return
-			}
-			middleware.CaptureAndAbort(c, fetchErr)
+		info, err := selfupdate.FetchLatestReleaseInfo(ctx, repoOwner, repoName)
+		if err != nil {
+			middleware.CaptureAndAbort(c, err)
 			return
 		}
+		releaseInfo = info
+		targetVersion = info.TagName
+		if targetVersion == "" {
+			middleware.CaptureAndAbort(c, errors.New("failed to determine latest release tag"))
+			return
+		}
+	} else {
+		info, err := selfupdate.FetchReleaseByTag(ctx, repoOwner, repoName, targetVersion)
+		if err != nil {
+			if respondSelfUpdateError(c, err) {
+				return
+			}
+			middleware.CaptureAndAbort(c, err)
+			return
+		}
+		releaseInfo = info
 	}
 
 	currentVersionTag := "v" + currentVersion
@@ -577,7 +590,8 @@ func postSystemSelfUpdate(c *gin.Context) {
 		"skip_checksum": skipChecksumGitHub,
 	}).Info("self-update requested via API")
 
-	if err := selfupdate.UpdateFromGitHub(ctx, repoOwner, repoName, targetVersion, binaryName, skipChecksumGitHub); err != nil {
+	assetName, err := selfupdate.UpdateFromGitHub(ctx, repoOwner, repoName, releaseInfo, cfg.System.Updates.GitHubBinaryTemplate, skipChecksumGitHub)
+	if err != nil {
 		if respondSelfUpdateError(c, err) {
 			return
 		}
@@ -586,7 +600,7 @@ func postSystemSelfUpdate(c *gin.Context) {
 	}
 
 	restartTriggered := queueRestartCommand(restartCommand)
-	message := "Self-update triggered from GitHub release."
+	message := fmt.Sprintf("Self-update triggered from GitHub release (asset: %s).", assetName)
 	if restartTriggered {
 		message += " Restart command queued."
 	}

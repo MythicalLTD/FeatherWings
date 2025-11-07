@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,7 +75,7 @@ func selfupdateCmdRun(_ *cobra.Command, _ []string) {
 		repoName = "featherwings"
 	}
 
-	binaryName, err := selfupdate.DetermineBinaryName()
+	preferredBinaryName, err := selfupdate.DetermineBinaryName(cfg.System.Updates.GitHubBinaryTemplate)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -83,8 +84,11 @@ func selfupdateCmdRun(_ *cobra.Command, _ []string) {
 	skipChecksumGitHub := cfg.System.Updates.DisableChecksum || updateArgs.disableChecksum
 	skipChecksumURL := updateArgs.disableChecksum
 	restartCommand := strings.TrimSpace(cfg.System.Updates.RestartCommand)
-	notifyRestart := func() {
+	notifyRestart := func(assetName string) {
 		fmt.Println("\nUpdate successful!")
+		if assetName != "" {
+			fmt.Printf("Installed asset: %s\n", filepath.Base(assetName))
+		}
 		if restartCommand != "" {
 			fmt.Printf("Executing restart command: %s\n", restartCommand)
 			restartCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -123,18 +127,24 @@ func selfupdateCmdRun(_ *cobra.Command, _ []string) {
 		}
 
 		fmt.Printf("Updating from direct URL: %s\n", downloadURL)
-		if err := selfupdate.UpdateFromURL(ctx, downloadURL, binaryName, checksum, skipChecksumURL); err != nil {
+		if err := selfupdate.UpdateFromURL(ctx, downloadURL, preferredBinaryName, checksum, skipChecksumURL); err != nil {
 			fmt.Printf("Update failed: %v\n", err)
 			return
 		}
 
-		notifyRestart()
+		notifyRestart("")
 		return
 	}
 
-	latestVersionTag, err := selfupdate.FetchLatestRelease(ctx, repoOwner, repoName)
+	releaseInfo, err := selfupdate.FetchLatestReleaseInfo(ctx, repoOwner, repoName)
 	if err != nil {
-		fmt.Printf("Failed to fetch latest version: %v\n", err)
+		fmt.Printf("Failed to fetch latest release metadata: %v\n", err)
+		return
+	}
+
+	latestVersionTag := releaseInfo.TagName
+	if latestVersionTag == "" {
+		fmt.Println("Failed to determine latest release tag.")
 		return
 	}
 
@@ -150,10 +160,11 @@ func selfupdateCmdRun(_ *cobra.Command, _ []string) {
 
 	fmt.Printf("Updating from %s to %s\n", currentVersionTag, latestVersionTag)
 
-	if err := selfupdate.UpdateFromGitHub(ctx, repoOwner, repoName, latestVersionTag, binaryName, skipChecksumGitHub); err != nil {
+	assetName, err := selfupdate.UpdateFromGitHub(ctx, repoOwner, repoName, releaseInfo, cfg.System.Updates.GitHubBinaryTemplate, skipChecksumGitHub)
+	if err != nil {
 		fmt.Printf("Update failed: %v\n", err)
 		return
 	}
 
-	notifyRestart()
+	notifyRestart(assetName)
 }

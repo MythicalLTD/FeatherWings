@@ -281,6 +281,11 @@ definitions:
         default: false
         description: EnableURL controls whether URL driven self-updates are permitted.
         type: boolean
+      gitHubBinaryTemplate:
+        default: wings_linux_{arch}
+        description: GitHubBinaryTemplate defines the asset name template (supports
+          {arch} placeholder).
+        type: string
       repoName:
         default: featherwings
         description: RepoName defines the default GitHub repository name used for
