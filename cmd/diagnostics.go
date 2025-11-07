@@ -1,17 +1,11 @@
 package cmd
 
 import (
-	"bytes"
-	"errors"
+	"context"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"net/http"
-	"net/url"
 
 	"github.com/apex/log"
 	"github.com/charmbracelet/huh"
-	"github.com/goccy/go-json"
 	"github.com/spf13/cobra"
 
 	"github.com/mythicalltd/featherwings/internal/diagnostics"
@@ -19,8 +13,7 @@ import (
 )
 
 const (
-	DefaultMclogsAPIURL = "https://api.mclo.gs/1/log"
-	DefaultLogLines     = 200
+	DefaultLogLines = 200
 )
 
 var diagnosticsArgs struct {
@@ -42,7 +35,7 @@ func newDiagnosticsCommand() *cobra.Command {
 		Run: diagnosticsCmdRun,
 	}
 
-	command.Flags().StringVar(&diagnosticsArgs.MclogsURL, "mclogs-api-url", DefaultMclogsAPIURL, "the mclo.gs API endpoint to use for uploads")
+	command.Flags().StringVar(&diagnosticsArgs.MclogsURL, "mclogs-api-url", diagnostics.DefaultMclogsAPIURL, "the mclo.gs API endpoint to use for uploads")
 	command.Flags().IntVar(&diagnosticsArgs.LogLines, "log-lines", DefaultLogLines, "the number of log lines to include in the report")
 
 	return command
@@ -107,65 +100,11 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 		}
 	}
 
-	u, err := uploadToMclogs(diagnosticsArgs.MclogsURL, report)
-	if err == nil {
-		fmt.Println("Your report is available here: ", u)
-	}
-}
-
-type mclogsUploadResponse struct {
-	Success bool   `json:"success"`
-	ID      string `json:"id"`
-	URL     string `json:"url"`
-	Raw     string `json:"raw"`
-	Error   string `json:"error"`
-}
-
-func uploadToMclogs(apiURL, content string) (string, error) {
-	u, err := url.Parse(apiURL)
+	u, err := diagnostics.UploadReport(context.Background(), diagnosticsArgs.MclogsURL, report)
 	if err != nil {
-		return "", err
+		fmt.Println("Failed to upload report:", err)
+		return
 	}
 
-	formData := new(bytes.Buffer)
-	formWriter := multipart.NewWriter(formData)
-	formWriter.WriteField("content", content)
-	formWriter.Close()
-
-	res, err := http.Post(u.String(), formWriter.FormDataContentType(), formData)
-	if err != nil {
-		fmt.Println("Failed to upload report to", u.String(), err)
-		return "", err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		fmt.Println("Failed to parse response.", err)
-		return "", err
-	}
-
-	if res.StatusCode != http.StatusOK {
-		fmt.Println("Failed to upload report to", u.String(), "status:", res.Status)
-		fmt.Println(string(body))
-		return "", fmt.Errorf("upload failed with status %s", res.Status)
-	}
-
-	var uploadResponse mclogsUploadResponse
-	if err := json.Unmarshal(body, &uploadResponse); err != nil {
-		fmt.Println("Failed to decode response.", err)
-		return "", err
-	}
-
-	if !uploadResponse.Success {
-		if uploadResponse.Error != "" {
-			return "", errors.New(uploadResponse.Error)
-		}
-		return "", errors.New("mclogs upload failed")
-	}
-
-	if uploadResponse.URL == "" {
-		return "", errors.New("mclogs response missing URL")
-	}
-
-	return uploadResponse.URL, nil
+	fmt.Println("Your report is available here: ", u)
 }

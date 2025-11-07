@@ -17,17 +17,22 @@ import (
 	"github.com/mythicalltd/featherwings/server/backup"
 )
 
-// postServerBackup performs a backup against a given server instance using the
-// provided backup adapter.
+// postServerBackup performs a backup against a given server instance using the provided backup adapter.
+// @Summary Create server backup
+// @Tags Backups
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerBackupCreateRequest true "Backup request"
+// @Success 202 {string} string "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/backup [post]
 func postServerBackup(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	client := middleware.ExtractApiClient(c)
 	logger := middleware.ExtractLogger(c)
-	var data struct {
-		Adapter backup.AdapterType `json:"adapter"`
-		Uuid    string             `json:"uuid"`
-		Ignore  string             `json:"ignore"`
-	}
+	var data ServerBackupCreateRequest
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
@@ -35,9 +40,9 @@ func postServerBackup(c *gin.Context) {
 	var adapter backup.BackupInterface
 	switch data.Adapter {
 	case backup.LocalBackupAdapter:
-		adapter = backup.NewLocal(client, data.Uuid, s.ID(), data.Ignore)
+		adapter = backup.NewLocal(client, data.UUID, s.ID(), data.Ignore)
 	case backup.S3BackupAdapter:
-		adapter = backup.NewS3(client, data.Uuid, s.ID(), data.Ignore)
+		adapter = backup.NewS3(client, data.UUID, s.ID(), data.Ignore)
 	default:
 		middleware.CaptureAndAbort(c, errors.New("router/backups: provided adapter is not valid: "+string(data.Adapter)))
 		return
@@ -59,31 +64,28 @@ func postServerBackup(c *gin.Context) {
 	c.Status(http.StatusAccepted)
 }
 
-// postServerRestoreBackup handles restoring a backup for a server by downloading
-// or finding the given backup on the system and then unpacking the archive into
-// the server's data directory. If the TruncateDirectory field is provided and
-// is true all of the files will be deleted for the server.
-//
-// This endpoint will block until the backup is fully restored allowing for a
-// spinner to be displayed in the Panel UI effectively.
-//
-// TODO: stop the server if it is running
+// postServerRestoreBackup restores a backup for a server, either from local disk or remote storage.
+// @Summary Restore server backup
+// @Tags Backups
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param backup path string true "Backup identifier"
+// @Param payload body ServerBackupRestoreRequest true "Restore request"
+// @Success 202 {string} string "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/backup/{backup}/restore [post]
 func postServerRestoreBackup(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	client := middleware.ExtractApiClient(c)
 	logger := middleware.ExtractLogger(c)
 
-	var data struct {
-		Adapter           backup.AdapterType `binding:"required,oneof=wings s3" json:"adapter"`
-		TruncateDirectory bool               `json:"truncate_directory"`
-		// A UUID is always required for this endpoint, however the download URL
-		// is only present when the given adapter type is s3.
-		DownloadUrl string `json:"download_url"`
-	}
+	var data ServerBackupRestoreRequest
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
-	if data.Adapter == backup.S3BackupAdapter && data.DownloadUrl == "" {
+	if data.Adapter == backup.S3BackupAdapter && data.DownloadURL == "" {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "The download_url field is required when the backup adapter is set to S3."})
 		return
 	}
@@ -140,7 +142,7 @@ func postServerRestoreBackup(c *gin.Context) {
 	//
 	// For now I'm just using the server context so at least the request is canceled if
 	// the server gets deleted.
-	req, err := http.NewRequestWithContext(s.Context(), http.MethodGet, data.DownloadUrl, nil)
+	req, err := http.NewRequestWithContext(s.Context(), http.MethodGet, data.DownloadURL, nil)
 	if err != nil {
 		middleware.CaptureAndAbort(c, err)
 		return
@@ -174,10 +176,16 @@ func postServerRestoreBackup(c *gin.Context) {
 	c.Status(http.StatusAccepted)
 }
 
-// deleteServerBackup deletes a local backup of a server. If the backup is not
-// found on the machine just return a 404 error. The service calling this
-// endpoint can make its own decisions as to how it wants to handle that
-// response.
+// deleteServerBackup deletes a local backup of a server.
+// @Summary Delete server backup
+// @Tags Backups
+// @Param server path string true "Server identifier"
+// @Param backup path string true "Backup identifier"
+// @Success 204 "No Content"
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/backup/{backup} [delete]
 func deleteServerBackup(c *gin.Context) {
 	b, _, err := backup.LocateLocal(middleware.ExtractApiClient(c), c.Param("backup"), middleware.ExtractServer(c).ID())
 	if err != nil {
@@ -201,8 +209,15 @@ func deleteServerBackup(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// getServerBackups lists local backups for the specified server by inspecting the
-// server's backup directory on disk and returning metadata for any .tar.gz files.
+// getServerBackups lists local backups for the specified server.
+// @Summary List server backups
+// @Tags Backups
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Success 200 {object} ServerBackupListResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/backup [get]
 func getServerBackups(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 
@@ -212,13 +227,13 @@ func getServerBackups(c *gin.Context) {
 	// If the dir does not exist, return empty list
 	if st, err := os.Stat(base); err != nil {
 		if os.IsNotExist(err) {
-			c.JSON(http.StatusOK, gin.H{"data": []gin.H{}})
+			c.JSON(http.StatusOK, ServerBackupListResponse{Data: []ServerBackupDescriptor{}})
 			return
 		}
 		middleware.CaptureAndAbort(c, err)
 		return
 	} else if !st.IsDir() {
-		c.JSON(http.StatusOK, gin.H{"data": []gin.H{}})
+		c.JSON(http.StatusOK, ServerBackupListResponse{Data: []ServerBackupDescriptor{}})
 		return
 	}
 
@@ -228,7 +243,7 @@ func getServerBackups(c *gin.Context) {
 		return
 	}
 
-	out := make([]gin.H, 0, len(entries))
+	out := make([]ServerBackupDescriptor, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -243,14 +258,14 @@ func getServerBackups(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		out = append(out, gin.H{
-			"uuid":       uuid,
-			"name":       name,
-			"size":       info.Size(),
-			"created_at": info.ModTime().Format(time.RFC3339),
-			"path":       filepath.Join(base, name),
+		out = append(out, ServerBackupDescriptor{
+			UUID:      uuid,
+			Name:      name,
+			Size:      info.Size(),
+			CreatedAt: info.ModTime().Format(time.RFC3339),
+			Path:      filepath.Join(base, name),
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": out})
+	c.JSON(http.StatusOK, ServerBackupListResponse{Data: out})
 }

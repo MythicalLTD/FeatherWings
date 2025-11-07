@@ -12,20 +12,23 @@ import (
 	"github.com/mythicalltd/featherwings/environment"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
-	"github.com/mythicalltd/featherwings/server/installer"
 	"github.com/mythicalltd/featherwings/server/transfer"
 )
 
-// Data passed over to initiate a server transfer.
-type serverTransferRequest struct {
-	URL    string                  `binding:"required" json:"url"`
-	Token  string                  `binding:"required" json:"token"`
-	Server installer.ServerDetails `json:"server"`
-}
-
 // postServerTransfer handles the start of a transfer for a server.
+// @Summary Initiate server transfer
+// @Tags Transfers
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerTransferRequest true "Transfer request"
+// @Success 202 {string} string "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/transfer [post]
 func postServerTransfer(c *gin.Context) {
-	var data serverTransferRequest
+	var data ServerTransferRequest
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
@@ -106,6 +109,13 @@ func postServerTransfer(c *gin.Context) {
 }
 
 // deleteServerTransfer cancels an outgoing transfer for a server.
+// @Summary Cancel server transfer
+// @Tags Transfers
+// @Param server path string true "Server identifier"
+// @Success 202 {string} string "Accepted"
+// @Failure 409 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/transfer [delete]
 func deleteServerTransfer(c *gin.Context) {
 	s := ExtractServer(c)
 

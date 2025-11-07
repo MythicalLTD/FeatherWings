@@ -81,6 +81,9 @@ type ApiConfiguration struct {
 	// The port that the internal webserver should bind to.
 	Port int `default:"8080" yaml:"port"`
 
+	// Docs controls whether the auto-generated Swagger/OpenAPI documentation is served.
+	Docs DocsConfiguration `yaml:"docs"`
+
 	// SSL configuration for the daemon.
 	Ssl struct {
 		Enabled         bool   `json:"enabled" yaml:"enabled"`
@@ -103,6 +106,10 @@ type ApiConfiguration struct {
 	// API calls to the Panel. This is useful for development environments with self-signed
 	// certificates. The command line flag --ignore-certificate-errors takes precedence.
 	IgnoreCertificateErrors bool `json:"ignore_certificate_errors" yaml:"ignore_certificate_errors"`
+}
+
+type DocsConfiguration struct {
+	Enabled bool `default:"true" yaml:"enabled"`
 }
 
 // RemoteQueryConfiguration defines the configuration settings for remote requests

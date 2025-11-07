@@ -20,7 +20,16 @@ var expectedCloseCodes = []int{
 	ws.CloseServiceRestart,
 }
 
-// Upgrades a connection to a websocket and passes events along between.
+// getServerWebsocket upgrades a connection to a websocket and proxies console events.
+// @Summary Connect to server websocket
+// @Tags Servers
+// @Param server path string true "Server identifier"
+// @Param token query string true "Signed websocket token"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ServerJWT
+// @Router /api/servers/{server}/ws [get]
 func getServerWebsocket(c *gin.Context) {
 	manager := middleware.ExtractManager(c)
 	s, _ := manager.Get(c.Param("server"))

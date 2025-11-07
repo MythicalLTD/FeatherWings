@@ -7,19 +7,30 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
 	"github.com/mythicalltd/featherwings/config"
-	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/internal/diagnostics"
+	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/installer"
 	"github.com/mythicalltd/featherwings/system"
 )
 
-// Returns information about the system that wings is running on.
+// getSystemInformation returns information about the system that wings is running on.
+// @Summary Get system information
+// @Description Returns hardware and software information about the node. Provide `v=2` to receive the full payload used by the panel.
+// @Tags System
+// @Produce json
+// @Param v query string false "Response version" Enums(2)
+// @Success 200 {object} router.SystemSummaryResponse "Default response"
+// @Success 200 {object} system.Information "Extended response when v=2"
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system [get]
 func getSystemInformation(c *gin.Context) {
 	i, err := system.GetSystemInformation()
 	if err != nil {
@@ -47,6 +58,21 @@ func getSystemInformation(c *gin.Context) {
 	})
 }
 
+// getDiagnostics returns diagnostic output to help debug the daemon.
+// @Summary Generate diagnostics bundle
+// @Description Returns plain-text diagnostics output by default. Use include_endpoints to append HTTP endpoint metadata and include_logs to attach recent logs. Provide format=url to upload the report and receive a shortened URL instead of the raw content.
+// @Tags System
+// @Produce text/plain
+// @Produce json
+// @Param include_endpoints query bool false "Include endpoint metadata"
+// @Param include_logs query bool false "Include daemon logs"
+// @Param log_lines query int false "Number of log lines" minimum(1) maximum(500)
+// @Param format query string false "Response format" Enums(text,url)
+// @Param upload_api_url query string false "Override upload endpoint when format=url"
+// @Success 200 {string} string "Plain-text diagnostics report. When format=url the response type is application/json with payload {\"url\":\"...\"}."
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/diagnostics [get]
 func getDiagnostics(c *gin.Context) {
 	// Optional query params: ?include_endpoints=true&include_logs=true&log_lines=300
 
@@ -84,10 +110,40 @@ func getDiagnostics(c *gin.Context) {
 		return
 	}
 
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(report))
+	responseFormat := strings.ToLower(c.DefaultQuery("format", "text"))
+	switch responseFormat {
+	case "", "text", "raw":
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(report))
+	case "url":
+		uploadAPIURL := c.DefaultQuery("upload_api_url", diagnostics.DefaultMclogsAPIURL)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		defer cancel()
+
+		diagnosticsURL, err := diagnostics.UploadReport(ctx, uploadAPIURL, report)
+		if err != nil {
+			if errors.Is(err, diagnostics.ErrMissingUploadAPIURL) || errors.Is(err, diagnostics.ErrInvalidUploadAPIURL) {
+				c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+				return
+			}
+
+			middleware.CaptureAndAbort(c, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, DiagnosticsUploadResponse{URL: diagnosticsURL})
+	default:
+		c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: "format must be either 'text' or 'url'"})
+	}
 }
 
-// Returns list of host machine IP addresses
+// getSystemIps returns list of host machine IP addresses.
+// @Summary List system IP addresses
+// @Tags System
+// @Produce json
+// @Success 200 {object} system.IpAddresses
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system/ips [get]
 func getSystemIps(c *gin.Context) {
 	interfaces, err := system.GetSystemIps()
 	if err != nil {
@@ -108,7 +164,14 @@ func getSystemIps(c *gin.Context) {
 	c.JSON(http.StatusOK, &system.IpAddresses{IpAddresses: interfaces})
 }
 
-// Returns resource utilization info for the system wings is running on.
+// getSystemUtilization returns resource utilization info for the system wings is running on.
+// @Summary Get system utilization
+// @Tags System
+// @Produce json
+// @Success 200 {object} system.Utilization
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system/utilization [get]
 func getSystemUtilization(c *gin.Context) {
 	cfg := config.Get()
 	u, err := system.GetSystemUtilization(
@@ -126,7 +189,14 @@ func getSystemUtilization(c *gin.Context) {
 	c.JSON(http.StatusOK, u)
 }
 
-// Returns docker disk utilization
+// getDockerDiskUsage returns docker disk utilization.
+// @Summary Get Docker disk usage
+// @Tags System
+// @Produce json
+// @Success 200 {object} system.DockerDiskUsage
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system/docker/disk [get]
 func getDockerDiskUsage(c *gin.Context) {
 	d, err := system.GetDockerDiskUsage(c)
 	if err != nil {
@@ -136,7 +206,14 @@ func getDockerDiskUsage(c *gin.Context) {
 	c.JSON(http.StatusOK, d)
 }
 
-// Prunes the docker image cache
+// pruneDockerImages prunes the docker image cache.
+// @Summary Prune Docker images
+// @Tags System
+// @Produce json
+// @Success 200 {object} DockerPruneReport
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/system/docker/image/prune [delete]
 func pruneDockerImages(c *gin.Context) {
 	p, err := system.PruneDockerImages(c)
 	if err != nil {
@@ -146,8 +223,14 @@ func pruneDockerImages(c *gin.Context) {
 	c.JSON(http.StatusOK, p)
 }
 
-// Returns all the servers that are registered and configured correctly on
-// this wings instance.
+// getAllServers returns all servers registered and configured on this wings instance.
+// @Summary List servers
+// @Tags Servers
+// @Produce json
+// @Success 200 {array} server.APIResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers [get]
 func getAllServers(c *gin.Context) {
 	servers := middleware.ExtractManager(c).All()
 	out := make([]server.APIResponse, len(servers), len(servers))
@@ -157,8 +240,18 @@ func getAllServers(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// Creates a new server on the wings daemon and begins the installation process
-// for it.
+// postCreateServer creates a new server on the wings daemon and begins the installation process for it.
+// @Summary Create server
+// @Tags Servers
+// @Accept json
+// @Produce json
+// @Param server body installer.ServerDetails true "Server configuration"
+// @Success 202 {string} string "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers [post]
 func postCreateServer(c *gin.Context) {
 	manager := middleware.ExtractManager(c)
 
@@ -219,7 +312,17 @@ type postUpdateConfigurationResponse struct {
 	Applied bool `json:"applied"`
 }
 
-// Updates the running configuration for this Wings instance.
+// postUpdateConfiguration updates the running configuration for this Wings instance.
+// @Summary Update runtime configuration
+// @Tags System
+// @Accept json
+// @Produce json
+// @Param config body config.Configuration true "Updated configuration"
+// @Success 200 {object} postUpdateConfigurationResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/update [post]
 func postUpdateConfiguration(c *gin.Context) {
 	cfg := config.Get()
 

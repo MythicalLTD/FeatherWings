@@ -1,0 +1,3357 @@
+{
+    "schemes": [
+        "https",
+        "http"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "API documentation for the FeatherWings daemon.",
+        "title": "FeatherWings API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/diagnostics": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Returns plain-text diagnostics output by default. Use include_endpoints to append HTTP endpoint metadata and include_logs to attach recent logs. Provide format=url to upload the report and receive a shortened URL instead of the raw content.",
+                "produces": [
+                    "text/plain",
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Generate diagnostics bundle",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Include endpoint metadata",
+                        "name": "include_endpoints",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include daemon logs",
+                        "name": "include_logs",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 500,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Number of log lines",
+                        "name": "log_lines",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "text",
+                            "url"
+                        ],
+                        "type": "string",
+                        "description": "Response format",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Override upload endpoint when format=url",
+                        "name": "upload_api_url",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Plain-text diagnostics report. When format=url the response type is application/json with payload {\\\"url\\\":\\\"...\\\"}.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "List servers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/server.APIResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Create server",
+                "parameters": [
+                    {
+                        "description": "Server configuration",
+                        "name": "server",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/installer.ServerDetails"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Get server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/server.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Delete server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/backup": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "List server backups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerBackupListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Create server backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Backup request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerBackupCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/backup/{backup}": {
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Delete server backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Backup identifier",
+                        "name": "backup",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/backup/{backup}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Restore server backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Backup identifier",
+                        "name": "backup",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Restore request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerBackupRestoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/commands": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Send console commands",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Commands",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerCommandsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/deleteAllBackups": {
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Delete all server backups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/chmod": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Change file permissions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Chmod request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerChmodRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/compress": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Compress files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Archive request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerArchiveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/filesystem.Stat"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/contents": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "text/plain",
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Read file contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File path",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Force download",
+                        "name": "download",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/copy": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Copy file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Copy request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerCopyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/create-directory": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Create directory",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Directory request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerCreateDirectoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/decompress": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Decompress archive",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decompression request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerDecompressRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/delete": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Delete files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Delete request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/list-directory": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "List directory contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory path",
+                        "name": "directory",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/filesystem.Stat"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/pull": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "List remote downloads",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerPullStatusResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Pull remote file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Remote pull request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerPullRemoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/filesystem.Stat"
+                        }
+                    },
+                    "202": {
+                        "description": "Background download",
+                        "schema": {
+                            "$ref": "#/definitions/router.RemoteDownloadAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/pull/{download}": {
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Cancel remote download",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Download identifier",
+                        "name": "download",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/rename": {
+            "put": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Rename files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Rename operations",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerRenameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/search": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Search server files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory path",
+                        "name": "directory",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search pattern",
+                        "name": "pattern",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/filesystem.Stat"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/files/write": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Files"
+                ],
+                "summary": "Write file contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File path",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Content length",
+                        "name": "Content-Length",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/install": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Trigger server install",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/install-logs": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Retrieve server install logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerInstallLogResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Tail server logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Number of lines",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerLogResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/power": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Execute server power action",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Power action",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerPowerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/reinstall": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Reinstall server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/sync": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Sync server state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/transfer": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transfers"
+                ],
+                "summary": "Initiate server transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Transfer request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerTransferRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Transfers"
+                ],
+                "summary": "Cancel server transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/ws": {
+            "get": {
+                "security": [
+                    {
+                        "ServerJWT": []
+                    }
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Connect to server websocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Signed websocket token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/ws/deny": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Invalidate websocket tokens",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tokens",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ServerDenyTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Returns hardware and software information about the node. Provide `v=2` to receive the full payload used by the panel.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get system information",
+                "parameters": [
+                    {
+                        "enum": [
+                            "2"
+                        ],
+                        "type": "string",
+                        "description": "Response version",
+                        "name": "v",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Extended response when v=2",
+                        "schema": {
+                            "$ref": "#/definitions/system.Information"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system/docker/disk": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get Docker disk usage",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/system.DockerDiskUsage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system/docker/image/prune": {
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Prune Docker images",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.DockerPruneReport"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system/ips": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "List system IP addresses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/system.IpAddresses"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/system/utilization": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get system utilization",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/system.Utilization"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transfers": {
+            "post": {
+                "security": [
+                    {
+                        "ServerJWT": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "Transfers"
+                ],
+                "summary": "Receive server transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Server archive",
+                        "name": "archive",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SHA-256 checksum",
+                        "name": "checksum",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transfers/{server}": {
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "tags": [
+                    "Transfers"
+                ],
+                "summary": "Cancel incoming transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/update": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Update runtime configuration",
+                "parameters": [
+                    {
+                        "description": "Updated configuration",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.Configuration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.postUpdateConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/download/backup": {
+            "get": {
+                "security": [
+                    {
+                        "ServerJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Downloads"
+                ],
+                "summary": "Download server backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Signed backup token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/download/file": {
+            "get": {
+                "security": [
+                    {
+                        "ServerJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Downloads"
+                ],
+                "summary": "Download server file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Signed file token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/upload/file": {
+            "post": {
+                "security": [
+                    {
+                        "ServerJWT": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "Uploads"
+                ],
+                "summary": "Upload files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Signed upload token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target directory",
+                        "name": "directory",
+                        "in": "query"
+                    },
+                    {
+                        "type": "file",
+                        "description": "Files",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "backup.AdapterType": {
+            "type": "string",
+            "enum": [
+                "wings",
+                "s3"
+            ],
+            "x-enum-varnames": [
+                "LocalBackupAdapter",
+                "S3BackupAdapter"
+            ]
+        },
+        "config.ApiConfiguration": {
+            "type": "object",
+            "properties": {
+                "docs": {
+                    "description": "Docs controls whether the auto-generated Swagger/OpenAPI documentation is served.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.DocsConfiguration"
+                        }
+                    ]
+                },
+                "host": {
+                    "description": "The interface that the internal webserver should bind to.",
+                    "type": "string",
+                    "default": "0.0.0.0"
+                },
+                "ignore_certificate_errors": {
+                    "description": "If set to true, TLS certificate verification errors will be ignored when making\nAPI calls to the Panel. This is useful for development environments with self-signed\ncertificates. The command line flag --ignore-certificate-errors takes precedence.",
+                    "type": "boolean"
+                },
+                "port": {
+                    "description": "The port that the internal webserver should bind to.",
+                    "type": "integer",
+                    "default": 8080
+                },
+                "ssl": {
+                    "description": "SSL configuration for the daemon.",
+                    "type": "object",
+                    "properties": {
+                        "cert": {
+                            "type": "string"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "key": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "trusted_proxies": {
+                    "description": "A list of IP address of proxies that may send a X-Forwarded-For header to set the true clients IP",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "upload_limit": {
+                    "description": "The maximum size for files uploaded through the Panel in MiB.",
+                    "type": "integer",
+                    "default": 100
+                }
+            }
+        },
+        "config.Backups": {
+            "type": "object",
+            "properties": {
+                "compressionLevel": {
+                    "description": "CompressionLevel determines how much backups created by wings should be compressed.\n\n\"none\" -\u003e no compression will be applied\n\"best_speed\" -\u003e uses gzip level 1 for fast speed\n\"best_compression\" -\u003e uses gzip level 9 for minimal disk space useage\n\nDefaults to \"best_speed\" (level 1)",
+                    "type": "string",
+                    "default": "best_speed"
+                },
+                "removeBackupsOnServerDelete": {
+                    "description": "RemoveBackupsOnServerDelete deletes backups associated with a server when the server is deleted",
+                    "type": "boolean",
+                    "default": true
+                },
+                "writeLimit": {
+                    "description": "WriteLimit imposes a Disk I/O write limit on backups to the disk, this affects all\nbackup drivers as the archiver must first write the file to the disk in order to\nupload it to any external storage provider.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
+                    "type": "integer",
+                    "default": 0
+                }
+            }
+        },
+        "config.Configuration": {
+            "type": "object"
+        },
+        "config.CrashDetection": {
+            "type": "object",
+            "properties": {
+                "crashDetectionEnabled": {
+                    "description": "CrashDetectionEnabled sets if crash detection is enabled globally for all servers on this node.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "detectCleanExitAsCrash": {
+                    "description": "Determines if Wings should detect a server that stops with a normal exit code of\n\"0\" as being crashed if the process stopped without any Wings interaction. E.g.\nthe user did not press the stop button, but the process stopped cleanly.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "timeout": {
+                    "description": "Timeout specifies the timeout between crashes that will not cause the server\nto be automatically restarted, this value is used to prevent servers from\nbecoming stuck in a boot-loop after multiple consecutive crashes.",
+                    "type": "integer",
+                    "default": 60
+                }
+            }
+        },
+        "config.DocsConfiguration": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        },
+        "config.SftpConfiguration": {
+            "type": "object",
+            "properties": {
+                "bind_address": {
+                    "description": "The bind address of the SFTP server.",
+                    "type": "string",
+                    "default": "0.0.0.0"
+                },
+                "bind_port": {
+                    "description": "The bind port of the SFTP server.",
+                    "type": "integer",
+                    "default": 2022
+                },
+                "readOnly": {
+                    "description": "If set to true, no write actions will be allowed on the SFTP server.",
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        },
+        "config.SystemConfiguration": {
+            "type": "object",
+            "properties": {
+                "activitySendCount": {
+                    "description": "ActivitySendCount is the number of activity events to send per batch.",
+                    "type": "integer",
+                    "default": 100
+                },
+                "activitySendInterval": {
+                    "description": "ActivitySendInterval is the amount of time that should ellapse between aggregated server activity\nbeing sent to the Panel. By default this will send activity collected over the last minute. Keep\nin mind that only a fixed number of activity log entries, defined by ActivitySendCount, will be sent\nin each run.",
+                    "type": "integer",
+                    "default": 60
+                },
+                "backups": {
+                    "$ref": "#/definitions/config.Backups"
+                },
+                "checkPermissionsOnBoot": {
+                    "description": "If set to true, file permissions for a server will be checked when the process is\nbooted. This can cause boot delays if the server has a large amount of files. In most\ncases disabling this should not have any major impact unless external processes are\nfrequently modifying a servers' files.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "crashActivityLogLines": {
+                    "description": "The ammount of lines the activity logs should log on server crash",
+                    "type": "integer",
+                    "default": 2
+                },
+                "crashDetection": {
+                    "$ref": "#/definitions/config.CrashDetection"
+                },
+                "diskCheckInterval": {
+                    "description": "The amount of time in seconds that can elapse before a server's disk space calculation is\nconsidered stale and a re-check should occur. DANGER: setting this value too low can seriously\nimpact system performance and cause massive I/O bottlenecks and high CPU usage for the Wings\nprocess.\n\nSet to 0 to disable disk checking entirely. This will always return 0 for the disk space used\nby a server and should only be set in extreme scenarios where performance is critical and\ndisk usage is not a concern.",
+                    "type": "integer",
+                    "default": 150
+                },
+                "enableLogRotate": {
+                    "description": "If set to false Wings will not attempt to write a log rotate configuration to the disk\nwhen it boots and one is not detected.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "openatMode": {
+                    "type": "string",
+                    "default": "auto"
+                },
+                "sftp": {
+                    "$ref": "#/definitions/config.SftpConfiguration"
+                },
+                "timezone": {
+                    "description": "The timezone for this Wings instance. This is detected by Wings automatically if possible,\nand falls back to UTC if not able to be detected. If you need to set this manually, that\ncan also be done.\n\nThis timezone value is passed into all containers created by Wings.",
+                    "type": "string"
+                },
+                "transfers": {
+                    "$ref": "#/definitions/config.Transfers"
+                },
+                "user": {
+                    "description": "Definitions for the user that gets created to ensure that we can quickly access\nthis information without constantly having to do a system lookup.",
+                    "type": "object",
+                    "properties": {
+                        "gid": {
+                            "type": "integer"
+                        },
+                        "mount_passwd": {
+                            "description": "Passwd controls weather a passwd file is mounted in the container\nat /etc/passwd to resolve missing user issues",
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "passwd_file": {
+                            "type": "string",
+                            "default": "/etc/featherpanel/passwd"
+                        },
+                        "rootless": {
+                            "description": "Rootless controls settings related to rootless container daemons.",
+                            "type": "object",
+                            "properties": {
+                                "containerGID": {
+                                    "description": "ContainerGID controls the GID of the user inside the container.\nThis should likely be set to 0 so the container runs as the user\nrunning Wings.",
+                                    "type": "integer",
+                                    "default": 0
+                                },
+                                "containerUID": {
+                                    "description": "ContainerUID controls the UID of the user inside the container.\nThis should likely be set to 0 so the container runs as the user\nrunning Wings.",
+                                    "type": "integer",
+                                    "default": 0
+                                },
+                                "enabled": {
+                                    "description": "Enabled controls whether rootless containers are enabled.",
+                                    "type": "boolean",
+                                    "default": false
+                                }
+                            }
+                        },
+                        "uid": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "username": {
+                    "description": "The user that should own all of the server files, and be used for containers.",
+                    "type": "string",
+                    "default": "featherpanel"
+                },
+                "websocketLogCount": {
+                    "description": "The number of lines to send when a server connects to the websocket.",
+                    "type": "integer",
+                    "default": 150
+                }
+            }
+        },
+        "config.Transfers": {
+            "type": "object",
+            "properties": {
+                "downloadLimit": {
+                    "description": "DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
+                    "type": "integer",
+                    "default": 0
+                }
+            }
+        },
+        "downloader.Download": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                }
+            }
+        },
+        "environment.Allocations": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "description": "Defines the default allocation that should be used for this server. This is\nwhat will be used for {SERVER_IP} and {SERVER_PORT} when modifying configuration\nfiles or the startup arguments for a server.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/environment.DefaultAllocationMapping"
+                        }
+                    ]
+                },
+                "force_outgoing_ip": {
+                    "description": "ForceOutgoingIP causes a dedicated bridge network to be created for the\nserver with a special option, causing Docker to SNAT outgoing traffic to\nthe DefaultMapping's IP. This is important to servers which rely on external\nservices that check the IP of the server (Source Engine servers, for example).",
+                    "type": "boolean"
+                },
+                "mappings": {
+                    "description": "Mappings contains all the ports that should be assigned to a given server\nattached to the IP they correspond to.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        },
+        "environment.DefaultAllocationMapping": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "environment.Limits": {
+            "type": "object",
+            "properties": {
+                "cpu_limit": {
+                    "description": "The percentage of CPU that this instance is allowed to consume relative to\nthe host. A value of 200% represents complete utilization of two cores. This\nshould be a value between 1 and THREAD_COUNT * 100.",
+                    "type": "integer"
+                },
+                "disk_space": {
+                    "description": "The amount of disk space in mebibytes that a server is allowed to use.",
+                    "type": "integer"
+                },
+                "io_weight": {
+                    "description": "The relative weight for IO operations in a container. This is relative to other\ncontainers on the system and should be a value between 10 and 1000.",
+                    "type": "integer"
+                },
+                "memory_limit": {
+                    "description": "The total amount of memory in mebibytes that this server is allowed to\nuse on the host system.",
+                    "type": "integer"
+                },
+                "oom_killer": {
+                    "type": "boolean"
+                },
+                "swap": {
+                    "description": "The amount of additional swap space to be provided to a container instance.",
+                    "type": "integer"
+                },
+                "threads": {
+                    "description": "Sets which CPU threads can be used by the docker instance.",
+                    "type": "string"
+                }
+            }
+        },
+        "environment.NetworkStats": {
+            "type": "object",
+            "properties": {
+                "rx_bytes": {
+                    "type": "integer"
+                },
+                "tx_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "environment.Variables": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "filesystem.Stat": {
+            "type": "object",
+            "properties": {
+                "mimetype": {
+                    "type": "string"
+                },
+                "ufs.FileInfo": {}
+            }
+        },
+        "image.DeleteResponse": {
+            "type": "object",
+            "properties": {
+                "Deleted": {
+                    "description": "The image ID of an image that was deleted",
+                    "type": "string"
+                },
+                "Untagged": {
+                    "description": "The image ID of an image that was untagged",
+                    "type": "string"
+                }
+            }
+        },
+        "installer.ServerDetails": {
+            "type": "object",
+            "properties": {
+                "start_on_completion": {
+                    "type": "boolean"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.DockerPruneReport": {
+            "type": "object",
+            "properties": {
+                "imagesDeleted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/image.DeleteResponse"
+                    }
+                },
+                "spaceReclaimed": {
+                    "type": "integer"
+                }
+            }
+        },
+        "router.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.RemoteDownloadAcceptedResponse": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerArchiveRequest": {
+            "type": "object",
+            "properties": {
+                "extension": {
+                    "type": "string"
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerBackupCreateRequest": {
+            "type": "object",
+            "required": [
+                "adapter",
+                "uuid"
+            ],
+            "properties": {
+                "adapter": {
+                    "enum": [
+                        "wings",
+                        "s3"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backup.AdapterType"
+                        }
+                    ]
+                },
+                "ignore": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerBackupDescriptor": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerBackupListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ServerBackupDescriptor"
+                    }
+                }
+            }
+        },
+        "router.ServerBackupRestoreRequest": {
+            "type": "object",
+            "required": [
+                "adapter"
+            ],
+            "properties": {
+                "adapter": {
+                    "enum": [
+                        "wings",
+                        "s3"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backup.AdapterType"
+                        }
+                    ]
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "truncate_directory": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "router.ServerChmodFile": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerChmodRequest": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ServerChmodFile"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerCommandsRequest": {
+            "type": "object",
+            "properties": {
+                "commands": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "router.ServerCopyRequest": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerCreateDirectoryRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerDecompressRequest": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerDenyTokenRequest": {
+            "type": "object",
+            "properties": {
+                "jtis": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "router.ServerInstallLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "router.ServerPowerRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "wait_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "router.ServerPullRemoteRequest": {
+            "type": "object",
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "directory": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "foreground": {
+                    "type": "boolean"
+                },
+                "root": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "use_header": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "router.ServerPullStatusResponse": {
+            "type": "object",
+            "properties": {
+                "downloads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/downloader.Download"
+                    }
+                }
+            }
+        },
+        "router.ServerRenameEntry": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerRenameRequest": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ServerRenameEntry"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ServerTransferRequest": {
+            "type": "object",
+            "required": [
+                "token",
+                "url"
+            ],
+            "properties": {
+                "server": {
+                    "$ref": "#/definitions/installer.ServerDetails"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.SystemSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "architecture": {
+                    "type": "string"
+                },
+                "cpu_count": {
+                    "type": "integer"
+                },
+                "kernel_version": {
+                    "type": "string"
+                },
+                "os": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.postUpdateConfigurationResponse": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "server.APIResponse": {
+            "type": "object",
+            "properties": {
+                "configuration": {
+                    "$ref": "#/definitions/server.Configuration"
+                },
+                "is_suspended": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "utilization": {
+                    "$ref": "#/definitions/server.ResourceUsage"
+                }
+            }
+        },
+        "server.Configuration": {
+            "type": "object",
+            "properties": {
+                "allocations": {
+                    "$ref": "#/definitions/environment.Allocations"
+                },
+                "build": {
+                    "$ref": "#/definitions/environment.Limits"
+                },
+                "container": {
+                    "type": "object",
+                    "properties": {
+                        "image": {
+                            "description": "Defines the Docker image that will be used for this server",
+                            "type": "string"
+                        }
+                    }
+                },
+                "crash_detection_enabled": {
+                    "type": "boolean"
+                },
+                "egg": {
+                    "$ref": "#/definitions/server.EggConfiguration"
+                },
+                "environment": {
+                    "description": "An array of environment variables that should be passed along to the running\nserver process.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/environment.Variables"
+                        }
+                    ]
+                },
+                "invocation": {
+                    "description": "The command that should be used when booting up the server instance.",
+                    "type": "string"
+                },
+                "labels": {
+                    "description": "Labels is a map of container labels that should be applied to the running server process.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meta": {
+                    "$ref": "#/definitions/server.ConfigurationMeta"
+                },
+                "mounts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/server.Mount"
+                    }
+                },
+                "skip_egg_scripts": {
+                    "description": "By default this is false, however if selected within the Panel while installing or re-installing a\nserver, specific installation scripts will be skipped for the server process.",
+                    "type": "boolean"
+                },
+                "suspended": {
+                    "description": "Whether or not the server is in a suspended state. Suspended servers cannot\nbe started or modified except in certain scenarios by an admin user.",
+                    "type": "boolean"
+                },
+                "uuid": {
+                    "description": "The unique identifier for the server that should be used when referencing\nit against the Panel API (and internally). This will be used when naming\ndocker containers as well as in log output.",
+                    "type": "string"
+                }
+            }
+        },
+        "server.ConfigurationMeta": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.EggConfiguration": {
+            "type": "object",
+            "properties": {
+                "features": {
+                    "description": "Features is a map of feature identifiers to a list of console output strings\nthat should trigger a match (e.g., for things like EULA prompts).",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "file_denylist": {
+                    "description": "Maintains a list of files that are blacklisted for opening/editing/downloading\nor basically any type of access on the server by any user. This is NOT the same\nas a per-user denylist, this is defined at the Egg level.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "The internal UUID of the Egg on the Panel.",
+                    "type": "string"
+                }
+            }
+        },
+        "server.Mount": {
+            "type": "object",
+            "properties": {
+                "read_only": {
+                    "description": "Whether the directory is being mounted as read-only. It is up to the environment to\nhandle this value correctly and ensure security expectations are met with its usage.",
+                    "type": "boolean"
+                },
+                "source": {
+                    "description": "The directory from which the files will be read. In Docker environments this is the directory\nthat we're mounting into the container at the Target location.",
+                    "type": "string"
+                },
+                "target": {
+                    "description": "The target path on the system. This is \"/home/container\" for all server's Default mount\nbut in non-container environments you can likely ignore the target and just work with the\nsource.",
+                    "type": "string"
+                }
+            }
+        },
+        "server.ResourceUsage": {
+            "type": "object",
+            "properties": {
+                "cpu_absolute": {
+                    "description": "The absolute CPU usage is the amount of CPU used in relation to the entire system and\ndoes not take into account any limits on the server process itself.",
+                    "type": "number"
+                },
+                "disk_bytes": {
+                    "description": "The current disk space being used by the server. This value is not guaranteed to be accurate\nat all times. It is \"manually\" set whenever server.Proc() is called. This is kind of just a\nhacky solution for now to avoid passing events all over the place.",
+                    "type": "integer"
+                },
+                "memory_bytes": {
+                    "description": "The total amount of memory, in bytes, that this server instance is consuming. This is\ncalculated slightly differently than just using the raw Memory field that the stats\nreturn from the container, so please check the code setting this value for how that\nis calculated.",
+                    "type": "integer"
+                },
+                "memory_limit_bytes": {
+                    "description": "The total amount of memory this container or resource can use. Inside Docker this is\ngoing to be higher than you'd expect because we're automatically allocating overhead\nabilities for the container, so it's not going to be a perfect match.",
+                    "type": "integer"
+                },
+                "network": {
+                    "description": "Current network transmit in \u0026 out for a container.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/environment.NetworkStats"
+                        }
+                    ]
+                },
+                "state": {
+                    "description": "The current server status.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/system.AtomicString"
+                        }
+                    ]
+                },
+                "uptime": {
+                    "description": "The current uptime of the container, in milliseconds.",
+                    "type": "integer"
+                }
+            }
+        },
+        "system.AtomicString": {
+            "type": "object"
+        },
+        "system.DiskInfo": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total_space": {
+                    "type": "integer"
+                },
+                "used_space": {
+                    "type": "integer"
+                }
+            }
+        },
+        "system.DockerCgroups": {
+            "type": "object",
+            "properties": {
+                "driver": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.DockerContainers": {
+            "type": "object",
+            "properties": {
+                "paused": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "stopped": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "system.DockerDiskUsage": {
+            "type": "object",
+            "properties": {
+                "build_cache_size": {
+                    "type": "integer"
+                },
+                "containers_size": {
+                    "type": "integer"
+                },
+                "images_active": {
+                    "type": "integer"
+                },
+                "images_size": {
+                    "type": "integer"
+                },
+                "images_total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "system.DockerInformation": {
+            "type": "object",
+            "properties": {
+                "cgroups": {
+                    "$ref": "#/definitions/system.DockerCgroups"
+                },
+                "containers": {
+                    "$ref": "#/definitions/system.DockerContainers"
+                },
+                "runc": {
+                    "$ref": "#/definitions/system.DockerRunc"
+                },
+                "storage": {
+                    "$ref": "#/definitions/system.DockerStorage"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.DockerRunc": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.DockerStorage": {
+            "type": "object",
+            "properties": {
+                "driver": {
+                    "type": "string"
+                },
+                "filesystem": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.Information": {
+            "type": "object",
+            "properties": {
+                "docker": {
+                    "$ref": "#/definitions/system.DockerInformation"
+                },
+                "system": {
+                    "$ref": "#/definitions/system.System"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.IpAddresses": {
+            "type": "object",
+            "properties": {
+                "ip_addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "system.System": {
+            "type": "object",
+            "properties": {
+                "architecture": {
+                    "type": "string"
+                },
+                "cpu_threads": {
+                    "type": "integer"
+                },
+                "kernel_version": {
+                    "type": "string"
+                },
+                "memory_bytes": {
+                    "type": "integer"
+                },
+                "os": {
+                    "type": "string"
+                },
+                "os_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "system.Utilization": {
+            "type": "object",
+            "properties": {
+                "cpu_percent": {
+                    "type": "number"
+                },
+                "disk_details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/system.DiskInfo"
+                    }
+                },
+                "disk_total": {
+                    "type": "integer"
+                },
+                "disk_used": {
+                    "type": "integer"
+                },
+                "load_average1": {
+                    "type": "number"
+                },
+                "load_average15": {
+                    "type": "number"
+                },
+                "load_average5": {
+                    "type": "number"
+                },
+                "memory_total": {
+                    "type": "integer"
+                },
+                "memory_used": {
+                    "type": "integer"
+                },
+                "swap_total": {
+                    "type": "integer"
+                },
+                "swap_used": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "NodeToken": {
+            "description": "Supply the node's bearer token from `config.yml` using the `Authorization: Bearer \u003ctoken\u003e` header.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "ServerJWT": {
+            "description": "Signed JWTs issued by the Panel for server-scoped operations (uploads, downloads, websockets). Pass in the `token` query parameter.",
+            "type": "apiKey",
+            "name": "token",
+            "in": "query"
+        }
+    }
+}

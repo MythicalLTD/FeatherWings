@@ -109,6 +109,17 @@ func searchDirectory(s *server.Server, dir string, patternLower string, depth in
 	}
 }
 
+// getFilesBySearch recursively searches files within a directory based on a pattern.
+// @Summary Search server files
+// @Tags Server Files
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param directory query string true "Directory path"
+// @Param pattern query string true "Search pattern"
+// @Success 200 {array} filesystem.Stat
+// @Failure 400 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/search [get]
 func getFilesBySearch(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	dir := strings.TrimSuffix(c.Query("directory"), "/")

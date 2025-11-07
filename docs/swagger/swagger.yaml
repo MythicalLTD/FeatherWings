@@ -1,0 +1,2286 @@
+basePath: /
+definitions:
+  backup.AdapterType:
+    enum:
+    - wings
+    - s3
+    type: string
+    x-enum-varnames:
+    - LocalBackupAdapter
+    - S3BackupAdapter
+  config.ApiConfiguration:
+    properties:
+      docs:
+        allOf:
+        - $ref: '#/definitions/config.DocsConfiguration'
+        description: Docs controls whether the auto-generated Swagger/OpenAPI documentation
+          is served.
+      host:
+        default: 0.0.0.0
+        description: The interface that the internal webserver should bind to.
+        type: string
+      ignore_certificate_errors:
+        description: |-
+          If set to true, TLS certificate verification errors will be ignored when making
+          API calls to the Panel. This is useful for development environments with self-signed
+          certificates. The command line flag --ignore-certificate-errors takes precedence.
+        type: boolean
+      port:
+        default: 8080
+        description: The port that the internal webserver should bind to.
+        type: integer
+      ssl:
+        description: SSL configuration for the daemon.
+        properties:
+          cert:
+            type: string
+          enabled:
+            type: boolean
+          key:
+            type: string
+        type: object
+      trusted_proxies:
+        description: A list of IP address of proxies that may send a X-Forwarded-For
+          header to set the true clients IP
+        items:
+          type: string
+        type: array
+      upload_limit:
+        default: 100
+        description: The maximum size for files uploaded through the Panel in MiB.
+        type: integer
+    type: object
+  config.Backups:
+    properties:
+      compressionLevel:
+        default: best_speed
+        description: |-
+          CompressionLevel determines how much backups created by wings should be compressed.
+
+          "none" -> no compression will be applied
+          "best_speed" -> uses gzip level 1 for fast speed
+          "best_compression" -> uses gzip level 9 for minimal disk space useage
+
+          Defaults to "best_speed" (level 1)
+        type: string
+      removeBackupsOnServerDelete:
+        default: true
+        description: RemoveBackupsOnServerDelete deletes backups associated with a
+          server when the server is deleted
+        type: boolean
+      writeLimit:
+        default: 0
+        description: |-
+          WriteLimit imposes a Disk I/O write limit on backups to the disk, this affects all
+          backup drivers as the archiver must first write the file to the disk in order to
+          upload it to any external storage provider.
+
+          If the value is less than 1, the write speed is unlimited,
+          if the value is greater than 0, the write speed is the value in MiB/s.
+
+          Defaults to 0 (unlimited)
+        type: integer
+    type: object
+  config.Configuration:
+    type: object
+  config.CrashDetection:
+    properties:
+      crashDetectionEnabled:
+        default: true
+        description: CrashDetectionEnabled sets if crash detection is enabled globally
+          for all servers on this node.
+        type: boolean
+      detectCleanExitAsCrash:
+        default: true
+        description: |-
+          Determines if Wings should detect a server that stops with a normal exit code of
+          "0" as being crashed if the process stopped without any Wings interaction. E.g.
+          the user did not press the stop button, but the process stopped cleanly.
+        type: boolean
+      timeout:
+        default: 60
+        description: |-
+          Timeout specifies the timeout between crashes that will not cause the server
+          to be automatically restarted, this value is used to prevent servers from
+          becoming stuck in a boot-loop after multiple consecutive crashes.
+        type: integer
+    type: object
+  config.DocsConfiguration:
+    properties:
+      enabled:
+        default: true
+        type: boolean
+    type: object
+  config.SftpConfiguration:
+    properties:
+      bind_address:
+        default: 0.0.0.0
+        description: The bind address of the SFTP server.
+        type: string
+      bind_port:
+        default: 2022
+        description: The bind port of the SFTP server.
+        type: integer
+      readOnly:
+        default: false
+        description: If set to true, no write actions will be allowed on the SFTP
+          server.
+        type: boolean
+    type: object
+  config.SystemConfiguration:
+    properties:
+      activitySendCount:
+        default: 100
+        description: ActivitySendCount is the number of activity events to send per
+          batch.
+        type: integer
+      activitySendInterval:
+        default: 60
+        description: |-
+          ActivitySendInterval is the amount of time that should ellapse between aggregated server activity
+          being sent to the Panel. By default this will send activity collected over the last minute. Keep
+          in mind that only a fixed number of activity log entries, defined by ActivitySendCount, will be sent
+          in each run.
+        type: integer
+      backups:
+        $ref: '#/definitions/config.Backups'
+      checkPermissionsOnBoot:
+        default: true
+        description: |-
+          If set to true, file permissions for a server will be checked when the process is
+          booted. This can cause boot delays if the server has a large amount of files. In most
+          cases disabling this should not have any major impact unless external processes are
+          frequently modifying a servers' files.
+        type: boolean
+      crashActivityLogLines:
+        default: 2
+        description: The ammount of lines the activity logs should log on server crash
+        type: integer
+      crashDetection:
+        $ref: '#/definitions/config.CrashDetection'
+      diskCheckInterval:
+        default: 150
+        description: |-
+          The amount of time in seconds that can elapse before a server's disk space calculation is
+          considered stale and a re-check should occur. DANGER: setting this value too low can seriously
+          impact system performance and cause massive I/O bottlenecks and high CPU usage for the Wings
+          process.
+
+          Set to 0 to disable disk checking entirely. This will always return 0 for the disk space used
+          by a server and should only be set in extreme scenarios where performance is critical and
+          disk usage is not a concern.
+        type: integer
+      enableLogRotate:
+        default: true
+        description: |-
+          If set to false Wings will not attempt to write a log rotate configuration to the disk
+          when it boots and one is not detected.
+        type: boolean
+      openatMode:
+        default: auto
+        type: string
+      sftp:
+        $ref: '#/definitions/config.SftpConfiguration'
+      timezone:
+        description: |-
+          The timezone for this Wings instance. This is detected by Wings automatically if possible,
+          and falls back to UTC if not able to be detected. If you need to set this manually, that
+          can also be done.
+
+          This timezone value is passed into all containers created by Wings.
+        type: string
+      transfers:
+        $ref: '#/definitions/config.Transfers'
+      user:
+        description: |-
+          Definitions for the user that gets created to ensure that we can quickly access
+          this information without constantly having to do a system lookup.
+        properties:
+          gid:
+            type: integer
+          mount_passwd:
+            default: true
+            description: |-
+              Passwd controls weather a passwd file is mounted in the container
+              at /etc/passwd to resolve missing user issues
+            type: boolean
+          passwd_file:
+            default: /etc/featherpanel/passwd
+            type: string
+          rootless:
+            description: Rootless controls settings related to rootless container
+              daemons.
+            properties:
+              containerGID:
+                default: 0
+                description: |-
+                  ContainerGID controls the GID of the user inside the container.
+                  This should likely be set to 0 so the container runs as the user
+                  running Wings.
+                type: integer
+              containerUID:
+                default: 0
+                description: |-
+                  ContainerUID controls the UID of the user inside the container.
+                  This should likely be set to 0 so the container runs as the user
+                  running Wings.
+                type: integer
+              enabled:
+                default: false
+                description: Enabled controls whether rootless containers are enabled.
+                type: boolean
+            type: object
+          uid:
+            type: integer
+        type: object
+      username:
+        default: featherpanel
+        description: The user that should own all of the server files, and be used
+          for containers.
+        type: string
+      websocketLogCount:
+        default: 150
+        description: The number of lines to send when a server connects to the websocket.
+        type: integer
+    type: object
+  config.Transfers:
+    properties:
+      downloadLimit:
+        default: 0
+        description: |-
+          DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.
+
+          If the value is less than 1, the write speed is unlimited,
+          if the value is greater than 0, the write speed is the value in MiB/s.
+
+          Defaults to 0 (unlimited)
+        type: integer
+    type: object
+  downloader.Download:
+    properties:
+      identifier:
+        type: string
+    type: object
+  environment.Allocations:
+    properties:
+      default:
+        allOf:
+        - $ref: '#/definitions/environment.DefaultAllocationMapping'
+        description: |-
+          Defines the default allocation that should be used for this server. This is
+          what will be used for {SERVER_IP} and {SERVER_PORT} when modifying configuration
+          files or the startup arguments for a server.
+      force_outgoing_ip:
+        description: |-
+          ForceOutgoingIP causes a dedicated bridge network to be created for the
+          server with a special option, causing Docker to SNAT outgoing traffic to
+          the DefaultMapping's IP. This is important to servers which rely on external
+          services that check the IP of the server (Source Engine servers, for example).
+        type: boolean
+      mappings:
+        additionalProperties:
+          items:
+            type: integer
+          type: array
+        description: |-
+          Mappings contains all the ports that should be assigned to a given server
+          attached to the IP they correspond to.
+        type: object
+    type: object
+  environment.DefaultAllocationMapping:
+    properties:
+      ip:
+        type: string
+      port:
+        type: integer
+    type: object
+  environment.Limits:
+    properties:
+      cpu_limit:
+        description: |-
+          The percentage of CPU that this instance is allowed to consume relative to
+          the host. A value of 200% represents complete utilization of two cores. This
+          should be a value between 1 and THREAD_COUNT * 100.
+        type: integer
+      disk_space:
+        description: The amount of disk space in mebibytes that a server is allowed
+          to use.
+        type: integer
+      io_weight:
+        description: |-
+          The relative weight for IO operations in a container. This is relative to other
+          containers on the system and should be a value between 10 and 1000.
+        type: integer
+      memory_limit:
+        description: |-
+          The total amount of memory in mebibytes that this server is allowed to
+          use on the host system.
+        type: integer
+      oom_killer:
+        type: boolean
+      swap:
+        description: The amount of additional swap space to be provided to a container
+          instance.
+        type: integer
+      threads:
+        description: Sets which CPU threads can be used by the docker instance.
+        type: string
+    type: object
+  environment.NetworkStats:
+    properties:
+      rx_bytes:
+        type: integer
+      tx_bytes:
+        type: integer
+    type: object
+  environment.Variables:
+    additionalProperties: true
+    type: object
+  filesystem.Stat:
+    properties:
+      mimetype:
+        type: string
+      ufs.FileInfo: {}
+    type: object
+  image.DeleteResponse:
+    properties:
+      Deleted:
+        description: The image ID of an image that was deleted
+        type: string
+      Untagged:
+        description: The image ID of an image that was untagged
+        type: string
+    type: object
+  installer.ServerDetails:
+    properties:
+      start_on_completion:
+        type: boolean
+      uuid:
+        type: string
+    type: object
+  router.DockerPruneReport:
+    properties:
+      imagesDeleted:
+        items:
+          $ref: '#/definitions/image.DeleteResponse'
+        type: array
+      spaceReclaimed:
+        type: integer
+    type: object
+  router.ErrorResponse:
+    properties:
+      error:
+        type: string
+      request_id:
+        type: string
+    type: object
+  router.RemoteDownloadAcceptedResponse:
+    properties:
+      identifier:
+        type: string
+    type: object
+  router.ServerArchiveRequest:
+    properties:
+      extension:
+        type: string
+      files:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      root:
+        type: string
+    type: object
+  router.ServerBackupCreateRequest:
+    properties:
+      adapter:
+        allOf:
+        - $ref: '#/definitions/backup.AdapterType'
+        enum:
+        - wings
+        - s3
+      ignore:
+        type: string
+      uuid:
+        type: string
+    required:
+    - adapter
+    - uuid
+    type: object
+  router.ServerBackupDescriptor:
+    properties:
+      created_at:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  router.ServerBackupListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/router.ServerBackupDescriptor'
+        type: array
+    type: object
+  router.ServerBackupRestoreRequest:
+    properties:
+      adapter:
+        allOf:
+        - $ref: '#/definitions/backup.AdapterType'
+        enum:
+        - wings
+        - s3
+      download_url:
+        type: string
+      truncate_directory:
+        type: boolean
+    required:
+    - adapter
+    type: object
+  router.ServerChmodFile:
+    properties:
+      file:
+        type: string
+      mode:
+        type: string
+    type: object
+  router.ServerChmodRequest:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/router.ServerChmodFile'
+        type: array
+      root:
+        type: string
+    type: object
+  router.ServerCommandsRequest:
+    properties:
+      commands:
+        items:
+          type: string
+        type: array
+    type: object
+  router.ServerCopyRequest:
+    properties:
+      location:
+        type: string
+    type: object
+  router.ServerCreateDirectoryRequest:
+    properties:
+      name:
+        type: string
+      path:
+        type: string
+    type: object
+  router.ServerDecompressRequest:
+    properties:
+      file:
+        type: string
+      root:
+        type: string
+    type: object
+  router.ServerDeleteRequest:
+    properties:
+      files:
+        items:
+          type: string
+        type: array
+      root:
+        type: string
+    type: object
+  router.ServerDenyTokenRequest:
+    properties:
+      jtis:
+        items:
+          type: string
+        type: array
+    type: object
+  router.ServerInstallLogResponse:
+    properties:
+      data:
+        type: string
+    type: object
+  router.ServerLogResponse:
+    properties:
+      data:
+        items:
+          type: string
+        type: array
+    type: object
+  router.ServerPowerRequest:
+    properties:
+      action:
+        type: string
+      wait_seconds:
+        type: integer
+    type: object
+  router.ServerPullRemoteRequest:
+    properties:
+      directory:
+        type: string
+      file_name:
+        type: string
+      foreground:
+        type: boolean
+      root:
+        type: string
+      url:
+        type: string
+      use_header:
+        type: boolean
+    required:
+    - url
+    type: object
+  router.ServerPullStatusResponse:
+    properties:
+      downloads:
+        items:
+          $ref: '#/definitions/downloader.Download'
+        type: array
+    type: object
+  router.ServerRenameEntry:
+    properties:
+      from:
+        type: string
+      to:
+        type: string
+    type: object
+  router.ServerRenameRequest:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/router.ServerRenameEntry'
+        type: array
+      root:
+        type: string
+    type: object
+  router.ServerTransferRequest:
+    properties:
+      server:
+        $ref: '#/definitions/installer.ServerDetails'
+      token:
+        type: string
+      url:
+        type: string
+    required:
+    - token
+    - url
+    type: object
+  router.SystemSummaryResponse:
+    properties:
+      architecture:
+        type: string
+      cpu_count:
+        type: integer
+      kernel_version:
+        type: string
+      os:
+        type: string
+      version:
+        type: string
+    type: object
+  router.postUpdateConfigurationResponse:
+    properties:
+      applied:
+        type: boolean
+    type: object
+  server.APIResponse:
+    properties:
+      configuration:
+        $ref: '#/definitions/server.Configuration'
+      is_suspended:
+        type: boolean
+      state:
+        type: string
+      utilization:
+        $ref: '#/definitions/server.ResourceUsage'
+    type: object
+  server.Configuration:
+    properties:
+      allocations:
+        $ref: '#/definitions/environment.Allocations'
+      build:
+        $ref: '#/definitions/environment.Limits'
+      container:
+        properties:
+          image:
+            description: Defines the Docker image that will be used for this server
+            type: string
+        type: object
+      crash_detection_enabled:
+        type: boolean
+      egg:
+        $ref: '#/definitions/server.EggConfiguration'
+      environment:
+        allOf:
+        - $ref: '#/definitions/environment.Variables'
+        description: |-
+          An array of environment variables that should be passed along to the running
+          server process.
+      invocation:
+        description: The command that should be used when booting up the server instance.
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        description: Labels is a map of container labels that should be applied to
+          the running server process.
+        type: object
+      meta:
+        $ref: '#/definitions/server.ConfigurationMeta'
+      mounts:
+        items:
+          $ref: '#/definitions/server.Mount'
+        type: array
+      skip_egg_scripts:
+        description: |-
+          By default this is false, however if selected within the Panel while installing or re-installing a
+          server, specific installation scripts will be skipped for the server process.
+        type: boolean
+      suspended:
+        description: |-
+          Whether or not the server is in a suspended state. Suspended servers cannot
+          be started or modified except in certain scenarios by an admin user.
+        type: boolean
+      uuid:
+        description: |-
+          The unique identifier for the server that should be used when referencing
+          it against the Panel API (and internally). This will be used when naming
+          docker containers as well as in log output.
+        type: string
+    type: object
+  server.ConfigurationMeta:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  server.EggConfiguration:
+    properties:
+      features:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        description: |-
+          Features is a map of feature identifiers to a list of console output strings
+          that should trigger a match (e.g., for things like EULA prompts).
+        type: object
+      file_denylist:
+        description: |-
+          Maintains a list of files that are blacklisted for opening/editing/downloading
+          or basically any type of access on the server by any user. This is NOT the same
+          as a per-user denylist, this is defined at the Egg level.
+        items:
+          type: string
+        type: array
+      id:
+        description: The internal UUID of the Egg on the Panel.
+        type: string
+    type: object
+  server.Mount:
+    properties:
+      read_only:
+        description: |-
+          Whether the directory is being mounted as read-only. It is up to the environment to
+          handle this value correctly and ensure security expectations are met with its usage.
+        type: boolean
+      source:
+        description: |-
+          The directory from which the files will be read. In Docker environments this is the directory
+          that we're mounting into the container at the Target location.
+        type: string
+      target:
+        description: |-
+          The target path on the system. This is "/home/container" for all server's Default mount
+          but in non-container environments you can likely ignore the target and just work with the
+          source.
+        type: string
+    type: object
+  server.ResourceUsage:
+    properties:
+      cpu_absolute:
+        description: |-
+          The absolute CPU usage is the amount of CPU used in relation to the entire system and
+          does not take into account any limits on the server process itself.
+        type: number
+      disk_bytes:
+        description: |-
+          The current disk space being used by the server. This value is not guaranteed to be accurate
+          at all times. It is "manually" set whenever server.Proc() is called. This is kind of just a
+          hacky solution for now to avoid passing events all over the place.
+        type: integer
+      memory_bytes:
+        description: |-
+          The total amount of memory, in bytes, that this server instance is consuming. This is
+          calculated slightly differently than just using the raw Memory field that the stats
+          return from the container, so please check the code setting this value for how that
+          is calculated.
+        type: integer
+      memory_limit_bytes:
+        description: |-
+          The total amount of memory this container or resource can use. Inside Docker this is
+          going to be higher than you'd expect because we're automatically allocating overhead
+          abilities for the container, so it's not going to be a perfect match.
+        type: integer
+      network:
+        allOf:
+        - $ref: '#/definitions/environment.NetworkStats'
+        description: Current network transmit in & out for a container.
+      state:
+        allOf:
+        - $ref: '#/definitions/system.AtomicString'
+        description: The current server status.
+      uptime:
+        description: The current uptime of the container, in milliseconds.
+        type: integer
+    type: object
+  system.AtomicString:
+    type: object
+  system.DiskInfo:
+    properties:
+      device:
+        type: string
+      mountpoint:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      total_space:
+        type: integer
+      used_space:
+        type: integer
+    type: object
+  system.DockerCgroups:
+    properties:
+      driver:
+        type: string
+      version:
+        type: string
+    type: object
+  system.DockerContainers:
+    properties:
+      paused:
+        type: integer
+      running:
+        type: integer
+      stopped:
+        type: integer
+      total:
+        type: integer
+    type: object
+  system.DockerDiskUsage:
+    properties:
+      build_cache_size:
+        type: integer
+      containers_size:
+        type: integer
+      images_active:
+        type: integer
+      images_size:
+        type: integer
+      images_total:
+        type: integer
+    type: object
+  system.DockerInformation:
+    properties:
+      cgroups:
+        $ref: '#/definitions/system.DockerCgroups'
+      containers:
+        $ref: '#/definitions/system.DockerContainers'
+      runc:
+        $ref: '#/definitions/system.DockerRunc'
+      storage:
+        $ref: '#/definitions/system.DockerStorage'
+      version:
+        type: string
+    type: object
+  system.DockerRunc:
+    properties:
+      version:
+        type: string
+    type: object
+  system.DockerStorage:
+    properties:
+      driver:
+        type: string
+      filesystem:
+        type: string
+    type: object
+  system.Information:
+    properties:
+      docker:
+        $ref: '#/definitions/system.DockerInformation'
+      system:
+        $ref: '#/definitions/system.System'
+      version:
+        type: string
+    type: object
+  system.IpAddresses:
+    properties:
+      ip_addresses:
+        items:
+          type: string
+        type: array
+    type: object
+  system.System:
+    properties:
+      architecture:
+        type: string
+      cpu_threads:
+        type: integer
+      kernel_version:
+        type: string
+      memory_bytes:
+        type: integer
+      os:
+        type: string
+      os_type:
+        type: string
+    type: object
+  system.Utilization:
+    properties:
+      cpu_percent:
+        type: number
+      disk_details:
+        items:
+          $ref: '#/definitions/system.DiskInfo'
+        type: array
+      disk_total:
+        type: integer
+      disk_used:
+        type: integer
+      load_average1:
+        type: number
+      load_average5:
+        type: number
+      load_average15:
+        type: number
+      memory_total:
+        type: integer
+      memory_used:
+        type: integer
+      swap_total:
+        type: integer
+      swap_used:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: API documentation for the FeatherWings daemon.
+  title: FeatherWings API
+  version: "1.0"
+paths:
+  /api/diagnostics:
+    get:
+      description: Returns plain-text diagnostics output by default. Use include_endpoints
+        to append HTTP endpoint metadata and include_logs to attach recent logs. Provide
+        format=url to upload the report and receive a shortened URL instead of the
+        raw content.
+      parameters:
+      - description: Include endpoint metadata
+        in: query
+        name: include_endpoints
+        type: boolean
+      - description: Include daemon logs
+        in: query
+        name: include_logs
+        type: boolean
+      - description: Number of log lines
+        in: query
+        maximum: 500
+        minimum: 1
+        name: log_lines
+        type: integer
+      - description: Response format
+        enum:
+        - text
+        - url
+        in: query
+        name: format
+        type: string
+      - description: Override upload endpoint when format=url
+        in: query
+        name: upload_api_url
+        type: string
+      produces:
+      - text/plain
+      - application/json
+      responses:
+        "200":
+          description: Plain-text diagnostics report. When format=url the response
+            type is application/json with payload {\"url\":\"...\"}.
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Generate diagnostics bundle
+      tags:
+      - System
+  /api/servers:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/server.APIResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List servers
+      tags:
+      - Servers
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server configuration
+        in: body
+        name: server
+        required: true
+        schema:
+          $ref: '#/definitions/installer.ServerDetails'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Create server
+      tags:
+      - Servers
+  /api/servers/{server}:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete server
+      tags:
+      - Servers
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/server.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get server
+      tags:
+      - Servers
+  /api/servers/{server}/backup:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ServerBackupListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List server backups
+      tags:
+      - Backups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Backup request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerBackupCreateRequest'
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Create server backup
+      tags:
+      - Backups
+  /api/servers/{server}/backup/{backup}:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Backup identifier
+        in: path
+        name: backup
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete server backup
+      tags:
+      - Backups
+  /api/servers/{server}/backup/{backup}/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Backup identifier
+        in: path
+        name: backup
+        required: true
+        type: string
+      - description: Restore request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerBackupRestoreRequest'
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Restore server backup
+      tags:
+      - Backups
+  /api/servers/{server}/commands:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Commands
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerCommandsRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Send console commands
+      tags:
+      - Servers
+  /api/servers/{server}/deleteAllBackups:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete all server backups
+      tags:
+      - Servers
+  /api/servers/{server}/files/chmod:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Chmod request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerChmodRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Change file permissions
+      tags:
+      - Server Files
+  /api/servers/{server}/files/compress:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Archive request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerArchiveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/filesystem.Stat'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Compress files
+      tags:
+      - Server Files
+  /api/servers/{server}/files/contents:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: File path
+        in: query
+        name: file
+        required: true
+        type: string
+      - description: Force download
+        in: query
+        name: download
+        type: boolean
+      produces:
+      - text/plain
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Read file contents
+      tags:
+      - Server Files
+  /api/servers/{server}/files/copy:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Copy request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerCopyRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Copy file
+      tags:
+      - Server Files
+  /api/servers/{server}/files/create-directory:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Directory request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerCreateDirectoryRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Create directory
+      tags:
+      - Server Files
+  /api/servers/{server}/files/decompress:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Decompression request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerDecompressRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Decompress archive
+      tags:
+      - Server Files
+  /api/servers/{server}/files/delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Delete request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerDeleteRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete files
+      tags:
+      - Server Files
+  /api/servers/{server}/files/list-directory:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Directory path
+        in: query
+        name: directory
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/filesystem.Stat'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List directory contents
+      tags:
+      - Server Files
+  /api/servers/{server}/files/pull:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ServerPullStatusResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List remote downloads
+      tags:
+      - Server Files
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Remote pull request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerPullRemoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/filesystem.Stat'
+        "202":
+          description: Background download
+          schema:
+            $ref: '#/definitions/router.RemoteDownloadAcceptedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Pull remote file
+      tags:
+      - Server Files
+  /api/servers/{server}/files/pull/{download}:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Download identifier
+        in: path
+        name: download
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - NodeToken: []
+      summary: Cancel remote download
+      tags:
+      - Server Files
+  /api/servers/{server}/files/rename:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Rename operations
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerRenameRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Rename files
+      tags:
+      - Server Files
+  /api/servers/{server}/files/search:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Directory path
+        in: query
+        name: directory
+        required: true
+        type: string
+      - description: Search pattern
+        in: query
+        name: pattern
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/filesystem.Stat'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Search server files
+      tags:
+      - Server Files
+  /api/servers/{server}/files/write:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: File path
+        in: query
+        name: file
+        required: true
+        type: string
+      - description: Content length
+        in: header
+        name: Content-Length
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Write file contents
+      tags:
+      - Server Files
+  /api/servers/{server}/install:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Trigger server install
+      tags:
+      - Servers
+  /api/servers/{server}/install-logs:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ServerInstallLogResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Retrieve server install logs
+      tags:
+      - Servers
+  /api/servers/{server}/logs:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Number of lines
+        in: query
+        maximum: 100
+        minimum: 1
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ServerLogResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Tail server logs
+      tags:
+      - Servers
+  /api/servers/{server}/power:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Power action
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerPowerRequest'
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Execute server power action
+      tags:
+      - Servers
+  /api/servers/{server}/reinstall:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Reinstall server
+      tags:
+      - Servers
+  /api/servers/{server}/sync:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Sync server state
+      tags:
+      - Servers
+  /api/servers/{server}/transfer:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Cancel server transfer
+      tags:
+      - Transfers
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Transfer request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerTransferRequest'
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Initiate server transfer
+      tags:
+      - Transfers
+  /api/servers/{server}/ws:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Signed websocket token
+        in: query
+        name: token
+        required: true
+        type: string
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - ServerJWT: []
+      summary: Connect to server websocket
+      tags:
+      - Servers
+  /api/servers/{server}/ws/deny:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Tokens
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/router.ServerDenyTokenRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Invalidate websocket tokens
+      tags:
+      - Servers
+  /api/system:
+    get:
+      description: Returns hardware and software information about the node. Provide
+        `v=2` to receive the full payload used by the panel.
+      parameters:
+      - description: Response version
+        enum:
+        - "2"
+        in: query
+        name: v
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Extended response when v=2
+          schema:
+            $ref: '#/definitions/system.Information'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get system information
+      tags:
+      - System
+  /api/system/docker/disk:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/system.DockerDiskUsage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get Docker disk usage
+      tags:
+      - System
+  /api/system/docker/image/prune:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.DockerPruneReport'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Prune Docker images
+      tags:
+      - System
+  /api/system/ips:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/system.IpAddresses'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List system IP addresses
+      tags:
+      - System
+  /api/system/utilization:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/system.Utilization'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get system utilization
+      tags:
+      - System
+  /api/transfers:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Server archive
+        in: formData
+        name: archive
+        required: true
+        type: file
+      - description: SHA-256 checksum
+        in: formData
+        name: checksum
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - ServerJWT: []
+      summary: Receive server transfer
+      tags:
+      - Transfers
+  /api/transfers/{server}:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            type: string
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Cancel incoming transfer
+      tags:
+      - Transfers
+  /api/update:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Updated configuration
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/config.Configuration'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.postUpdateConfigurationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Update runtime configuration
+      tags:
+      - System
+  /download/backup:
+    get:
+      parameters:
+      - description: Signed backup token
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - ServerJWT: []
+      summary: Download server backup
+      tags:
+      - Downloads
+  /download/file:
+    get:
+      parameters:
+      - description: Signed file token
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - ServerJWT: []
+      summary: Download server file
+      tags:
+      - Downloads
+  /upload/file:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Signed upload token
+        in: query
+        name: token
+        required: true
+        type: string
+      - description: Target directory
+        in: query
+        name: directory
+        type: string
+      - description: Files
+        in: formData
+        name: files
+        required: true
+        type: file
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - ServerJWT: []
+      summary: Upload files
+      tags:
+      - Uploads
+schemes:
+- https
+- http
+securityDefinitions:
+  NodeToken:
+    description: 'Supply the node''s bearer token from `config.yml` using the `Authorization:
+      Bearer <token>` header.'
+    in: header
+    name: Authorization
+    type: apiKey
+  ServerJWT:
+    description: Signed JWTs issued by the Panel for server-scoped operations (uploads,
+      downloads, websockets). Pass in the `token` query parameter.
+    in: query
+    name: token
+    type: apiKey
+swagger: "2.0"

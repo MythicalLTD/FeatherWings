@@ -25,7 +25,19 @@ import (
 	"github.com/mythicalltd/featherwings/server/transfer"
 )
 
-// postTransfers .
+// postTransfers handles an incoming server transfer stream initiated by another node.
+// @Summary Receive server transfer
+// @Tags Transfers
+// @Accept multipart/form-data
+// @Param Authorization header string true "Bearer token"
+// @Param archive formData file true "Server archive"
+// @Param checksum formData string true "SHA-256 checksum"
+// @Success 202 {string} string "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ServerJWT
+// @Router /api/transfers [post]
 func postTransfers(c *gin.Context) {
 	auth := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
 	if len(auth) != 2 || auth[0] != "Bearer" {
@@ -254,9 +266,18 @@ out:
 	// The rest of the logic for ensuring the server is unlocked and everything
 	// is handled in the deferred function above.
 	trnsfr.Log().Debug("done!")
+
+	c.Status(http.StatusAccepted)
 }
 
 // deleteTransfer cancels an incoming transfer for a server.
+// @Summary Cancel incoming transfer
+// @Tags Transfers
+// @Param server path string true "Server identifier"
+// @Success 202 {string} string "Accepted"
+// @Failure 409 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/transfers/{server} [delete]
 func deleteTransfer(c *gin.Context) {
 	s := ExtractServer(c)
 

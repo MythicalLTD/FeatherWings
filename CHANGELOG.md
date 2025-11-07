@@ -7,6 +7,8 @@
 * Ability to request logs from a route!
 * Added a dedicated route to generate and retrieve detailed diagnostic reports.
 * Diagnostics reports are now uploaded using mclogs instead of the old pelican pastebin server :)
+* Generated OpenAPI documentation is now available at `/api/docs/ui`, with specs exposed via `/api/docs/openapi.json`. Set `api.docs.enabled: false` in `config.yml` to disable serving the documentation.
+* Introduced the ability to upload diagnostics reports directly to a user-specified URL!
 
 ### Fixed
 

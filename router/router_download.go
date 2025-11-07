@@ -15,7 +15,16 @@ import (
 	"github.com/mythicalltd/featherwings/server/backup"
 )
 
-// Handle a download request for a server backup.
+// getDownloadBackup streams a server backup archive using a signed token.
+// @Summary Download server backup
+// @Tags Downloads
+// @Produce application/octet-stream
+// @Param token query string true "Signed backup token"
+// @Success 200 {file} file
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ServerJWT
+// @Router /download/backup [get]
 func getDownloadBackup(c *gin.Context) {
 	client := middleware.ExtractApiClient(c)
 	manager := middleware.ExtractManager(c)
@@ -72,7 +81,16 @@ func getDownloadBackup(c *gin.Context) {
 	_, _ = bufio.NewReader(f).WriteTo(c.Writer)
 }
 
-// Handles downloading a specific file for a server.
+// getDownloadFile downloads a specific server file using a signed token.
+// @Summary Download server file
+// @Tags Downloads
+// @Produce application/octet-stream
+// @Param token query string true "Signed file token"
+// @Success 200 {file} file
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ServerJWT
+// @Router /download/file [get]
 func getDownloadFile(c *gin.Context) {
 	manager := middleware.ExtractManager(c)
 	token := tokens.FilePayload{}

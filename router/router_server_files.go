@@ -29,6 +29,19 @@ import (
 )
 
 // getServerFileContents returns the contents of a file on the server.
+// @Summary Read file contents
+// @Tags Server Files
+// @Produce text/plain
+// @Produce application/octet-stream
+// @Param server path string true "Server identifier"
+// @Param file query string true "File path"
+// @Param download query bool false "Force download"
+// @Success 200 {file} file
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/contents [get]
 func getServerFileContents(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	p := strings.TrimLeft(c.Query("file"), "/")
@@ -90,7 +103,17 @@ func getServerFileContents(c *gin.Context) {
 	}
 }
 
-// Returns the contents of a directory for a server.
+// getServerListDirectory returns the contents of a directory for a server.
+// @Summary List directory contents
+// @Tags Server Files
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param directory query string true "Directory path"
+// @Success 200 {array} filesystem.Stat
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/list-directory [get]
 func getServerListDirectory(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	dir := c.Query("directory")
@@ -108,19 +131,23 @@ func getServerListDirectory(c *gin.Context) {
 	}
 }
 
-type renameFile struct {
-	To   string `json:"to"`
-	From string `json:"from"`
-}
-
-// Renames (or moves) files for a server.
+// putServerRenameFiles renames (or moves) files for a server.
+// @Summary Rename files
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerRenameRequest true "Rename operations"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/rename [put]
 func putServerRenameFiles(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		Root  string       `json:"root"`
-		Files []renameFile `json:"files"`
-	}
+	var data ServerRenameRequest
 	// BindJSON sends 400 if the request fails, all we need to do is return
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -139,31 +166,33 @@ func putServerRenameFiles(c *gin.Context) {
 		pf := path.Join(data.Root, p.From)
 		pt := path.Join(data.Root, p.To)
 
-		g.Go(func() error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				fs := s.Filesystem()
-				// Ignore renames on a file that is on the denylist (both as the rename from or
-				// the rename to value).
-				if err := fs.IsIgnored(pf, pt); err != nil {
-					return err
-				}
-				if err := fs.Rename(pf, pt); err != nil {
-					// Return nil if the error is an is not exists.
-					if errors.Is(err, os.ErrNotExist) {
-						s.Log().WithField("error", err).
-							WithField("from_path", pf).
-							WithField("to_path", pt).
-							Warn("failed to rename: source or target does not exist")
-						return nil
+		g.Go(func(pf, pt string) func() error {
+			return func() error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					fs := s.Filesystem()
+					// Ignore renames on a file that is on the denylist (both as the rename from or
+					// the rename to value).
+					if err := fs.IsIgnored(pf, pt); err != nil {
+						return err
 					}
-					return err
+					if err := fs.Rename(pf, pt); err != nil {
+						// Return nil if the error is an is not exists.
+						if errors.Is(err, os.ErrNotExist) {
+							s.Log().WithField("error", err).
+								WithField("from_path", pf).
+								WithField("to_path", pt).
+								Warn("failed to rename: source or target does not exist")
+							return nil
+						}
+						return err
+					}
+					return nil
 				}
-				return nil
 			}
-		})
+		}(pf, pt))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -181,13 +210,21 @@ func putServerRenameFiles(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Copies a server file.
+// postServerCopyFile copies a server file.
+// @Summary Copy file
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerCopyRequest true "Copy request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/copy [post]
 func postServerCopyFile(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		Location string `json:"location"`
-	}
+	var data ServerCopyRequest
 	// BindJSON sends 400 if the request fails, all we need to do is return
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -205,14 +242,21 @@ func postServerCopyFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Deletes files from a server.
+// postServerDeleteFiles deletes files from a server.
+// @Summary Delete files
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerDeleteRequest true "Delete request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/delete [post]
 func postServerDeleteFiles(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		Root  string   `json:"root"`
-		Files []string `json:"files"`
-	}
+	var data ServerDeleteRequest
 
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -232,17 +276,19 @@ func postServerDeleteFiles(c *gin.Context) {
 	for _, p := range data.Files {
 		pi := path.Join(data.Root, p)
 
-		g.Go(func() error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				if err := s.Filesystem().IsIgnored(pi); err != nil {
-					return err
+		g.Go(func(pi string) func() error {
+			return func() error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					if err := s.Filesystem().IsIgnored(pi); err != nil {
+						return err
+					}
+					return s.Filesystem().Delete(pi)
 				}
-				return s.Filesystem().Delete(pi)
 			}
-		})
+		}(pi))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -253,7 +299,18 @@ func postServerDeleteFiles(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Writes the contents of the request to a file on a server.
+// postServerWriteFile writes the contents of the request to a file on a server.
+// @Summary Write file contents
+// @Tags Server Files
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param file query string true "File path"
+// @Param Content-Length header int true "Content length"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/write [post]
 func postServerWriteFile(c *gin.Context) {
 	s := ExtractServer(c)
 
@@ -288,29 +345,37 @@ func postServerWriteFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Returns all of the currently in-progress file downloads and their current download
-// progress. The progress is also pushed out via a websocket event allowing you to just
-// call this once to get current downloads, and then listen to targeted websocket events
-// with the current progress for everything.
+// getServerPullingFiles returns all in-progress file downloads and their progress.
+// @Summary List remote downloads
+// @Tags Server Files
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Success 200 {object} ServerPullStatusResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/pull [get]
 func getServerPullingFiles(c *gin.Context) {
 	s := ExtractServer(c)
-	c.JSON(http.StatusOK, gin.H{
-		"downloads": downloader.ByServer(s.ID()),
-	})
+	c.JSON(http.StatusOK, ServerPullStatusResponse{Downloads: downloader.ByServer(s.ID())})
 }
 
-// Writes the contents of the remote URL to a file on a server.
+// postServerPullRemoteFile writes the contents of the remote URL to a file on a server.
+// @Summary Pull remote file
+// @Tags Server Files
+// @Accept json
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerPullRemoteRequest true "Remote pull request"
+// @Success 200 {object} filesystem.Stat
+// @Success 202 {object} RemoteDownloadAcceptedResponse "Background download"
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/pull [post]
 func postServerPullRemoteFile(c *gin.Context) {
 	s := ExtractServer(c)
-	var data struct {
-		// Deprecated
-		Directory  string `binding:"required_without=RootPath,omitempty" json:"directory"`
-		RootPath   string `binding:"required_without=Directory,omitempty" json:"root"`
-		URL        string `binding:"required" json:"url"`
-		FileName   string `json:"file_name"`
-		UseHeader  bool   `json:"use_header"`
-		Foreground bool   `json:"foreground"`
-	}
+	var data ServerPullRemoteRequest
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
@@ -368,9 +433,7 @@ func postServerPullRemoteFile(c *gin.Context) {
 		go func() {
 			_ = download()
 		}()
-		c.JSON(http.StatusAccepted, gin.H{
-			"identifier": dl.Identifier,
-		})
+		c.JSON(http.StatusAccepted, RemoteDownloadAcceptedResponse{Identifier: dl.Identifier})
 		return
 	}
 
@@ -387,7 +450,14 @@ func postServerPullRemoteFile(c *gin.Context) {
 	c.JSON(http.StatusOK, &st)
 }
 
-// Stops a remote file download if it exists and belongs to this server.
+// deleteServerPullRemoteFile stops a remote file download if it exists and belongs to this server.
+// @Summary Cancel remote download
+// @Tags Server Files
+// @Param server path string true "Server identifier"
+// @Param download path string true "Download identifier"
+// @Success 204 "No Content"
+// @Security NodeToken
+// @Router /api/servers/{server}/files/pull/{download} [delete]
 func deleteServerPullRemoteFile(c *gin.Context) {
 	s := ExtractServer(c)
 	if dl := downloader.ByID(c.Param("download")); dl != nil && dl.BelongsTo(s) {
@@ -396,14 +466,21 @@ func deleteServerPullRemoteFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Create a directory on a server.
+// postServerCreateDirectory creates a directory on a server.
+// @Summary Create directory
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerCreateDirectoryRequest true "Directory request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/create-directory [post]
 func postServerCreateDirectory(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-	}
+	var data ServerCreateDirectoryRequest
 	// BindJSON sends 400 if the request fails, all we need to do is return
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -430,15 +507,23 @@ func postServerCreateDirectory(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// postServerCompressFiles creates an archive from provided files.
+// @Summary Compress files
+// @Tags Server Files
+// @Accept json
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerArchiveRequest true "Archive request"
+// @Success 200 {object} filesystem.Stat
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/compress [post]
 func postServerCompressFiles(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		RootPath  string   `json:"root"`
-		Files     []string `json:"files"`
-		Name      string   `json:"name"`
-		Extension string   `json:"extension"`
-	}
+	var data ServerArchiveRequest
 
 	if err := c.BindJSON(&data); err != nil {
 		return
@@ -470,14 +555,19 @@ func postServerCompressFiles(c *gin.Context) {
 	})
 }
 
-// postServerDecompressFiles receives the HTTP request and starts the process
-// of unpacking an archive that exists on the server into the provided RootPath
-// for the server.
+// postServerDecompressFiles unpacks an archive that exists on the server into the provided root path.
+// @Summary Decompress archive
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerDecompressRequest true "Decompression request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/decompress [post]
 func postServerDecompressFiles(c *gin.Context) {
-	var data struct {
-		RootPath string `json:"root"`
-		File     string `json:"file"`
-	}
+	var data ServerDecompressRequest
 	if err := c.BindJSON(&data); err != nil {
 		return
 	}
@@ -514,20 +604,23 @@ func postServerDecompressFiles(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-type chmodFile struct {
-	File string `json:"file"`
-	Mode string `json:"mode"`
-}
-
 var errInvalidFileMode = errors.New("invalid file mode")
 
+// postServerChmodFile updates file permissions for a batch of files.
+// @Summary Change file permissions
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerChmodRequest true "Chmod request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/chmod [post]
 func postServerChmodFile(c *gin.Context) {
 	s := ExtractServer(c)
 
-	var data struct {
-		Root  string      `json:"root"`
-		Files []chmodFile `json:"files"`
-	}
+	var data ServerChmodRequest
 
 	if err := c.BindJSON(&data); err != nil {
 		log.Debug(err.Error())
@@ -544,30 +637,32 @@ func postServerChmodFile(c *gin.Context) {
 	g, ctx := errgroup.WithContext(context.Background())
 
 	// Loop over the array of files passed in and perform the move or rename action against each.
-	for _, p := range data.Files {
-		g.Go(func() error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				mode, err := strconv.ParseUint(p.Mode, 8, 32)
-				if err != nil {
-					return errInvalidFileMode
-				}
-
-				if err := s.Filesystem().Chmod(path.Join(data.Root, p.File), os.FileMode(mode)); err != nil {
-					// Return nil if the error is an is not exists.
-					// NOTE: os.IsNotExist() does not work if the error is wrapped.
-					if errors.Is(err, os.ErrNotExist) {
-						return nil
+	for _, file := range data.Files {
+		g.Go(func(p ServerChmodFile) func() error {
+			return func() error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					mode, err := strconv.ParseUint(p.Mode, 8, 32)
+					if err != nil {
+						return errInvalidFileMode
 					}
 
-					return err
-				}
+					if err := s.Filesystem().Chmod(path.Join(data.Root, p.File), os.FileMode(mode)); err != nil {
+						// Return nil if the error is an is not exists.
+						// NOTE: os.IsNotExist() does not work if the error is wrapped.
+						if errors.Is(err, os.ErrNotExist) {
+							return nil
+						}
 
-				return nil
+						return err
+					}
+
+					return nil
+				}
 			}
-		})
+		}(file))
 	}
 
 	if err := g.Wait(); err != nil {
@@ -585,6 +680,19 @@ func postServerChmodFile(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// postServerUploadFiles uploads files to a server using a signed token.
+// @Summary Upload files
+// @Tags Uploads
+// @Accept multipart/form-data
+// @Param token query string true "Signed upload token"
+// @Param directory query string false "Target directory"
+// @Param files formData file true "Files"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ServerJWT
+// @Router /upload/file [post]
 func postServerUploadFiles(c *gin.Context) {
 	manager := middleware.ExtractManager(c)
 
@@ -646,6 +754,8 @@ func postServerUploadFiles(c *gin.Context) {
 			})
 		}
 	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func handleFileUpload(p string, s *server.Server, header *multipart.FileHeader) error {

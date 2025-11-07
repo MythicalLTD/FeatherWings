@@ -38,6 +38,11 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		return ""
 	}))
 
+	// Public documentation endpoints
+	if config.Get().Api.Docs.Enabled {
+		registerDocumentationRoutes(router)
+	}
+
 	// These routes use signed URLs to validate access to the resource being requested.
 	router.GET("/download/backup", getDownloadBackup)
 	router.GET("/download/file", getDownloadFile)
@@ -55,7 +60,8 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 
 	// All the routes beyond this mount will use an authorization middleware
 	// and will not be accessible without the correct Authorization header provided.
-	protected := router.Use(middleware.RequireAuthorization())
+	protected := router.Group("")
+	protected.Use(middleware.RequireAuthorization())
 	protected.POST("/api/update", postUpdateConfiguration)
 	protected.GET("/api/system", getSystemInformation)
 	protected.GET("/api/diagnostics", getDiagnostics)
