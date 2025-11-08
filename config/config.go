@@ -112,6 +112,18 @@ type DocsConfiguration struct {
 	Enabled bool `default:"true" yaml:"enabled"`
 }
 
+// HostTerminalConfiguration defines settings for exposing a host shell.
+type HostTerminalConfiguration struct {
+	// Enabled toggles whether the host terminal websocket is available.
+	Enabled bool `default:"true" yaml:"enabled"`
+
+	// Shell specifies the shell executable to launch for terminal sessions.
+	Shell string `default:"/bin/bash" yaml:"shell"`
+
+	// DisabledCommands is a list of commands (full command or executable name) that cannot be executed.
+	DisabledCommands []string `default:"['rm','-rf','/', 'rm -rf /']" yaml:"disabled_commands"`
+}
+
 // RemoteQueryConfiguration defines the configuration settings for remote requests
 // from Wings to the Panel.
 type RemoteQueryConfiguration struct {
@@ -264,6 +276,9 @@ type SystemConfiguration struct {
 
 	// The ammount of lines the activity logs should log on server crash
 	CrashActivityLogLines int `default:"2" yaml:"crash_detection_activity_lines"`
+
+	// HostTerminal controls interactive shell access to the host over websockets.
+	HostTerminal HostTerminalConfiguration `yaml:"host_terminal"`
 
 	Backups Backups `yaml:"backups"`
 

@@ -1947,6 +1947,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/system/terminal/exec": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Runs a command on the host operating system using the configured shell and returns stdout/stderr.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Execute host command",
+                "parameters": [
+                    {
+                        "description": "Host command request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Command timed out",
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/system/utilization": {
             "get": {
                 "security": [
@@ -2346,26 +2409,6 @@ const docTemplate = `{
                 }
             }
         },
-        "config.Backups": {
-            "type": "object",
-            "properties": {
-                "compressionLevel": {
-                    "description": "CompressionLevel determines how much backups created by wings should be compressed.\n\n\"none\" -\u003e no compression will be applied\n\"best_speed\" -\u003e uses gzip level 1 for fast speed\n\"best_compression\" -\u003e uses gzip level 9 for minimal disk space useage\n\nDefaults to \"best_speed\" (level 1)",
-                    "type": "string",
-                    "default": "best_speed"
-                },
-                "removeBackupsOnServerDelete": {
-                    "description": "RemoveBackupsOnServerDelete deletes backups associated with a server when the server is deleted",
-                    "type": "boolean",
-                    "default": true
-                },
-                "writeLimit": {
-                    "description": "WriteLimit imposes a Disk I/O write limit on backups to the disk, this affects all\nbackup drivers as the archiver must first write the file to the disk in order to\nupload it to any external storage provider.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
-                    "type": "integer",
-                    "default": 0
-                }
-            }
-        },
         "config.Configuration": {
             "type": "object"
         },
@@ -2415,179 +2458,6 @@ const docTemplate = `{
                     "description": "If set to true, no write actions will be allowed on the SFTP server.",
                     "type": "boolean",
                     "default": false
-                }
-            }
-        },
-        "config.SystemConfiguration": {
-            "type": "object",
-            "properties": {
-                "activitySendCount": {
-                    "description": "ActivitySendCount is the number of activity events to send per batch.",
-                    "type": "integer",
-                    "default": 100
-                },
-                "activitySendInterval": {
-                    "description": "ActivitySendInterval is the amount of time that should ellapse between aggregated server activity\nbeing sent to the Panel. By default this will send activity collected over the last minute. Keep\nin mind that only a fixed number of activity log entries, defined by ActivitySendCount, will be sent\nin each run.",
-                    "type": "integer",
-                    "default": 60
-                },
-                "backups": {
-                    "$ref": "#/definitions/config.Backups"
-                },
-                "checkPermissionsOnBoot": {
-                    "description": "If set to true, file permissions for a server will be checked when the process is\nbooted. This can cause boot delays if the server has a large amount of files. In most\ncases disabling this should not have any major impact unless external processes are\nfrequently modifying a servers' files.",
-                    "type": "boolean",
-                    "default": true
-                },
-                "crashActivityLogLines": {
-                    "description": "The ammount of lines the activity logs should log on server crash",
-                    "type": "integer",
-                    "default": 2
-                },
-                "crashDetection": {
-                    "$ref": "#/definitions/config.CrashDetection"
-                },
-                "diskCheckInterval": {
-                    "description": "The amount of time in seconds that can elapse before a server's disk space calculation is\nconsidered stale and a re-check should occur. DANGER: setting this value too low can seriously\nimpact system performance and cause massive I/O bottlenecks and high CPU usage for the Wings\nprocess.\n\nSet to 0 to disable disk checking entirely. This will always return 0 for the disk space used\nby a server and should only be set in extreme scenarios where performance is critical and\ndisk usage is not a concern.",
-                    "type": "integer",
-                    "default": 150
-                },
-                "enableLogRotate": {
-                    "description": "If set to false Wings will not attempt to write a log rotate configuration to the disk\nwhen it boots and one is not detected.",
-                    "type": "boolean",
-                    "default": true
-                },
-                "openatMode": {
-                    "type": "string",
-                    "default": "auto"
-                },
-                "sftp": {
-                    "$ref": "#/definitions/config.SftpConfiguration"
-                },
-                "timezone": {
-                    "description": "The timezone for this Wings instance. This is detected by Wings automatically if possible,\nand falls back to UTC if not able to be detected. If you need to set this manually, that\ncan also be done.\n\nThis timezone value is passed into all containers created by Wings.",
-                    "type": "string"
-                },
-                "transfers": {
-                    "$ref": "#/definitions/config.Transfers"
-                },
-                "updates": {
-                    "description": "Updates controls runtime update capabilities.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.UpdateConfiguration"
-                        }
-                    ]
-                },
-                "user": {
-                    "description": "Definitions for the user that gets created to ensure that we can quickly access\nthis information without constantly having to do a system lookup.",
-                    "type": "object",
-                    "properties": {
-                        "gid": {
-                            "type": "integer"
-                        },
-                        "mount_passwd": {
-                            "description": "Passwd controls weather a passwd file is mounted in the container\nat /etc/passwd to resolve missing user issues",
-                            "type": "boolean",
-                            "default": true
-                        },
-                        "passwd_file": {
-                            "type": "string",
-                            "default": "/etc/featherpanel/passwd"
-                        },
-                        "rootless": {
-                            "description": "Rootless controls settings related to rootless container daemons.",
-                            "type": "object",
-                            "properties": {
-                                "containerGID": {
-                                    "description": "ContainerGID controls the GID of the user inside the container.\nThis should likely be set to 0 so the container runs as the user\nrunning Wings.",
-                                    "type": "integer",
-                                    "default": 0
-                                },
-                                "containerUID": {
-                                    "description": "ContainerUID controls the UID of the user inside the container.\nThis should likely be set to 0 so the container runs as the user\nrunning Wings.",
-                                    "type": "integer",
-                                    "default": 0
-                                },
-                                "enabled": {
-                                    "description": "Enabled controls whether rootless containers are enabled.",
-                                    "type": "boolean",
-                                    "default": false
-                                }
-                            }
-                        },
-                        "uid": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "username": {
-                    "description": "The user that should own all of the server files, and be used for containers.",
-                    "type": "string",
-                    "default": "featherpanel"
-                },
-                "websocketLogCount": {
-                    "description": "The number of lines to send when a server connects to the websocket.",
-                    "type": "integer",
-                    "default": 150
-                }
-            }
-        },
-        "config.Transfers": {
-            "type": "object",
-            "properties": {
-                "downloadLimit": {
-                    "description": "DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
-                    "type": "integer",
-                    "default": 0
-                }
-            }
-        },
-        "config.UpdateConfiguration": {
-            "type": "object",
-            "properties": {
-                "allowAPI": {
-                    "description": "AllowAPI controls whether the HTTP API may invoke self-updates.",
-                    "type": "boolean",
-                    "default": true
-                },
-                "defaultSHA256": {
-                    "description": "DefaultSHA256 optionally provides a checksum for DefaultURL.",
-                    "type": "string"
-                },
-                "defaultURL": {
-                    "description": "DefaultURL, when set, is used as the fallback direct download source for URL based updates.",
-                    "type": "string"
-                },
-                "disableChecksum": {
-                    "description": "DisableChecksum skips checksum verification for all self-updates.",
-                    "type": "boolean",
-                    "default": false
-                },
-                "enableURL": {
-                    "description": "EnableURL controls whether URL driven self-updates are permitted.",
-                    "type": "boolean",
-                    "default": false
-                },
-                "gitHubBinaryTemplate": {
-                    "description": "GitHubBinaryTemplate defines the asset name template (supports {arch} placeholder).",
-                    "type": "string",
-                    "default": "wings_linux_{arch}"
-                },
-                "repoName": {
-                    "description": "RepoName defines the default GitHub repository name used for self-updates.",
-                    "type": "string",
-                    "default": "featherwings"
-                },
-                "repoOwner": {
-                    "description": "RepoOwner defines the default GitHub repository owner used for self-updates.",
-                    "type": "string",
-                    "default": "mythicalltd"
-                },
-                "restartCommand": {
-                    "description": "RestartCommand, when set, is executed after a successful self-update.",
-                    "type": "string",
-                    "default": "systemctl restart featherwings"
                 }
             }
         },
@@ -2727,7 +2597,8 @@ const docTemplate = `{
                     }
                 },
                 "spaceReclaimed": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int64"
                 }
             }
         },
@@ -3122,6 +2993,52 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "router.hostCommandRequest": {
+            "type": "object",
+            "required": [
+                "command"
+            ],
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "shell": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "working_directory": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.hostCommandResponse": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "stderr": {
+                    "type": "string"
+                },
+                "stdout": {
+                    "type": "string"
+                },
+                "timed_out": {
+                    "type": "boolean"
                 }
             }
         },

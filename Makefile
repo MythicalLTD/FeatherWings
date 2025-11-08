@@ -7,6 +7,10 @@ build:
 test:
 	go test -race ./...
 
+swagger:
+	@command -v swag >/dev/null 2>&1 || { echo >&2 "swag command not found. Please install swag (https://github.com/swaggo/swag) to generate Swagger docs."; exit 1; }
+	go generate ./router
+
 debug:
 	go build -ldflags="-X github.com/mythicalltd/featherwings/system.Version=$(GIT_HEAD)"
 	sudo ./featherwings --debug --ignore-certificate-errors --config config.yml --pprof --pprof-block-rate 1

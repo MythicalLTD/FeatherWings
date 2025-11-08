@@ -11,6 +11,7 @@
 * Introduced the ability to upload diagnostics reports directly to a user-specified URL!
 * Added support for updating Wings from a custom download URL when permitted via `system.updates.enable_url`, including optional SHA256 verification.
 * Added a protected `/api/system/self-update` endpoint with detailed upstream error feedback, mandatory checksums for direct URL updates, optional `disable_checksum` overrides, and new configuration toggles under `system.updates`.
+* Added an authenticated host command execution endpoint at `/api/system/terminal/exec`, configurable through the new `system.host_terminal` settings (enabled by default).
 
 ### Fixed
 

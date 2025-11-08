@@ -50,37 +50,6 @@ definitions:
         description: The maximum size for files uploaded through the Panel in MiB.
         type: integer
     type: object
-  config.Backups:
-    properties:
-      compressionLevel:
-        default: best_speed
-        description: |-
-          CompressionLevel determines how much backups created by wings should be compressed.
-
-          "none" -> no compression will be applied
-          "best_speed" -> uses gzip level 1 for fast speed
-          "best_compression" -> uses gzip level 9 for minimal disk space useage
-
-          Defaults to "best_speed" (level 1)
-        type: string
-      removeBackupsOnServerDelete:
-        default: true
-        description: RemoveBackupsOnServerDelete deletes backups associated with a
-          server when the server is deleted
-        type: boolean
-      writeLimit:
-        default: 0
-        description: |-
-          WriteLimit imposes a Disk I/O write limit on backups to the disk, this affects all
-          backup drivers as the archiver must first write the file to the disk in order to
-          upload it to any external storage provider.
-
-          If the value is less than 1, the write speed is unlimited,
-          if the value is greater than 0, the write speed is the value in MiB/s.
-
-          Defaults to 0 (unlimited)
-        type: integer
-    type: object
   config.Configuration:
     type: object
   config.CrashDetection:
@@ -126,180 +95,6 @@ definitions:
         description: If set to true, no write actions will be allowed on the SFTP
           server.
         type: boolean
-    type: object
-  config.SystemConfiguration:
-    properties:
-      activitySendCount:
-        default: 100
-        description: ActivitySendCount is the number of activity events to send per
-          batch.
-        type: integer
-      activitySendInterval:
-        default: 60
-        description: |-
-          ActivitySendInterval is the amount of time that should ellapse between aggregated server activity
-          being sent to the Panel. By default this will send activity collected over the last minute. Keep
-          in mind that only a fixed number of activity log entries, defined by ActivitySendCount, will be sent
-          in each run.
-        type: integer
-      backups:
-        $ref: '#/definitions/config.Backups'
-      checkPermissionsOnBoot:
-        default: true
-        description: |-
-          If set to true, file permissions for a server will be checked when the process is
-          booted. This can cause boot delays if the server has a large amount of files. In most
-          cases disabling this should not have any major impact unless external processes are
-          frequently modifying a servers' files.
-        type: boolean
-      crashActivityLogLines:
-        default: 2
-        description: The ammount of lines the activity logs should log on server crash
-        type: integer
-      crashDetection:
-        $ref: '#/definitions/config.CrashDetection'
-      diskCheckInterval:
-        default: 150
-        description: |-
-          The amount of time in seconds that can elapse before a server's disk space calculation is
-          considered stale and a re-check should occur. DANGER: setting this value too low can seriously
-          impact system performance and cause massive I/O bottlenecks and high CPU usage for the Wings
-          process.
-
-          Set to 0 to disable disk checking entirely. This will always return 0 for the disk space used
-          by a server and should only be set in extreme scenarios where performance is critical and
-          disk usage is not a concern.
-        type: integer
-      enableLogRotate:
-        default: true
-        description: |-
-          If set to false Wings will not attempt to write a log rotate configuration to the disk
-          when it boots and one is not detected.
-        type: boolean
-      openatMode:
-        default: auto
-        type: string
-      sftp:
-        $ref: '#/definitions/config.SftpConfiguration'
-      timezone:
-        description: |-
-          The timezone for this Wings instance. This is detected by Wings automatically if possible,
-          and falls back to UTC if not able to be detected. If you need to set this manually, that
-          can also be done.
-
-          This timezone value is passed into all containers created by Wings.
-        type: string
-      transfers:
-        $ref: '#/definitions/config.Transfers'
-      updates:
-        allOf:
-        - $ref: '#/definitions/config.UpdateConfiguration'
-        description: Updates controls runtime update capabilities.
-      user:
-        description: |-
-          Definitions for the user that gets created to ensure that we can quickly access
-          this information without constantly having to do a system lookup.
-        properties:
-          gid:
-            type: integer
-          mount_passwd:
-            default: true
-            description: |-
-              Passwd controls weather a passwd file is mounted in the container
-              at /etc/passwd to resolve missing user issues
-            type: boolean
-          passwd_file:
-            default: /etc/featherpanel/passwd
-            type: string
-          rootless:
-            description: Rootless controls settings related to rootless container
-              daemons.
-            properties:
-              containerGID:
-                default: 0
-                description: |-
-                  ContainerGID controls the GID of the user inside the container.
-                  This should likely be set to 0 so the container runs as the user
-                  running Wings.
-                type: integer
-              containerUID:
-                default: 0
-                description: |-
-                  ContainerUID controls the UID of the user inside the container.
-                  This should likely be set to 0 so the container runs as the user
-                  running Wings.
-                type: integer
-              enabled:
-                default: false
-                description: Enabled controls whether rootless containers are enabled.
-                type: boolean
-            type: object
-          uid:
-            type: integer
-        type: object
-      username:
-        default: featherpanel
-        description: The user that should own all of the server files, and be used
-          for containers.
-        type: string
-      websocketLogCount:
-        default: 150
-        description: The number of lines to send when a server connects to the websocket.
-        type: integer
-    type: object
-  config.Transfers:
-    properties:
-      downloadLimit:
-        default: 0
-        description: |-
-          DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.
-
-          If the value is less than 1, the write speed is unlimited,
-          if the value is greater than 0, the write speed is the value in MiB/s.
-
-          Defaults to 0 (unlimited)
-        type: integer
-    type: object
-  config.UpdateConfiguration:
-    properties:
-      allowAPI:
-        default: true
-        description: AllowAPI controls whether the HTTP API may invoke self-updates.
-        type: boolean
-      defaultSHA256:
-        description: DefaultSHA256 optionally provides a checksum for DefaultURL.
-        type: string
-      defaultURL:
-        description: DefaultURL, when set, is used as the fallback direct download
-          source for URL based updates.
-        type: string
-      disableChecksum:
-        default: false
-        description: DisableChecksum skips checksum verification for all self-updates.
-        type: boolean
-      enableURL:
-        default: false
-        description: EnableURL controls whether URL driven self-updates are permitted.
-        type: boolean
-      gitHubBinaryTemplate:
-        default: wings_linux_{arch}
-        description: GitHubBinaryTemplate defines the asset name template (supports
-          {arch} placeholder).
-        type: string
-      repoName:
-        default: featherwings
-        description: RepoName defines the default GitHub repository name used for
-          self-updates.
-        type: string
-      repoOwner:
-        default: mythicalltd
-        description: RepoOwner defines the default GitHub repository owner used for
-          self-updates.
-        type: string
-      restartCommand:
-        default: systemctl restart featherwings
-        description: RestartCommand, when set, is executed after a successful self-update.
-        type: string
     type: object
   downloader.Download:
     properties:
@@ -410,6 +205,7 @@ definitions:
           $ref: '#/definitions/image.DeleteResponse'
         type: array
       spaceReclaimed:
+        format: int64
         type: integer
     type: object
   router.ErrorResponse:
@@ -663,6 +459,36 @@ definitions:
         type: string
       version:
         type: string
+    type: object
+  router.hostCommandRequest:
+    properties:
+      command:
+        type: string
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      shell:
+        type: string
+      timeout_seconds:
+        type: integer
+      working_directory:
+        type: string
+    required:
+    - command
+    type: object
+  router.hostCommandResponse:
+    properties:
+      duration_ms:
+        type: integer
+      exit_code:
+        type: integer
+      stderr:
+        type: string
+      stdout:
+        type: string
+      timed_out:
+        type: boolean
     type: object
   router.postUpdateConfigurationResponse:
     properties:
@@ -2177,6 +2003,47 @@ paths:
       security:
       - NodeToken: []
       summary: Trigger self-update
+      tags:
+      - System
+  /api/system/terminal/exec:
+    post:
+      consumes:
+      - application/json
+      description: Runs a command on the host operating system using the configured
+        shell and returns stdout/stderr.
+      parameters:
+      - description: Host command request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/router.hostCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.hostCommandResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "504":
+          description: Command timed out
+          schema:
+            $ref: '#/definitions/router.hostCommandResponse'
+      security:
+      - NodeToken: []
+      summary: Execute host command
       tags:
       - System
   /api/system/utilization:
