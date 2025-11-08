@@ -121,7 +121,7 @@ type HostTerminalConfiguration struct {
 	Shell string `default:"/bin/bash" yaml:"shell"`
 
 	// DisabledCommands is a list of commands (full command or executable name) that cannot be executed.
-	DisabledCommands []string `default:"['rm','-rf','/', 'rm -rf /']" yaml:"disabled_commands"`
+	DisabledCommands []string `yaml:"disabled_commands"`
 }
 
 // RemoteQueryConfiguration defines the configuration settings for remote requests
