@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -171,5 +172,58 @@ func TestPostSystemHostCommand_CommandDisabled(t *testing.T) {
 
 	if w2.Code != http.StatusForbidden {
 		t.Fatalf("expected status 403 for exact command match, got %d", w2.Code)
+	}
+}
+
+func TestPostSystemHostCommand_WorkingDirectoryValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	root := t.TempDir()
+	allowed := filepath.Join(root, "allowed")
+	if err := os.MkdirAll(allowed, 0o755); err != nil {
+		t.Fatalf("failed to create allowed directory: %v", err)
+	}
+
+	cfg := &config.Configuration{
+		AuthenticationToken:   "test-token",
+		AuthenticationTokenId: "test-id",
+		System: config.SystemConfiguration{
+			RootDirectory: root,
+			HostTerminal: config.HostTerminalConfiguration{
+				Enabled: true,
+				Shell:   "/bin/sh",
+			},
+		},
+	}
+	config.Set(cfg)
+
+	// allowed directory succeeds
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	reqBody := `{"command":"echo success","working_directory":"allowed"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/system/terminal/exec", strings.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("logger", newTestLogger())
+
+	postSystemHostCommand(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// disallowed sensitive path is rejected
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	reqBody = `{"command":"echo nope","working_directory":"/etc"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/system/terminal/exec", strings.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("logger", newTestLogger())
+
+	postSystemHostCommand(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "working directory") {
+		t.Fatalf("expected working directory error, got %q", w.Body.String())
 	}
 }

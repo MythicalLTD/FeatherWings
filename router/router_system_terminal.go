@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,7 +79,7 @@ func buildEnvironment(overrides map[string]string) []string {
 		entry := fmt.Sprintf("%s=%s", key, value)
 		replaced := false
 		for i, existing := range env {
-			if strings.HasPrefix(existing, key+"=") {
+			if sep := strings.Index(existing, "="); sep > 0 && existing[:sep] == key {
 				env[i] = entry
 				replaced = true
 				break
@@ -121,6 +122,41 @@ func isCommandDisabled(command string, disabled []string) bool {
 	return false
 }
 
+func sanitizeWorkingDirectory(path string, systemCfg config.SystemConfiguration) (string, error) {
+	cleaned := filepath.Clean(path)
+	sep := string(os.PathSeparator)
+
+	if cleaned == ".." ||
+		strings.HasPrefix(cleaned, ".."+sep) ||
+		strings.Contains(cleaned, sep+".."+sep) ||
+		strings.HasSuffix(cleaned, sep+"..") {
+		return "", errors.New("working directory contains path traversal sequences")
+	}
+
+	if !filepath.IsAbs(cleaned) {
+		if systemCfg.RootDirectory == "" {
+			return "", errors.New("relative working directory not permitted without configured root")
+		}
+		cleaned = filepath.Clean(filepath.Join(systemCfg.RootDirectory, cleaned))
+	}
+	
+	if base := filepath.Clean(systemCfg.RootDirectory); base != "" {
+		if rel, err := filepath.Rel(base, cleaned); err != nil || strings.HasPrefix(rel, "..") {
+			return "", errors.New("working directory outside allowed root directory")
+		}
+	}
+
+	info, err := os.Stat(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("working directory validation failed: %w", err)
+	}
+	if !info.IsDir() {
+		return "", errors.New("working directory must be a directory")
+	}
+
+	return cleaned, nil
+}
+
 // postSystemHostCommand executes a command on the host system synchronously and returns the output.
 // @Summary Execute host command
 // @Description Runs a command on the host operating system using the configured shell and returns stdout/stderr.
@@ -159,6 +195,16 @@ func postSystemHostCommand(c *gin.Context) {
 		return
 	}
 
+	var workingDirectory string
+	if req.WorkingDirectory != "" {
+		var err error
+		workingDirectory, err = sanitizeWorkingDirectory(req.WorkingDirectory, cfg.System)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+	}
+
 	shell, err := resolveShellExecutable(cfg.System.HostTerminal, req.Shell)
 	if err != nil {
 		middleware.CaptureAndAbort(c, err)
@@ -176,8 +222,8 @@ func postSystemHostCommand(c *gin.Context) {
 	arguments := append(shell[1:], "-c", req.Command)
 	cmd := exec.CommandContext(ctx, shell[0], arguments...)
 	cmd.Env = buildEnvironment(req.Environment)
-	if req.WorkingDirectory != "" {
-		cmd.Dir = req.WorkingDirectory
+	if workingDirectory != "" {
+		cmd.Dir = workingDirectory
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
