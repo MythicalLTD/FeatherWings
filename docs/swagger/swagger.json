@@ -1944,6 +1944,69 @@
                 }
             }
         },
+        "/api/system/terminal/exec": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Runs a command on the host operating system using the configured shell and returns stdout/stderr.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Execute host command",
+                "parameters": [
+                    {
+                        "description": "Host command request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Command timed out",
+                        "schema": {
+                            "$ref": "#/definitions/router.hostCommandResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/system/utilization": {
             "get": {
                 "security": [
@@ -2395,6 +2458,21 @@
                 }
             }
         },
+        "config.HostTerminalConfiguration": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled toggles whether the host terminal websocket is available.",
+                    "type": "boolean",
+                    "default": true
+                },
+                "shell": {
+                    "description": "Shell specifies the shell executable to launch for terminal sessions.",
+                    "type": "string",
+                    "default": "/bin/bash"
+                }
+            }
+        },
         "config.SftpConfiguration": {
             "type": "object",
             "properties": {
@@ -2453,6 +2531,14 @@
                     "description": "If set to false Wings will not attempt to write a log rotate configuration to the disk\nwhen it boots and one is not detected.",
                     "type": "boolean",
                     "default": true
+                },
+                "hostTerminal": {
+                    "description": "HostTerminal controls interactive shell access to the host over websockets.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.HostTerminalConfiguration"
+                        }
+                    ]
                 },
                 "openatMode": {
                     "type": "string",
@@ -2559,12 +2645,12 @@
                 "disableChecksum": {
                     "description": "DisableChecksum skips checksum verification for all self-updates.",
                     "type": "boolean",
-                    "default": false
+                    "default": true
                 },
                 "enableURL": {
                     "description": "EnableURL controls whether URL driven self-updates are permitted.",
                     "type": "boolean",
-                    "default": false
+                    "default": true
                 },
                 "gitHubBinaryTemplate": {
                     "description": "GitHubBinaryTemplate defines the asset name template (supports {arch} placeholder).",
@@ -2724,7 +2810,8 @@
                     }
                 },
                 "spaceReclaimed": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int64"
                 }
             }
         },
@@ -3119,6 +3206,52 @@
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "router.hostCommandRequest": {
+            "type": "object",
+            "required": [
+                "command"
+            ],
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "shell": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "working_directory": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.hostCommandResponse": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "stderr": {
+                    "type": "string"
+                },
+                "stdout": {
+                    "type": "string"
+                },
+                "timed_out": {
+                    "type": "boolean"
                 }
             }
         },

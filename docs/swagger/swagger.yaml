@@ -111,6 +111,17 @@ definitions:
         default: true
         type: boolean
     type: object
+  config.HostTerminalConfiguration:
+    properties:
+      enabled:
+        default: true
+        description: Enabled toggles whether the host terminal websocket is available.
+        type: boolean
+      shell:
+        default: /bin/bash
+        description: Shell specifies the shell executable to launch for terminal sessions.
+        type: string
+    type: object
   config.SftpConfiguration:
     properties:
       bind_address:
@@ -176,6 +187,11 @@ definitions:
           If set to false Wings will not attempt to write a log rotate configuration to the disk
           when it boots and one is not detected.
         type: boolean
+      hostTerminal:
+        allOf:
+        - $ref: '#/definitions/config.HostTerminalConfiguration'
+        description: HostTerminal controls interactive shell access to the host over
+          websockets.
       openatMode:
         default: auto
         type: string
@@ -274,11 +290,11 @@ definitions:
           source for URL based updates.
         type: string
       disableChecksum:
-        default: false
+        default: true
         description: DisableChecksum skips checksum verification for all self-updates.
         type: boolean
       enableURL:
-        default: false
+        default: true
         description: EnableURL controls whether URL driven self-updates are permitted.
         type: boolean
       gitHubBinaryTemplate:
@@ -410,6 +426,7 @@ definitions:
           $ref: '#/definitions/image.DeleteResponse'
         type: array
       spaceReclaimed:
+        format: int64
         type: integer
     type: object
   router.ErrorResponse:
@@ -663,6 +680,36 @@ definitions:
         type: string
       version:
         type: string
+    type: object
+  router.hostCommandRequest:
+    properties:
+      command:
+        type: string
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      shell:
+        type: string
+      timeout_seconds:
+        type: integer
+      working_directory:
+        type: string
+    required:
+    - command
+    type: object
+  router.hostCommandResponse:
+    properties:
+      duration_ms:
+        type: integer
+      exit_code:
+        type: integer
+      stderr:
+        type: string
+      stdout:
+        type: string
+      timed_out:
+        type: boolean
     type: object
   router.postUpdateConfigurationResponse:
     properties:
@@ -2177,6 +2224,47 @@ paths:
       security:
       - NodeToken: []
       summary: Trigger self-update
+      tags:
+      - System
+  /api/system/terminal/exec:
+    post:
+      consumes:
+      - application/json
+      description: Runs a command on the host operating system using the configured
+        shell and returns stdout/stderr.
+      parameters:
+      - description: Host command request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/router.hostCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.hostCommandResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "504":
+          description: Command timed out
+          schema:
+            $ref: '#/definitions/router.hostCommandResponse'
+      security:
+      - NodeToken: []
+      summary: Execute host command
       tags:
       - System
   /api/system/utilization:

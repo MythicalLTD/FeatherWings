@@ -18,7 +18,6 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	router.Use(gin.Recovery())
 	if err := router.SetTrustedProxies(config.Get().Api.TrustedProxies); err != nil {
 		panic(errors.WithStack(err))
-		return nil
 	}
 	router.Use(middleware.AttachRequestID(), middleware.CaptureErrors(), middleware.SetAccessControlHeaders())
 	router.Use(middleware.AttachServerManager(m), middleware.AttachApiClient(client))
@@ -70,6 +69,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	protected.DELETE("/api/system/docker/image/prune", pruneDockerImages)
 	protected.GET("/api/system/ips", getSystemIps)
 	protected.GET("/api/system/utilization", getSystemUtilization)
+	protected.POST("/api/system/terminal/exec", postSystemHostCommand)
 	protected.GET("/api/servers", getAllServers)
 	protected.POST("/api/servers", postCreateServer)
 	protected.DELETE("/api/transfers/:server", deleteTransfer)
