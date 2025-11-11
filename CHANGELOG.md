@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.5
+
+### Fixed
+
+* Fixed an issue where files on the "File Denylist" could still be deleted if they were inside a folder.
+
 ## v1.0.4
 
 ### Added
