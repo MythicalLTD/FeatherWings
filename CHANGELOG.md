@@ -6,6 +6,14 @@
 
 * Fixed an issue where files on the "File Denylist" could still be deleted if they were inside a folder.
 
+### Added
+
+* Added configurable maximum redirect limit for remote file downloads in the downloader settings.
+
+### Removed
+
+* Removed the configure command to streamline the experience FeatherWings is now even simpler to set up!
+
 ## v1.0.4
 
 ### Added

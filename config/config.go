@@ -96,6 +96,14 @@ type ApiConfiguration struct {
 	// servers.
 	DisableRemoteDownload bool `json:"-" yaml:"disable_remote_download"`
 
+	// RemoteDownload contains configuration for server remote download functionality.
+
+	// RemoteDownload defines settings specific to server remote file downloads.
+	RemoteDownload struct {
+		// MaxRedirects specifies the maximum number of HTTP redirects to follow during a remote file download. Defaults to 10.
+		MaxRedirects int `default:"10" json:"max_redirects" yaml:"max_redirects"`
+	} `json:"remote_download" yaml:"remote_download"`
+
 	// The maximum size for files uploaded through the Panel in MiB.
 	UploadLimit int64 `default:"100" json:"upload_limit" yaml:"upload_limit"`
 
