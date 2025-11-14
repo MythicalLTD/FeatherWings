@@ -53,3 +53,6 @@ debug
 *.pdf
 pprof.*
 featherwings
+
+# Ingore Thread Inteligence Server
+tis/

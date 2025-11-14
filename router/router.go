@@ -74,6 +74,13 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	protected.POST("/api/servers", postCreateServer)
 	protected.DELETE("/api/transfers/:server", deleteTransfer)
 
+	// TIS (Thread Intelligence Server) routes for malicious hash tracking
+	protected.POST("/api/tis/hashes", postTISHash)
+	protected.GET("/api/tis/hashes", getTISHashes)
+	protected.GET("/api/tis/servers/:serverId", getTISServerStatus)
+	protected.GET("/api/tis/stats", getTISStats)
+	protected.POST("/api/tis/check/hashes", postTISCheckHashes)
+
 	// These are server specific routes, and require that the request be authorized, and
 	// that the server exist on the Daemon.
 	server := router.Group("/api/servers/:server")
