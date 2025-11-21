@@ -269,6 +269,17 @@ func (e *Environment) Create() error {
 		UsernsMode:  container.UsernsMode(cfg.Docker.UsernsMode),
 	}
 
+	// Add KVM device mapping if KVM support is enabled
+	if cfg.Docker.KvmSupport {
+		hostConf.Devices = []container.DeviceMapping{
+			{
+				PathOnHost:        "/dev/kvm",
+				PathInContainer:   "/dev/kvm",
+				CgroupPermissions: "rwm",
+			},
+		}
+	}
+
 	if _, err := e.client.ContainerCreate(ctx, conf, hostConf, nil, nil, e.Id); err != nil {
 		return errors.Wrap(err, "environment/docker: failed to create container")
 	}

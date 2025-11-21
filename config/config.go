@@ -622,6 +622,15 @@ func FromFile(path string) error {
 		return err
 	}
 
+	// Check if kvm_support is explicitly set in the YAML before unmarshaling
+	var yamlMap map[string]interface{}
+	kvmExplicitlySet := false
+	if err := yaml.Unmarshal(b, &yamlMap); err == nil {
+		if dockerMap, ok := yamlMap["docker"].(map[interface{}]interface{}); ok {
+			_, kvmExplicitlySet = dockerMap["kvm_support"]
+		}
+	}
+
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return err
 	}
@@ -644,6 +653,11 @@ func FromFile(path string) error {
 	c.Token.Token, err = Expand(c.Token.Token)
 	if err != nil {
 		return err
+	}
+
+	// Set default KVM support based on host detection if not explicitly set in config
+	if !kvmExplicitlySet {
+		c.Docker.KvmSupport = HasKvmSupport()
 	}
 
 	// Store this configuration in the global state.
@@ -853,6 +867,29 @@ func UseOpenat2() bool {
 		openat2.Store(true)
 		return true
 	}
+}
+
+// HasKvmSupport checks if KVM is available on the host system by checking if
+// /dev/kvm exists and is accessible. This is used to determine the default
+// value for KVM support in Docker containers.
+func HasKvmSupport() bool {
+	// Check if /dev/kvm exists
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		// If there's an error accessing the file, assume KVM is not available
+		return false
+	}
+
+	// Try to open /dev/kvm to verify it's accessible
+	// We use O_RDWR to check if we have read/write permissions
+	fd, err := unix.Open("/dev/kvm", unix.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	_ = unix.Close(fd)
+	return true
 }
 
 // Expand expands an input string by calling [os.ExpandEnv] to expand all

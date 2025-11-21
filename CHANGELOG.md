@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.7
+
+### Added
+
+* Native KVM virtualization support added! You can now run full VMs directly inside FeatherPanel. Thanks to @nayskutzu.
+
 ## v1.0.6
 
 ### Fixed
