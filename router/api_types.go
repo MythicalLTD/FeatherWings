@@ -46,6 +46,14 @@ type SelfUpdateResponse struct {
 	RestartTriggered bool   `json:"restart_triggered"`
 }
 
+// UpdateConfigurationRequest defines the payload for updating wings configuration.
+// The configuration can be provided directly as a config.Configuration struct,
+// with an optional restart flag to trigger a wings restart after the update.
+type UpdateConfigurationRequest struct {
+	config.Configuration `json:",inline"`
+	Restart               bool `json:"restart,omitempty"`
+}
+
 // DiagnosticsUploadResponse contains the URL to an uploaded diagnostics bundle.
 type DiagnosticsUploadResponse struct {
 	URL string `json:"url"`

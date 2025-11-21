@@ -622,12 +622,15 @@ func FromFile(path string) error {
 		return err
 	}
 
-	// Check if kvm_support is explicitly set in the YAML before unmarshaling
-	var yamlMap map[string]interface{}
-	kvmExplicitlySet := false
-	if err := yaml.Unmarshal(b, &yamlMap); err == nil {
-		if dockerMap, ok := yamlMap["docker"].(map[interface{}]interface{}); ok {
-			_, kvmExplicitlySet = dockerMap["kvm_support"]
+	
+	// Check if enable_native_kvm was explicitly set in the YAML
+	var rawConfig map[string]interface{}
+	explicitlySet := false
+	if err := yaml.Unmarshal(b, &rawConfig); err == nil {
+		if dockerConfig, ok := rawConfig["docker"].(map[interface{}]interface{}); ok {
+			if _, exists := dockerConfig["enable_native_kvm"]; exists {
+				explicitlySet = true
+			}
 		}
 	}
 
@@ -655,9 +658,10 @@ func FromFile(path string) error {
 		return err
 	}
 
-	// Set default KVM support based on host detection if not explicitly set in config
-	if !kvmExplicitlySet {
-		c.Docker.KvmSupport = HasKvmSupport()
+	// Set default for EnableNativeKVM based on KVM availability if not explicitly set.
+	// Default is true if KVM is available on the host, otherwise false.
+	if !explicitlySet {
+		c.Docker.EnableNativeKVM = IsKVMAvailable()
 	}
 
 	// Store this configuration in the global state.
@@ -779,6 +783,44 @@ func (sc *SystemConfiguration) GetStatesPath() string {
 	return path.Join(sc.RootDirectory, "/states.json")
 }
 
+// IsKVMAvailable checks if KVM is available on the host system by checking
+// if /dev/kvm exists and is accessible.
+func IsKVMAvailable() bool {
+	// Check if /dev/kvm exists
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		if os.IsNotExist(err) {
+			log.Debug("/dev/kvm not found: KVM is not available on this system")
+			return false
+		}
+		// Other errors from Stat (e.g., permission issues checking the file)
+		log.WithError(err).Warn("/dev/kvm stat failed: unexpected error, assuming KVM not available")
+		return false
+	}
+
+	// Try to open the device to verify it's actually accessible
+	file, err := os.Open("/dev/kvm")
+	if err != nil {
+		if os.IsPermission(err) {
+			// KVM device exists but we don't have permission to access it
+			// Return true since KVM is present, just not accessible to this process
+			log.Info("/dev/kvm permission denied: KVM is present but not accessible to this process")
+			return true
+		}
+		if os.IsNotExist(err) {
+			// Shouldn't happen if Stat succeeded, but handle it anyway
+			log.Debug("/dev/kvm not found: KVM is not available on this system")
+			return false
+		}
+		// Other unexpected errors
+		log.WithError(err).Warn("/dev/kvm open failed: unexpected error, assuming KVM not available")
+		return false
+	}
+	defer file.Close()
+
+	log.Debug("/dev/kvm is available and accessible")
+	return true
+}
+
 // ConfigureTimezone sets the timezone data for the configuration if it is
 // currently missing. If a value has been set, this functionality will only run
 // to validate that the timezone being used is valid.
@@ -867,29 +909,6 @@ func UseOpenat2() bool {
 		openat2.Store(true)
 		return true
 	}
-}
-
-// HasKvmSupport checks if KVM is available on the host system by checking if
-// /dev/kvm exists and is accessible. This is used to determine the default
-// value for KVM support in Docker containers.
-func HasKvmSupport() bool {
-	// Check if /dev/kvm exists
-	if _, err := os.Stat("/dev/kvm"); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-		// If there's an error accessing the file, assume KVM is not available
-		return false
-	}
-
-	// Try to open /dev/kvm to verify it's accessible
-	// We use O_RDWR to check if we have read/write permissions
-	fd, err := unix.Open("/dev/kvm", unix.O_RDWR, 0)
-	if err != nil {
-		return false
-	}
-	_ = unix.Close(fd)
-	return true
 }
 
 // Expand expands an input string by calling [os.ExpandEnv] to expand all

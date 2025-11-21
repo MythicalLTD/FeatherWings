@@ -92,10 +92,10 @@ type DockerConfiguration struct {
 	// Sets the IPS that the user is able to bind to
 	SystemIps []string `default:"[]" json:"system_ips" yaml:"system_ips"`
 
-	// KvmSupport enables native KVM support by mounting /dev/kvm into containers.
-	// This allows containers to use hardware virtualization acceleration.
-	// Defaults to true if KVM is available on the host, false otherwise.
-	KvmSupport bool `json:"kvm_support" yaml:"kvm_support"`
+	// EnableNativeKVM enables native KVM support for containers. This allows containers
+	// to access /dev/kvm for hardware-accelerated virtualization. The default value is
+	// automatically set to true if KVM is available on the host system, otherwise false.
+	EnableNativeKVM bool `json:"enable_native_kvm" yaml:"enable_native_kvm"`
 
 	LogConfig struct {
 		Type   string            `default:"local" json:"type" yaml:"type"`

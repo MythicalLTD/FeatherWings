@@ -313,7 +313,8 @@ func postCreateServer(c *gin.Context) {
 }
 
 type postUpdateConfigurationResponse struct {
-	Applied bool `json:"applied"`
+	Applied         bool `json:"applied"`
+	RestartTriggered bool `json:"restart_triggered,omitempty"`
 }
 
 func respondSelfUpdateError(c *gin.Context, err error) bool {
