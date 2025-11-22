@@ -70,6 +70,13 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	protected.GET("/api/system/ips", getSystemIps)
 	protected.GET("/api/system/utilization", getSystemUtilization)
 	protected.POST("/api/system/terminal/exec", postSystemHostCommand)
+
+	// Configuration management routes (new, preserves comments)
+	protected.GET("/api/config", getConfigRaw)
+	protected.PUT("/api/config", putConfigRaw)
+	protected.PATCH("/api/config/patch", patchConfig)
+	protected.GET("/api/config/schema", getConfigSchema)
+
 	protected.GET("/api/servers", getAllServers)
 	protected.POST("/api/servers", postCreateServer)
 	protected.DELETE("/api/transfers/:server", deleteTransfer)

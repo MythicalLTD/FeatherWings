@@ -511,6 +511,11 @@ func GetJwtAlgorithm() *jwt.HMACSHA {
 	return _jwtAlgo
 }
 
+// Path returns the file path where this configuration is stored.
+func (c *Configuration) Path() string {
+	return c.path
+}
+
 // WriteToDisk writes the configuration to the disk. This is a thread safe operation
 // and will only allow one write at a time. Additional calls while writing are
 // queued up.
@@ -622,7 +627,6 @@ func FromFile(path string) error {
 		return err
 	}
 
-	
 	// Check if enable_native_kvm was explicitly set in the YAML
 	var rawConfig map[string]interface{}
 	explicitlySet := false

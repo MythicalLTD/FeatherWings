@@ -15,6 +15,163 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/config": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Returns the complete wings configuration file as raw YAML with all comments preserved. Returns YAML format with proper Content-Type header.",
+                "produces": [
+                    "application/x-yaml",
+                    "text/yaml"
+                ],
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "Get raw configuration",
+                "responses": {
+                    "200": {
+                        "description": "Raw YAML configuration file",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Replaces the entire wings configuration file with new YAML content. All comments and formatting are preserved. Optionally restarts wings after update.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "Replace entire configuration",
+                "parameters": [
+                    {
+                        "description": "Full configuration file content",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ConfigPutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ConfigUpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/patch": {
+            "patch": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Updates specific configuration values using dot notation (e.g., \"api.port\", \"system.root_directory\"). Preserves comments and other values.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "Patch configuration values",
+                "parameters": [
+                    {
+                        "description": "Configuration patch request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ConfigPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ConfigUpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/schema": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "description": "Returns a schema describing all configurable fields in the wings configuration, useful for building GUIs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "Get configuration schema",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ConfigSchemaResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/diagnostics": {
             "get": {
                 "security": [
@@ -3090,6 +3247,89 @@ const docTemplate = `{
         "models.TISMetadata": {
             "type": "object",
             "additionalProperties": true
+        },
+        "router.ConfigPatchRequest": {
+            "type": "object",
+            "required": [
+                "updates"
+            ],
+            "properties": {
+                "restart": {
+                    "description": "Whether to restart wings after update",
+                    "type": "boolean"
+                },
+                "updates": {
+                    "description": "Map of dot-notation paths to values, e.g. {\"api.port\": 8080, \"system.root_directory\": \"/var/lib/featherpanel\"}",
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "router.ConfigPutRequest": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "description": "Raw YAML content - the entire config file",
+                    "type": "string"
+                },
+                "restart": {
+                    "description": "Whether to restart wings after update",
+                    "type": "boolean"
+                }
+            }
+        },
+        "router.ConfigSchemaField": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "description": {
+                    "type": "string"
+                },
+                "fields": {
+                    "description": "For nested structures",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ConfigSchemaField"
+                    }
+                },
+                "key": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ConfigSchemaResponse": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ConfigSchemaField"
+                    }
+                }
+            }
+        },
+        "router.ConfigUpdateResponse": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "type": "boolean"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "restarted": {
+                    "type": "boolean"
+                }
+            }
         },
         "router.DetectionTypeStat": {
             "type": "object",

@@ -476,6 +476,63 @@ definitions:
   models.TISMetadata:
     additionalProperties: true
     type: object
+  router.ConfigPatchRequest:
+    properties:
+      restart:
+        description: Whether to restart wings after update
+        type: boolean
+      updates:
+        additionalProperties: true
+        description: 'Map of dot-notation paths to values, e.g. {"api.port": 8080,
+          "system.root_directory": "/var/lib/featherpanel"}'
+        type: object
+    required:
+    - updates
+    type: object
+  router.ConfigPutRequest:
+    properties:
+      content:
+        description: Raw YAML content - the entire config file
+        type: string
+      restart:
+        description: Whether to restart wings after update
+        type: boolean
+    required:
+    - content
+    type: object
+  router.ConfigSchemaField:
+    properties:
+      default: {}
+      description:
+        type: string
+      fields:
+        description: For nested structures
+        items:
+          $ref: '#/definitions/router.ConfigSchemaField'
+        type: array
+      key:
+        type: string
+      required:
+        type: boolean
+      type:
+        type: string
+    type: object
+  router.ConfigSchemaResponse:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/router.ConfigSchemaField'
+        type: array
+    type: object
+  router.ConfigUpdateResponse:
+    properties:
+      applied:
+        type: boolean
+      error_message:
+        type: string
+      restarted:
+        type: boolean
+    type: object
   router.DetectionTypeStat:
     properties:
       count:
@@ -1139,6 +1196,109 @@ info:
   title: FeatherWings API
   version: "1.0"
 paths:
+  /api/config:
+    get:
+      description: Returns the complete wings configuration file as raw YAML with
+        all comments preserved. Returns YAML format with proper Content-Type header.
+      produces:
+      - application/x-yaml
+      - text/yaml
+      responses:
+        "200":
+          description: Raw YAML configuration file
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get raw configuration
+      tags:
+      - Configuration
+    put:
+      consumes:
+      - application/json
+      description: Replaces the entire wings configuration file with new YAML content.
+        All comments and formatting are preserved. Optionally restarts wings after
+        update.
+      parameters:
+      - description: Full configuration file content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/router.ConfigPutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ConfigUpdateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Replace entire configuration
+      tags:
+      - Configuration
+  /api/config/patch:
+    patch:
+      consumes:
+      - application/json
+      description: Updates specific configuration values using dot notation (e.g.,
+        "api.port", "system.root_directory"). Preserves comments and other values.
+      parameters:
+      - description: Configuration patch request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/router.ConfigPatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ConfigUpdateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Patch configuration values
+      tags:
+      - Configuration
+  /api/config/schema:
+    get:
+      description: Returns a schema describing all configurable fields in the wings
+        configuration, useful for building GUIs.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ConfigSchemaResponse'
+      security:
+      - NodeToken: []
+      summary: Get configuration schema
+      tags:
+      - Configuration
   /api/diagnostics:
     get:
       description: Returns plain-text diagnostics output by default. Use include_endpoints

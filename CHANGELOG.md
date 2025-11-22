@@ -5,6 +5,7 @@
 ### Added
 
 * Native KVM virtualization support added! You can now run full VMs directly inside FeatherPanel. Thanks to @nayskutzu.
+* Vastly improved configuration editing experience via new API endpoints—enabling seamless and intuitive modification of Wings settings!
 
 ## v1.0.6
 
