@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.8
+
+### Fixed
+
+* Fixed the pool overlaping issue if you had wings installed before :/
+
 ## v1.0.7
 
 ### Added
