@@ -47,9 +47,6 @@ func Initialize() error {
 	}
 	if err := db.AutoMigrate(
 		&models.Activity{},
-		&models.MaliciousHash{},
-		&models.UnconfirmedHash{},
-		&models.FlaggedServer{},
 	); err != nil {
 		return errors.WithStack(err)
 	}

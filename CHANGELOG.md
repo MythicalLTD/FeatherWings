@@ -19,10 +19,6 @@
 
 * Fixed an issue that prevented symlinks from being properly deleted
 
-### Added
-
-* Introduced the Thread Intelligence Server (TIS) to enhance protection and prevent abuse on participating hosts.
-
 ## v1.0.5
 
 ### Fixed
