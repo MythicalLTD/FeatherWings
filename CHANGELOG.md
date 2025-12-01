@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.9
+
+### Added
+
+* Added integrated reverse proxy management, enabling seamless domain forwarding and SSL support for servers.
+* Introduced a server importer, allowing effortless migration of existing server instances into FeatherWings.
+
+
 ## v1.0.8
 
 ### Fixed

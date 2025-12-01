@@ -114,6 +114,12 @@ type ApiConfiguration struct {
 	// API calls to the Panel. This is useful for development environments with self-signed
 	// certificates. The command line flag --ignore-certificate-errors takes precedence.
 	IgnoreCertificateErrors bool `json:"ignore_certificate_errors" yaml:"ignore_certificate_errors"`
+
+	// ReverseProxy controls whether reverse proxy functionality is enabled.
+	// When enabled, nginx must be installed on the system for this feature to work.
+	ReverseProxy struct {
+		Enabled bool `default:"false" json:"enabled" yaml:"enabled"`
+	} `json:"reverse_proxy" yaml:"reverse_proxy"`
 }
 
 type DocsConfiguration struct {

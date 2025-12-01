@@ -358,6 +358,58 @@ func deleteServer(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// postServerImport imports server files from a remote SFTP or FTP server.
+// @Summary Import server files from remote source
+// @Description Imports server files from a remote SFTP or FTP server. The import process runs asynchronously.
+// @Tags Servers
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body object true "Import request" example({"user":"username","password":"password","hote":"example.com","port":22,"srclocation":"/remote/path","dstlocation":"/local/path","wipe":false,"type":"sftp"})
+// @Param payload.user string true "Remote server username"
+// @Param payload.password string true "Remote server password"
+// @Param payload.hote string true "Remote server hostname or IP address"
+// @Param payload.port int true "Remote server port (22 for SFTP, 21 for FTP)"
+// @Param payload.srclocation string true "Source location on remote server (absolute path)"
+// @Param payload.dstlocation string true "Destination location on local server (relative to server root)"
+// @Param payload.wipe bool false "Whether to wipe existing files before import" default(false)
+// @Param payload.type string true "Connection type: 'sftp' or 'ftp'" enum(sftp,ftp)
+// @Success 202 {string} string "Import process started"
+// @Failure 400 {object} ErrorResponse "Invalid request parameters"
+// @Failure 409 {object} ErrorResponse "Server is executing another power action"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Security NodeToken
+// @Router /api/servers/{server}/import [post]
+func postServerImport(c *gin.Context) {
+	s := ExtractServer(c)
+	var data struct {
+		User        string `json:"user" binding:"required"`
+		Password    string `json:"password" binding:"required"`
+		Hote        string `json:"hote" binding:"required"`
+		Port        int    `json:"port" binding:"required"`
+		Srclocation string `json:"srclocation" binding:"required"`
+		Dstlocation string `json:"dstlocation" binding:"required"`
+		Wipe        bool   `json:"wipe"`
+		Type        string `json:"type" binding:"required"`
+	}
+	if err := c.BindJSON(&data); err != nil {
+		middleware.CaptureAndAbort(c, err)
+
+	}
+	if s.ExecutingPowerAction() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "Cannot execute server import event while another power action is running.",
+		})
+		return
+	}
+	go func(s *server.Server) {
+		if err := s.ImportNew(data.User, data.Password, data.Hote, data.Port, data.Srclocation, data.Dstlocation, data.Type, data.Wipe); err != nil {
+			s.Log().WithField("error", err).Error("failed to complete server import process")
+
+		}
+	}(s)
+	c.Status(http.StatusAccepted)
+}
+
 // postServerDenyWSTokens adds websocket JTIs to the deny list preventing reuse.
 // @Summary Invalidate websocket tokens
 // @Tags Servers

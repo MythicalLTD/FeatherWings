@@ -31,6 +31,7 @@ type Client interface {
 	SendRestorationStatus(ctx context.Context, backup string, successful bool) error
 	SetInstallationStatus(ctx context.Context, uuid string, data InstallStatusRequest) error
 	SetTransferStatus(ctx context.Context, uuid string, successful bool) error
+	SetImportStatus(ctx context.Context, uuid string, successful bool) error
 	ValidateSftpCredentials(ctx context.Context, request SftpAuthRequest) (SftpAuthResponse, error)
 	SendActivityLogs(ctx context.Context, activity []models.Activity) error
 	PushServerStateChange(ctx context.Context, sid string, stateChange ServerStateChange) error

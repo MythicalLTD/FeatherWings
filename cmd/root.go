@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -158,6 +159,18 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	if err := config.EnableLogRotation(); err != nil {
 		log.WithField("error", err).Fatal("failed to configure log rotation on the system")
 		return
+	}
+
+	// Check reverse proxy configuration and nginx installation
+	cfg := config.Get()
+	if cfg.Api.ReverseProxy.Enabled {
+		nginxPath, err := exec.LookPath("nginx")
+		if err != nil {
+			log.Warn("Reverse proxy is enabled in configuration, but nginx is not installed. Reverse proxy features will not work until nginx is installed.")
+			log.Warn("To install nginx: On Debian/Ubuntu: apt-get install nginx, on RHEL/CentOS: yum install nginx")
+		} else {
+			log.WithField("nginx_path", nginxPath).Info("reverse proxy enabled and nginx detected")
+		}
 	}
 
 	t := config.Get().Token
