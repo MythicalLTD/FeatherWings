@@ -19,6 +19,7 @@ This document explains how server transfers work in FeatherWings, including the 
 - `config.yml` relevant keys:
   - `api.ssl.enabled`: enable TLS on the node API.
   - `transfers.download_limit`: limit incoming transfer bandwidth (0 = unlimited).
+  - `transfers.perform_checksum_checks`: **enable SHA-256 checksum validation on incoming transfers** (default: `false`).
   - `allowed_origins`: ensure Panel/UI origins are allowed for websockets and CORS, e.g.
     - `- https://featherpanel.mythical.systems`
 
@@ -74,8 +75,8 @@ sequenceDiagram
 ```
 
 - Destination expects HTTP header `Authorization: Bearer <transfer_jwt>` and multipart form parts:
-  - `archive`: binary stream of tar.gz data
-  - `checksum`: hex-encoded SHA-256 of the `archive` payload
+  - `archive`: binary stream of tar.gz data (required)
+  - `checksum`: hex-encoded SHA-256 of the `archive` payload (required **only if** `transfers.perform_checksum_checks` is `true`; ignored otherwise)
 
 ### cURL examples
 
@@ -112,7 +113,7 @@ curl -X DELETE \
 ### Operational considerations
 
 - Source stops the server container before archiving to maintain consistency.
-- Destination verifies checksum after extraction; mismatch aborts the transfer.
+- Destination verifies checksum after extraction when `transfers.perform_checksum_checks` is enabled; mismatch aborts the transfer.
 - Progress is emitted via server events for UI consumption.
 - Only the destination reports success to the Panel; the source reports failure conditions.
 - Ensure the `token` field you pass from the source includes the `Bearer ` prefix so the destination parser accepts it.

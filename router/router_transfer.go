@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -18,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
@@ -39,6 +41,9 @@ import (
 // @Security ServerJWT
 // @Router /api/transfers [post]
 func postTransfers(c *gin.Context) {
+	cfg := config.Get()
+	enforceChecksums := cfg.System.Transfers.PerformChecksumChecks
+
 	auth := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
 	if len(auth) != 2 || auth[0] != "Bearer" {
 		c.Header("WWW-Authenticate", "Bearer")
@@ -154,7 +159,10 @@ func postTransfers(c *gin.Context) {
 	}
 
 	// Used to calculate the hash of the file as it is being uploaded.
-	h := sha256.New()
+	var h hash.Hash
+	if enforceChecksums {
+		h = sha256.New()
+	}
 
 	// Used to read the file and checksum from the request body.
 	mr := multipart.NewReader(c.Request.Body, params["boundary"])
@@ -190,8 +198,12 @@ out:
 					return
 				}
 
-				tee := io.TeeReader(p, h)
-				if err := trnsfr.Server.Filesystem().ExtractStreamUnsafe(ctx, "/", tee); err != nil {
+				var reader io.Reader = p
+				if enforceChecksums {
+					reader = io.TeeReader(p, h)
+				}
+
+				if err := trnsfr.Server.Filesystem().ExtractStreamUnsafe(ctx, "/", reader); err != nil {
 					middleware.CaptureAndAbort(c, err)
 					return
 				}
@@ -200,16 +212,24 @@ out:
 			case "checksum":
 				trnsfr.Log().Debug("received checksum")
 
-				if !hasArchive {
-					middleware.CaptureAndAbort(c, errors.New("archive must be sent before the checksum"))
+				// Always consume the checksum part if present so the body is fully read.
+				v, err := io.ReadAll(p)
+				if err != nil {
+					middleware.CaptureAndAbort(c, err)
 					return
 				}
 
 				hasChecksum = true
 
-				v, err := io.ReadAll(p)
-				if err != nil {
-					middleware.CaptureAndAbort(c, err)
+				// If checksum enforcement is disabled, ignore the provided value.
+				if !enforceChecksums {
+					trnsfr.Log().Debug("checksum received but verification is disabled; skipping validation")
+					checksumVerified = true
+					continue
+				}
+
+				if !hasArchive {
+					middleware.CaptureAndAbort(c, errors.New("archive must be sent before the checksum"))
 					return
 				}
 

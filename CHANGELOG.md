@@ -5,6 +5,7 @@
 ### Fixed
 
 * Fixed the pool overlaping issue if you had wings installed before :/
+* Added option to disable checksum verification for transfers
 
 ## v1.0.7
 

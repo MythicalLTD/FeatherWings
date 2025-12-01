@@ -345,6 +345,17 @@ type Transfers struct {
 	//
 	// Defaults to 0 (unlimited)
 	DownloadLimit int `default:"0" yaml:"download_limit"`
+
+	// PerformChecksumChecks controls whether incoming transfer archives are validated
+	// against the provided SHA-256 checksum.
+	//
+	// If set to false, the destination node will not enforce checksum verification –
+	// the archive will be extracted as received and the checksum part (if present)
+	// is ignored. This can be useful for trusted networks or debugging, but reduces
+	// protection against corrupted or tampered archives.
+	//
+	// Defaults to false; set to true to enforce checksum validation.
+	PerformChecksumChecks bool `default:"false" yaml:"perform_checksum_checks"`
 }
 
 type ConsoleThrottles struct {
