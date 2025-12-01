@@ -102,6 +102,12 @@ func createDockerNetwork(ctx context.Context, cli *client.Client) error {
 	nw := config.Get().Docker.Network
 	enableIPv6 := nw.IPv6
 
+	// Some special drivers (like host/overlay/weavemesh) don't have normal IPAM
+	// configs and shouldn't have a custom network created for them here.
+	if nw.Driver == "host" || nw.Driver == "overlay" || nw.Driver == "weavemesh" {
+		return nil
+	}
+
 	// Build IPAM config with the configured subnets
 	ipamConfigs := []network.IPAMConfig{}
 	if nw.Interfaces.V4.Subnet != "" {
