@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -104,6 +106,25 @@ func postServerProxyCreate(c *gin.Context) {
 	}
 
 	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+
+	// Validate Domain: must be a valid domain name (RFC style, very conservative)
+	// Disallow any "/" "\" ".." or other suspicious characters
+	domainRe := regexp.MustCompile(`^(?i)[a-z0-9.-]+$`)
+	if !domainRe.MatchString(data.Domain) || len(data.Domain) < 1 ||
+		strings.Contains(data.Domain, "/") || strings.Contains(data.Domain, "\\") || strings.Contains(data.Domain, "..") {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid domain name",
+		})
+		return
+	}
+	// Validate Port: must be all digits and valid port range
+	portNum, err := strconv.Atoi(data.Port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid port number",
+		})
 		return
 	}
 
