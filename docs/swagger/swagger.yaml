@@ -291,6 +291,19 @@ definitions:
 
           Defaults to 0 (unlimited)
         type: integer
+      performChecksumChecks:
+        default: false
+        description: |-
+          PerformChecksumChecks controls whether incoming transfer archives are validated
+          against the provided SHA-256 checksum.
+
+          If set to false, the destination node will not enforce checksum verification –
+          the archive will be extracted as received and the checksum part (if present)
+          is ignored. This can be useful for trusted networks or debugging, but reduces
+          protection against corrupted or tampered archives.
+
+          Defaults to false; set to true to enforce checksum validation.
+        type: boolean
     type: object
   config.UpdateConfiguration:
     properties:
@@ -435,47 +448,6 @@ definitions:
       uuid:
         type: string
     type: object
-  models.FlaggedServer:
-    properties:
-      detection_types:
-        items:
-          type: string
-        type: array
-      first_flagged:
-        type: string
-      last_flagged:
-        type: string
-      last_hash:
-        type: string
-      metadata:
-        $ref: '#/definitions/models.TISMetadata'
-      server_id:
-        type: string
-      times_flagged:
-        type: integer
-    type: object
-  models.MaliciousHash:
-    properties:
-      detection_type:
-        type: string
-      file_name:
-        type: string
-      first_seen:
-        type: string
-      hash:
-        type: string
-      last_seen:
-        type: string
-      metadata:
-        $ref: '#/definitions/models.TISMetadata'
-      source_server:
-        type: string
-      times_detected:
-        type: integer
-    type: object
-  models.TISMetadata:
-    additionalProperties: true
-    type: object
   router.ConfigPatchRequest:
     properties:
       restart:
@@ -533,13 +505,6 @@ definitions:
       restarted:
         type: boolean
     type: object
-  router.DetectionTypeStat:
-    properties:
-      count:
-        type: integer
-      detection_type:
-        type: string
-    type: object
   router.DockerPruneReport:
     properties:
       imagesDeleted:
@@ -556,61 +521,6 @@ definitions:
         type: string
       request_id:
         type: string
-    type: object
-  router.HashCheckRequest:
-    properties:
-      hashes:
-        items:
-          type: string
-        type: array
-    required:
-    - hashes
-    type: object
-  router.HashCheckResponse:
-    properties:
-      matches:
-        items:
-          $ref: '#/definitions/router.HashMatch'
-        type: array
-      totalChecked:
-        type: integer
-    type: object
-  router.HashMatch:
-    properties:
-      detection_type:
-        type: string
-      file_name:
-        type: string
-      hash:
-        type: string
-    type: object
-  router.HashSubmissionRequest:
-    properties:
-      detectionType:
-        type: string
-      fileName:
-        type: string
-      hash:
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
-      serverIdentifier:
-        type: string
-    required:
-    - detectionType
-    - fileName
-    - hash
-    - serverIdentifier
-    type: object
-  router.HashSubmissionResponse:
-    properties:
-      confirmed:
-        type: boolean
-      detectionCount:
-        type: integer
-      success:
-        type: boolean
     type: object
   router.RemoteDownloadAcceptedResponse:
     properties:
@@ -856,21 +766,6 @@ definitions:
         type: string
       version:
         type: string
-    type: object
-  router.TISStatsResponse:
-    properties:
-      recentDetections:
-        type: integer
-      topDetectionTypes:
-        items:
-          $ref: '#/definitions/router.DetectionTypeStat'
-        type: array
-      totalHashes:
-        type: integer
-      totalServers:
-        type: integer
-      unconfirmedHashes:
-        type: integer
     type: object
   router.hostCommandRequest:
     properties:
@@ -2579,141 +2474,6 @@ paths:
       summary: Get system utilization
       tags:
       - System
-  /api/tis/check/hashes:
-    post:
-      consumes:
-      - application/json
-      description: Check multiple hashes against the confirmed database (max 1000
-        per request)
-      parameters:
-      - description: Hashes to check
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/router.HashCheckRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/router.HashCheckResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-      security:
-      - NodeToken: []
-      summary: Batch hash check
-      tags:
-      - TIS
-  /api/tis/hashes:
-    get:
-      description: Retrieve a list of confirmed malicious hashes (up to 1000 most
-        recent)
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/models.MaliciousHash'
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-      security:
-      - NodeToken: []
-      summary: Get confirmed hashes
-      tags:
-      - TIS
-    post:
-      consumes:
-      - application/json
-      description: Submit a hash for tracking. The hash will be stored in the unconfirmed
-        database and automatically promoted to confirmed status once it reaches the
-        threshold.
-      parameters:
-      - description: Hash submission data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/router.HashSubmissionRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/router.HashSubmissionResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-      security:
-      - NodeToken: []
-      summary: Submit hash report
-      tags:
-      - TIS
-  /api/tis/servers/{serverId}:
-    get:
-      description: Check if a server has been flagged for submitting malicious hashes
-      parameters:
-      - description: Server identifier
-        in: path
-        name: serverId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Not flagged response
-          schema:
-            additionalProperties:
-              type: boolean
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-      security:
-      - NodeToken: []
-      summary: Check server status
-      tags:
-      - TIS
-  /api/tis/stats:
-    get:
-      description: Retrieve system statistics including total hashes, servers, and
-        detection types
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/router.TISStatsResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/router.ErrorResponse'
-      security:
-      - NodeToken: []
-      summary: Get statistics
-      tags:
-      - TIS
   /api/transfers:
     post:
       consumes:

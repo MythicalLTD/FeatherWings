@@ -12,7 +12,7 @@ dependencies, and allowing users to authenticate with the same credentials they 
 Swagger/OpenAPI documentation is generated from inline annotations under `router/`.
 
 ```bash
-# In some distors you might need: export PATH="$(go env GOPATH)/bin:$PATH"
+export PATH="$(go env GOPATH)/bin:$PATH" # In some distors you might need this
 go generate ./router
 ```
 

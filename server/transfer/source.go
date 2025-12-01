@@ -132,7 +132,7 @@ func (t *Transfer) PushArchiveToTarget(url, token string) ([]byte, error) {
 		t.Log().Debug("error while sending archive to destination")
 		return nil, err
 	}
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
 		return nil, fmt.Errorf("unexpected status code from destination: %d", res.StatusCode)
 	}
 	t.Log().Debug("waiting for stream to complete")
@@ -157,7 +157,7 @@ func (t *Transfer) PushArchiveToTarget(url, token string) ([]byte, error) {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		if res.StatusCode != http.StatusOK {
+		if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
 			return nil, errors.New(string(v))
 		}
 

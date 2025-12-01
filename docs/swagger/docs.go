@@ -2197,214 +2197,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/tis/check/hashes": {
-            "post": {
-                "security": [
-                    {
-                        "NodeToken": []
-                    }
-                ],
-                "description": "Check multiple hashes against the confirmed database (max 1000 per request)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TIS"
-                ],
-                "summary": "Batch hash check",
-                "parameters": [
-                    {
-                        "description": "Hashes to check",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/router.HashCheckRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/router.HashCheckResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/tis/hashes": {
-            "get": {
-                "security": [
-                    {
-                        "NodeToken": []
-                    }
-                ],
-                "description": "Retrieve a list of confirmed malicious hashes (up to 1000 most recent)",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TIS"
-                ],
-                "summary": "Get confirmed hashes",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/models.MaliciousHash"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "NodeToken": []
-                    }
-                ],
-                "description": "Submit a hash for tracking. The hash will be stored in the unconfirmed database and automatically promoted to confirmed status once it reaches the threshold.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TIS"
-                ],
-                "summary": "Submit hash report",
-                "parameters": [
-                    {
-                        "description": "Hash submission data",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/router.HashSubmissionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/router.HashSubmissionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/tis/servers/{serverId}": {
-            "get": {
-                "security": [
-                    {
-                        "NodeToken": []
-                    }
-                ],
-                "description": "Check if a server has been flagged for submitting malicious hashes",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TIS"
-                ],
-                "summary": "Check server status",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Server identifier",
-                        "name": "serverId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Not flagged response",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "boolean"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/tis/stats": {
-            "get": {
-                "security": [
-                    {
-                        "NodeToken": []
-                    }
-                ],
-                "description": "Retrieve system statistics including total hashes, servers, and detection types",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "TIS"
-                ],
-                "summary": "Get statistics",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/router.TISStatsResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/router.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/transfers": {
             "post": {
                 "security": [
@@ -3009,6 +2801,11 @@ const docTemplate = `{
                     "description": "DownloadLimit imposes a Network I/O read limit when downloading a transfer archive.\n\nIf the value is less than 1, the write speed is unlimited,\nif the value is greater than 0, the write speed is the value in MiB/s.\n\nDefaults to 0 (unlimited)",
                     "type": "integer",
                     "default": 0
+                },
+                "performChecksumChecks": {
+                    "description": "PerformChecksumChecks controls whether incoming transfer archives are validated\nagainst the provided SHA-256 checksum.\n\nIf set to false, the destination node will not enforce checksum verification –\nthe archive will be extracted as received and the checksum part (if present)\nis ignored. This can be useful for trusted networks or debugging, but reduces\nprotection against corrupted or tampered archives.\n\nDefaults to false; set to true to enforce checksum validation.",
+                    "type": "boolean",
+                    "default": false
                 }
             }
         },
@@ -3186,68 +2983,6 @@ const docTemplate = `{
                 }
             }
         },
-        "models.FlaggedServer": {
-            "type": "object",
-            "properties": {
-                "detection_types": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "first_flagged": {
-                    "type": "string"
-                },
-                "last_flagged": {
-                    "type": "string"
-                },
-                "last_hash": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/models.TISMetadata"
-                },
-                "server_id": {
-                    "type": "string"
-                },
-                "times_flagged": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.MaliciousHash": {
-            "type": "object",
-            "properties": {
-                "detection_type": {
-                    "type": "string"
-                },
-                "file_name": {
-                    "type": "string"
-                },
-                "first_seen": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                },
-                "last_seen": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/models.TISMetadata"
-                },
-                "source_server": {
-                    "type": "string"
-                },
-                "times_detected": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.TISMetadata": {
-            "type": "object",
-            "additionalProperties": true
-        },
         "router.ConfigPatchRequest": {
             "type": "object",
             "required": [
@@ -3331,17 +3066,6 @@ const docTemplate = `{
                 }
             }
         },
-        "router.DetectionTypeStat": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "detection_type": {
-                    "type": "string"
-                }
-            }
-        },
         "router.DockerPruneReport": {
             "type": "object",
             "properties": {
@@ -3365,89 +3089,6 @@ const docTemplate = `{
                 },
                 "request_id": {
                     "type": "string"
-                }
-            }
-        },
-        "router.HashCheckRequest": {
-            "type": "object",
-            "required": [
-                "hashes"
-            ],
-            "properties": {
-                "hashes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "router.HashCheckResponse": {
-            "type": "object",
-            "properties": {
-                "matches": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/router.HashMatch"
-                    }
-                },
-                "totalChecked": {
-                    "type": "integer"
-                }
-            }
-        },
-        "router.HashMatch": {
-            "type": "object",
-            "properties": {
-                "detection_type": {
-                    "type": "string"
-                },
-                "file_name": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                }
-            }
-        },
-        "router.HashSubmissionRequest": {
-            "type": "object",
-            "required": [
-                "detectionType",
-                "fileName",
-                "hash",
-                "serverIdentifier"
-            ],
-            "properties": {
-                "detectionType": {
-                    "type": "string"
-                },
-                "fileName": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "serverIdentifier": {
-                    "type": "string"
-                }
-            }
-        },
-        "router.HashSubmissionResponse": {
-            "type": "object",
-            "properties": {
-                "confirmed": {
-                    "type": "boolean"
-                },
-                "detectionCount": {
-                    "type": "integer"
-                },
-                "success": {
-                    "type": "boolean"
                 }
             }
         },
@@ -3831,29 +3472,6 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
-                }
-            }
-        },
-        "router.TISStatsResponse": {
-            "type": "object",
-            "properties": {
-                "recentDetections": {
-                    "type": "integer"
-                },
-                "topDetectionTypes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/router.DetectionTypeStat"
-                    }
-                },
-                "totalHashes": {
-                    "type": "integer"
-                },
-                "totalServers": {
-                    "type": "integer"
-                },
-                "unconfirmedHashes": {
-                    "type": "integer"
                 }
             }
         },

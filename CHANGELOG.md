@@ -1,11 +1,20 @@
 # Changelog
 
+## v1.0.9
+
+### Added
+
+* Added option to disable checksum verification for transfers
+
+### Fixed
+
+* Fixed an issue that prevented server transfers from working correctly within FeatherPanel.
+
 ## v1.0.8
 
 ### Fixed
 
 * Fixed the pool overlaping issue if you had wings installed before :/
-* Added option to disable checksum verification for transfers
 
 ## v1.0.7
 
