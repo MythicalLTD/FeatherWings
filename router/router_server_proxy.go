@@ -58,6 +58,14 @@ func postServerProxyCreate(c *gin.Context) {
 		return
 	}
 
+	// Validate Domain and Port to prevent path traversal and illegal characters
+	if strings.Contains(data.Domain, "/") || strings.Contains(data.Domain, "\\") || strings.Contains(data.Domain, "..") ||
+		strings.Contains(data.Port, "/") || strings.Contains(data.Port, "\\") || strings.Contains(data.Port, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid domain or port"})
+		return
+	}
+	// Optionally: stricter check for allowed domain and port format can be applied here
+
 	nginxconfig := []byte(`server {
 		listen 80;
 		server_name ` + data.Domain + `;
