@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -38,6 +39,10 @@ func (u LetsEncryptUser) GetRegistration() *registration.Resource {
 func (u *LetsEncryptUser) GetPrivateKey() crypto.PrivateKey {
 	return u.key
 }
+
+
+// Directory for storing certs/keys; must be an absolute path
+const safeCertDir = "/etc/pterodactyl/proxy-certs"
 
 // Create a server proxy
 func postServerProxyCreate(c *gin.Context) {
@@ -169,32 +174,51 @@ func postServerProxyCreate(c *gin.Context) {
 			keyfile = []byte(data.SslKey)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(certPath), os.ModeDir); err != nil {
-			s.Log().WithField("error", err).Error("failed to create " + filepath.Dir(certPath))
+		// Ensure cert/key files are written only within safeCertDir
+		certPathAbs, err := filepath.Abs(certPath)
+		safeCertDirAbs, err2 := filepath.Abs(safeCertDir)
+		if err != nil || err2 != nil || !strings.HasPrefix(certPathAbs, safeCertDirAbs) {
+			s.Log().WithField("error", "invalid certificate path").Error("Refusing to write cert outside of safe base dir")
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid certificate path",
+			})
+			return
+		}
+		keyPathAbs, err := filepath.Abs(keyPath)
+		if err != nil || !strings.HasPrefix(keyPathAbs, safeCertDirAbs) {
+			s.Log().WithField("error", "invalid key path").Error("Refusing to write key outside of safe base dir")
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid key path",
+			})
+			return
+		}
+
+		if err := os.MkdirAll(filepath.Dir(certPathAbs), os.ModeDir); err != nil {
+			s.Log().WithField("error", err).Error("failed to create " + filepath.Dir(certPathAbs))
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "Failed to save certificate",
 			})
 			return
 		}
 
-		if err := os.MkdirAll(filepath.Dir(keyPath), os.ModeDir); err != nil {
-			s.Log().WithField("error", err).Error("failed to create " + filepath.Dir(keyPath))
+		if err := os.MkdirAll(filepath.Dir(keyPathAbs), os.ModeDir); err != nil {
+			s.Log().WithField("error", err).Error("failed to create " + filepath.Dir(keyPathAbs))
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "Failed to save certificate",
 			})
 			return
 		}
 
-		if err := os.WriteFile(certPath, certfile, 0644); err != nil {
-			s.Log().WithField("error", err).Error("failed to write " + certPath)
+		if err := os.WriteFile(certPathAbs, certfile, 0644); err != nil {
+			s.Log().WithField("error", err).Error("failed to write " + certPathAbs)
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "Failed to save certificate",
 			})
 			return
 		}
 
-		if err := os.WriteFile(keyPath, keyfile, 0644); err != nil {
-			s.Log().WithField("error", err).Error("failed to write " + keyPath)
+		if err := os.WriteFile(keyPathAbs, keyfile, 0644); err != nil {
+			s.Log().WithField("error", err).Error("failed to write " + keyPathAbs)
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "Failed to save certificate",
 			})
