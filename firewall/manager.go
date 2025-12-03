@@ -384,11 +384,25 @@ func (m *Manager) removeRuleUnlocked(rule *models.FirewallRule) error {
 	}
 
 	if err := m.executeIptables(deleteArgs...); err != nil {
-		// Log warning but don't fail - rule might not exist
-		log.WithError(err).WithField("rule_id", rule.ID).Warn("failed to remove firewall rule from iptables (rule may not exist)")
-	} else {
-		log.WithField("rule_id", rule.ID).Info("firewall rule removed")
+		// Log warning but don't fail - rule might not exist in iptables
+		// This can happen if iptables was manually modified or rules were cleared
+		log.WithError(err).WithFields(log.Fields{
+			"rule_id":   rule.ID,
+			"remote_ip": rule.RemoteIP,
+			"port":      rule.ServerPort,
+			"type":      rule.Type,
+		}).Warn("failed to remove firewall rule from iptables (rule may not exist in iptables)")
+		// Still return nil - the rule might not exist, which is fine
+		return nil
 	}
+
+	// Rule successfully removed from iptables
+	log.WithFields(log.Fields{
+		"rule_id":   rule.ID,
+		"remote_ip": rule.RemoteIP,
+		"port":      rule.ServerPort,
+		"type":      rule.Type,
+	}).Debug("firewall rule removed from iptables")
 
 	return nil
 }
@@ -612,6 +626,8 @@ func (m *Manager) UpdateRule(ruleID uint, updates *models.FirewallRule) error {
 }
 
 // DeleteRule deletes a firewall rule
+// For block rules, this will unblock the IP by removing the DROP rule from iptables
+// For allow rules, this will remove the explicit ALLOW rule (default behavior will apply)
 func (m *Manager) DeleteRule(ruleID uint) error {
 	// Get existing rule
 	var rule models.FirewallRule
@@ -622,14 +638,36 @@ func (m *Manager) DeleteRule(ruleID uint) error {
 		return errors.Wrap(err, "failed to fetch firewall rule")
 	}
 
-	// Remove from iptables
+	// Remove from iptables first (this will unblock if it's a block rule)
 	if err := m.RemoveRule(&rule); err != nil {
-		log.WithError(err).Warn("failed to remove firewall rule from iptables during delete")
+		log.WithError(err).WithFields(log.Fields{
+			"rule_id":   rule.ID,
+			"remote_ip": rule.RemoteIP,
+			"port":      rule.ServerPort,
+			"type":      rule.Type,
+		}).Warn("failed to remove firewall rule from iptables during delete")
+		// Continue with database deletion even if iptables removal fails
+		// The rule should still be removed from database to keep them in sync
+	} else {
+		// Log successful removal with clear indication of what happened
+		if rule.Type == models.FirewallRuleTypeBlock {
+			log.WithFields(log.Fields{
+				"rule_id":   rule.ID,
+				"remote_ip": rule.RemoteIP,
+				"port":      rule.ServerPort,
+			}).Info("firewall block rule removed - IP is now unblocked")
+		} else {
+			log.WithFields(log.Fields{
+				"rule_id":   rule.ID,
+				"remote_ip": rule.RemoteIP,
+				"port":      rule.ServerPort,
+			}).Info("firewall allow rule removed - default firewall behavior will apply")
+		}
 	}
 
 	// Delete from database (soft delete)
 	if err := database.Instance().Delete(&rule).Error; err != nil {
-		return errors.Wrap(err, "failed to delete firewall rule")
+		return errors.Wrap(err, "failed to delete firewall rule from database")
 	}
 
 	return nil
