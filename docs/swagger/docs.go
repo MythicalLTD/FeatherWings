@@ -242,6 +242,232 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/modules": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Modules"
+                ],
+                "summary": "List modules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/modules/{module}/config": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Modules"
+                ],
+                "summary": "Get module configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Module name",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Modules"
+                ],
+                "summary": "Update module configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Module name",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Module configuration",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/modules/{module}/disable": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Modules"
+                ],
+                "summary": "Disable module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Module name",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/modules/{module}/enable": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Modules"
+                ],
+                "summary": "Enable module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Module name",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.ModuleInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/servers": {
             "get": {
                 "security": [
@@ -1433,6 +1659,383 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/firewall": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "List firewall rules for a server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRulesListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Create a firewall rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Firewall rule configuration",
+                        "name": "rule",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/firewall/port/{port}": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "List firewall rules for a server port",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Server port",
+                        "name": "port",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRulesListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/firewall/sync": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Sync firewall rules to iptables",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Sync started",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/firewall/{rule}": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Get a firewall rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rule ID",
+                        "name": "rule",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRuleResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Update a firewall rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rule ID",
+                        "name": "rule",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Firewall rule configuration",
+                        "name": "rule",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FirewallRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Delete a firewall rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rule ID",
+                        "name": "rule",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/router.ErrorResponse"
                         }
@@ -2983,6 +3586,59 @@ const docTemplate = `{
                 }
             }
         },
+        "models.FirewallRule": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "priority": {
+                    "description": "Priority determines the order rules are applied (lower number = higher priority)",
+                    "type": "integer"
+                },
+                "protocol": {
+                    "description": "Protocol (tcp/udp/both) - defaults to tcp",
+                    "type": "string"
+                },
+                "remote_ip": {
+                    "description": "Remote IP address (CIDR notation supported, e.g., \"192.168.1.1/32\" or \"192.168.1.0/24\")",
+                    "type": "string"
+                },
+                "server_port": {
+                    "description": "Server port this rule applies to",
+                    "type": "integer"
+                },
+                "server_uuid": {
+                    "description": "Server UUID that this rule applies to",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "Type of rule: \"allow\" or \"block\"",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.FirewallRuleType"
+                        }
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.FirewallRuleType": {
+            "type": "string",
+            "enum": [
+                "allow",
+                "block"
+            ],
+            "x-enum-varnames": [
+                "FirewallRuleTypeAllow",
+                "FirewallRuleTypeBlock"
+            ]
+        },
         "router.ConfigPatchRequest": {
             "type": "object",
             "required": [
@@ -3089,6 +3745,101 @@ const docTemplate = `{
                 },
                 "request_id": {
                     "type": "string"
+                }
+            }
+        },
+        "router.FirewallRuleRequest": {
+            "type": "object",
+            "required": [
+                "remote_ip",
+                "server_port",
+                "type"
+            ],
+            "properties": {
+                "priority": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0
+                },
+                "protocol": {
+                    "type": "string",
+                    "enum": [
+                        "tcp",
+                        "udp"
+                    ]
+                },
+                "remote_ip": {
+                    "type": "string"
+                },
+                "server_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "type": {
+                    "enum": [
+                        "allow",
+                        "block"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.FirewallRuleType"
+                        }
+                    ]
+                }
+            }
+        },
+        "router.FirewallRuleResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/models.FirewallRule"
+                }
+            }
+        },
+        "router.FirewallRulesListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.FirewallRule"
+                    }
+                }
+            }
+        },
+        "router.ModuleConfigRequest": {
+            "type": "object",
+            "required": [
+                "config"
+            ],
+            "properties": {
+                "config": {}
+            }
+        },
+        "router.ModuleInfo": {
+            "type": "object",
+            "properties": {
+                "config": {},
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.ModuleListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/router.ModuleInfo"
+                    }
                 }
             }
         },

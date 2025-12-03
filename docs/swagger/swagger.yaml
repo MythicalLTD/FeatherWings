@@ -448,6 +448,44 @@ definitions:
       uuid:
         type: string
     type: object
+  models.FirewallRule:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      priority:
+        description: Priority determines the order rules are applied (lower number
+          = higher priority)
+        type: integer
+      protocol:
+        description: Protocol (tcp/udp/both) - defaults to tcp
+        type: string
+      remote_ip:
+        description: Remote IP address (CIDR notation supported, e.g., "192.168.1.1/32"
+          or "192.168.1.0/24")
+        type: string
+      server_port:
+        description: Server port this rule applies to
+        type: integer
+      server_uuid:
+        description: Server UUID that this rule applies to
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/models.FirewallRuleType'
+        description: 'Type of rule: "allow" or "block"'
+      updated_at:
+        type: string
+    type: object
+  models.FirewallRuleType:
+    enum:
+    - allow
+    - block
+    type: string
+    x-enum-varnames:
+    - FirewallRuleTypeAllow
+    - FirewallRuleTypeBlock
   router.ConfigPatchRequest:
     properties:
       restart:
@@ -521,6 +559,69 @@ definitions:
         type: string
       request_id:
         type: string
+    type: object
+  router.FirewallRuleRequest:
+    properties:
+      priority:
+        maximum: 10000
+        minimum: 0
+        type: integer
+      protocol:
+        enum:
+        - tcp
+        - udp
+        type: string
+      remote_ip:
+        type: string
+      server_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      type:
+        allOf:
+        - $ref: '#/definitions/models.FirewallRuleType'
+        enum:
+        - allow
+        - block
+    required:
+    - remote_ip
+    - server_port
+    - type
+    type: object
+  router.FirewallRuleResponse:
+    properties:
+      data:
+        $ref: '#/definitions/models.FirewallRule'
+    type: object
+  router.FirewallRulesListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.FirewallRule'
+        type: array
+    type: object
+  router.ModuleConfigRequest:
+    properties:
+      config: {}
+    required:
+    - config
+    type: object
+  router.ModuleInfo:
+    properties:
+      config: {}
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+    type: object
+  router.ModuleListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/router.ModuleInfo'
+        type: array
     type: object
   router.RemoteDownloadAcceptedResponse:
     properties:
@@ -1244,6 +1345,147 @@ paths:
       summary: Generate diagnostics bundle
       tags:
       - System
+  /api/modules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ModuleListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List modules
+      tags:
+      - Modules
+  /api/modules/{module}/config:
+    get:
+      parameters:
+      - description: Module name
+        in: path
+        name: module
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ModuleInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get module configuration
+      tags:
+      - Modules
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Module name
+        in: path
+        name: module
+        required: true
+        type: string
+      - description: Module configuration
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/router.ModuleConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ModuleInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Update module configuration
+      tags:
+      - Modules
+  /api/modules/{module}/disable:
+    post:
+      parameters:
+      - description: Module name
+        in: path
+        name: module
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ModuleInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Disable module
+      tags:
+      - Modules
+  /api/modules/{module}/enable:
+    post:
+      parameters:
+      - description: Module name
+        in: path
+        name: module
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.ModuleInfo'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Enable module
+      tags:
+      - Modules
   /api/servers:
     get:
       produces:
@@ -2003,6 +2245,246 @@ paths:
       summary: Write file contents
       tags:
       - Server Files
+  /api/servers/{server}/firewall:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FirewallRulesListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List firewall rules for a server
+      tags:
+      - Firewall
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Firewall rule configuration
+        in: body
+        name: rule
+        required: true
+        schema:
+          $ref: '#/definitions/router.FirewallRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/router.FirewallRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Create a firewall rule
+      tags:
+      - Firewall
+  /api/servers/{server}/firewall/{rule}:
+    delete:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: rule
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete a firewall rule
+      tags:
+      - Firewall
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: rule
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FirewallRuleResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get a firewall rule
+      tags:
+      - Firewall
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: rule
+        required: true
+        type: integer
+      - description: Firewall rule configuration
+        in: body
+        name: rule
+        required: true
+        schema:
+          $ref: '#/definitions/router.FirewallRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FirewallRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Update a firewall rule
+      tags:
+      - Firewall
+  /api/servers/{server}/firewall/port/{port}:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Server port
+        in: path
+        name: port
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FirewallRulesListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: List firewall rules for a server port
+      tags:
+      - Firewall
+  /api/servers/{server}/firewall/sync:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Sync started
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Sync firewall rules to iptables
+      tags:
+      - Firewall
   /api/servers/{server}/install:
     post:
       parameters:

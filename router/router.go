@@ -157,6 +157,17 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 			backup.POST("/:backup/restore", postServerRestoreBackup)
 			backup.DELETE("/:backup", deleteServerBackup)
 		}
+
+		firewallGroup := server.Group("/firewall")
+		{
+			firewallGroup.GET("", getFirewallRules)
+			firewallGroup.POST("", postFirewallRule)
+			firewallGroup.POST("/sync", postSyncFirewallRules)
+			firewallGroup.GET("/port/:port", getFirewallRulesByPort)
+			firewallGroup.GET("/:rule", getFirewallRule)
+			firewallGroup.PUT("/:rule", putFirewallRule)
+			firewallGroup.DELETE("/:rule", deleteFirewallRule)
+		}
 	}
 
 	return router

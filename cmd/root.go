@@ -29,6 +29,7 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/firewall"
 	"github.com/mythicalltd/featherwings/internal/cron"
 	"github.com/mythicalltd/featherwings/internal/database"
 	"github.com/mythicalltd/featherwings/loggers/cli"
@@ -209,6 +210,17 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	for _, s := range manager.All() {
 		log.WithField("server", s.ID()).Info("finished loading configuration for server")
 	}
+
+	// Rebuild firewall rules from database (iptables rules are lost on reboot)
+	firewallMgr := firewall.NewManager()
+	go func() {
+		log.Info("rebuilding firewall rules from database")
+		if err := firewallMgr.RebuildAllRules(); err != nil {
+			log.WithError(err).Warn("failed to rebuild firewall rules on startup")
+		} else {
+			log.Info("firewall rules rebuilt successfully")
+		}
+	}()
 
 	states, err := manager.ReadStates()
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/firewall"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/transfer"
@@ -94,6 +95,14 @@ func postServerTransfer(c *gin.Context) {
 
 			trnsfr.Log().WithError(err).Error("failed to push archive to target")
 			return
+		}
+
+		// Transfer successful - clean up firewall rules since server is moving to another node
+		firewallMgr := firewall.NewManager()
+		if err := firewallMgr.DeleteAllRulesForServer(s.ID()); err != nil {
+			trnsfr.Log().WithError(err).Warn("failed to delete firewall rules after successful transfer")
+		} else {
+			trnsfr.Log().Info("cleaned up firewall rules after successful transfer")
 		}
 
 		// DO NOT NOTIFY THE PANEL OF SUCCESS HERE. The only node that should send

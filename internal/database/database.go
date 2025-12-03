@@ -48,6 +48,7 @@ func Initialize() error {
 	if err := db.AutoMigrate(
 		&models.Activity{},
 		&models.Module{},
+		&models.FirewallRule{},
 	); err != nil {
 		return errors.WithStack(err)
 	}
