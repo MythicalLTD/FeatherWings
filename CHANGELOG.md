@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.0
+
+### Added
+
+* AlwaysOnline Support for Minecraft!
+* Modules support for wings!
+
 ## v1.0.9
 
 ### Added

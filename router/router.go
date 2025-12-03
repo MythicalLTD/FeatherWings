@@ -1,10 +1,14 @@
 package router
 
 import (
+	"context"
+
 	"emperror.dev/errors"
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/modules"
+	"github.com/mythicalltd/featherwings/modules/alwaysmotd"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	wserver "github.com/mythicalltd/featherwings/server"
@@ -21,6 +25,17 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	}
 	router.Use(middleware.AttachRequestID(), middleware.CaptureErrors(), middleware.SetAccessControlHeaders())
 	router.Use(middleware.AttachServerManager(m), middleware.AttachApiClient(client))
+
+	// Initialize module manager and register modules
+	moduleManager := initializeModules(m)
+
+	// Restore enabled modules from database
+	ctx := context.Background()
+	if err := moduleManager.RestoreModules(ctx, m); err != nil {
+		log.WithError(err).Error("failed to restore modules from database")
+	}
+
+	router.Use(middleware.AttachModuleManager(moduleManager))
 	// @todo log this into a different file so you can setup IP blocking for abusive requests and such.
 	// This should still dump requests in debug mode since it does help with understanding the request
 	// lifecycle and quickly seeing what was called leading to the logs. However, it isn't feasible to mix
@@ -81,6 +96,16 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	protected.POST("/api/servers", postCreateServer)
 	protected.DELETE("/api/transfers/:server", deleteTransfer)
 
+	// Module management routes
+	protected.GET("/api/modules", getModules)
+	module := protected.Group("/api/modules/:module")
+	{
+		module.GET("/config", getModuleConfig)
+		module.PUT("/config", putModuleConfig)
+		module.POST("/enable", postModuleEnable)
+		module.POST("/disable", postModuleDisable)
+	}
+
 	// These are server specific routes, and require that the request be authorized, and
 	// that the server exist on the Daemon.
 	server := router.Group("/api/servers/:server")
@@ -135,4 +160,18 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	}
 
 	return router
+}
+
+// initializeModules creates and registers all available modules
+func initializeModules(serverManager *wserver.Manager) *modules.Manager {
+	moduleManager := modules.NewManager()
+
+	// Register AlwaysMOTD module
+	alwaysMotd := alwaysmotd.New()
+	if err := moduleManager.Register(alwaysMotd); err != nil {
+		log.WithError(err).Fatal("failed to register AlwaysMOTD module")
+	}
+
+	log.Info("modules initialized")
+	return moduleManager
 }

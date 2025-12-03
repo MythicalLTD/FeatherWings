@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/modules"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/system"
@@ -237,4 +238,20 @@ func ExtractManager(c *gin.Context) *server.Manager {
 		return v.(*server.Manager)
 	}
 	panic("middleware/middleware: cannot extract server manager: not present in context")
+}
+
+// AttachModuleManager attaches the module manager to the request context.
+func AttachModuleManager(m *modules.Manager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("module_manager", m)
+		c.Next()
+	}
+}
+
+// ExtractModuleManager returns the module manager instance set on the request context.
+func ExtractModuleManager(c *gin.Context) *modules.Manager {
+	if v, ok := c.Get("module_manager"); ok {
+		return v.(*modules.Manager)
+	}
+	panic("middleware/middleware: cannot extract module manager: not present in context")
 }
