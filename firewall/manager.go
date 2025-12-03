@@ -97,12 +97,22 @@ func (m *Manager) executeIptables(command string) error {
 
 // buildIptablesRule builds an iptables rule command
 func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) string {
-	// Determine the chain and target based on rule type
-	chain := "INPUT"
+	// For Docker containers, traffic is DNAT'd in PREROUTING (nat table)
+	// This means the destination port changes in FORWARD chain
+	// We need to match on the original destination port BEFORE DNAT
+	// Solution: Use PREROUTING in the raw table to match original port before DNAT
+	// This works for both allow and block rules - we process them in the raw table
+	// to match the original destination port
+
+	table := "raw"
+	chain := "PREROUTING"
 	var target string
 	if rule.Type == models.FirewallRuleTypeAllow {
+		// For allow rules, we use ACCEPT to let the packet continue
+		// It will then go through DNAT and be evaluated in DOCKER-USER
 		target = "ACCEPT"
 	} else {
+		// For blocking, use DROP to stop the packet before DNAT
 		target = "DROP"
 	}
 
@@ -122,7 +132,8 @@ func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) st
 		if position > 0 && position == 1 {
 			// Insert at the beginning (position 1)
 			ruleStr = fmt.Sprintf(
-				"iptables -t filter %s %s -p %s -s %s --dport %d -j %s",
+				"iptables -t %s %s %s -p %s -s %s --dport %d -j %s",
+				table,
 				action,
 				chain,
 				protocol,
@@ -133,7 +144,8 @@ func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) st
 		} else if position > 1 {
 			// Insert at specific position
 			ruleStr = fmt.Sprintf(
-				"iptables -t filter %s %s %d -p %s -s %s --dport %d -j %s",
+				"iptables -t %s %s %s %d -p %s -s %s --dport %d -j %s",
+				table,
 				action,
 				chain,
 				position,
@@ -145,7 +157,8 @@ func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) st
 		} else {
 			// Position calculation failed or position is 0, use append instead
 			ruleStr = fmt.Sprintf(
-				"iptables -t filter -A %s -p %s -s %s --dport %d -j %s",
+				"iptables -t %s -A %s -p %s -s %s --dport %d -j %s",
+				table,
 				chain,
 				protocol,
 				rule.RemoteIP,
@@ -156,7 +169,8 @@ func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) st
 	} else {
 		// For other actions (like -D), use standard format
 		ruleStr = fmt.Sprintf(
-			"iptables -t filter %s %s -p %s -s %s --dport %d -j %s",
+			"iptables -t %s %s %s -p %s -s %s --dport %d -j %s",
+			table,
 			action,
 			chain,
 			protocol,
@@ -169,15 +183,20 @@ func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) st
 	return ruleStr
 }
 
-// getChainLength gets the actual number of rules in the INPUT chain from iptables
-func (m *Manager) getChainLength() (int, error) {
+// getChainLength gets the actual number of rules in the raw/PREROUTING chain from iptables
+// We use raw/PREROUTING for both allow and block rules to match original destination port before DNAT
+func (m *Manager) getChainLength(ruleType models.FirewallRuleType) (int, error) {
+	table := "raw"
+	chain := "PREROUTING"
+
 	// Use -L with --line-numbers and count the lines (excluding headers)
-	cmd := exec.Command("sh", "-c", "iptables -t filter -L INPUT --line-numbers | tail -n +3 | wc -l")
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("iptables -t %s -L %s --line-numbers 2>/dev/null | tail -n +3 | wc -l", table, chain))
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = nil
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return 0, errors.Wrap(err, "failed to get chain length")
 	}
 
@@ -190,22 +209,40 @@ func (m *Manager) getChainLength() (int, error) {
 // calculateRulePosition calculates where to insert a rule based on its priority
 // Returns 0 if we should append instead of insert at a specific position
 func (m *Manager) calculateRulePosition(rule *models.FirewallRule) int {
-	// Get actual chain length from iptables
-	chainLength, err := m.getChainLength()
+	// Get actual chain length from iptables (for the appropriate table/chain based on rule type)
+	chainLength, err := m.getChainLength(rule.Type)
 	if err != nil {
-		log.WithError(err).Warn("failed to get chain length, will append rule")
+		log.WithError(err).Debug("failed to get chain length, will append rule")
 		return 0 // Append instead of insert
 	}
 
-	// Get all rules for this server port and sort by priority
+	// If chain is empty, insert at position 1 (beginning)
+	if chainLength == 0 {
+		return 1
+	}
+
+	// Get all rules from database that are already applied (same server, same port, same protocol)
+	// We only count rules that should be in iptables
 	var existingRules []models.FirewallRule
-	database.Instance().Where("server_port = ? AND deleted_at IS NULL", rule.ServerPort).
-		Order("priority ASC").
+	protocol := rule.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+
+	database.Instance().Where("server_uuid = ? AND server_port = ? AND protocol = ? AND deleted_at IS NULL",
+		rule.ServerUUID, rule.ServerPort, protocol).
+		Order("priority ASC, created_at ASC").
 		Find(&existingRules)
 
+	// Count how many existing rules have priority <= our rule's priority
+	// These should be inserted before our rule
 	position := 1
 	for _, r := range existingRules {
-		if r.Priority <= rule.Priority {
+		// Skip the current rule if we're updating it
+		if r.ID == rule.ID {
+			continue
+		}
+		if r.Priority < rule.Priority || (r.Priority == rule.Priority && r.CreatedAt.Before(rule.CreatedAt)) {
 			position++
 		}
 	}
@@ -217,11 +254,18 @@ func (m *Manager) calculateRulePosition(rule *models.FirewallRule) int {
 			"calculated_position": position,
 			"chain_length":        chainLength,
 			"rule_id":             rule.ID,
+			"protocol":            protocol,
 		}).Debug("calculated position exceeds chain length, will append instead")
 		return 0 // Append instead of insert
 	}
 
-	return position
+	// If position is valid, return it
+	if position >= 1 && position <= chainLength+1 {
+		return position
+	}
+
+	// Fallback to append
+	return 0
 }
 
 // ApplyRule applies a firewall rule to iptables
@@ -241,17 +285,27 @@ func (m *Manager) ApplyRule(rule *models.FirewallRule) error {
 	}[rule.Type]
 
 	// First, check if rule already exists in iptables (to avoid duplicates)
+	// Use -C (check) which returns 0 if rule exists, 1 if it doesn't
+	// Redirect stderr to /dev/null to suppress the expected "Bad rule" message when rule doesn't exist
+	// In DOCKER-USER, --dport matches the original host port
 	checkCmd := fmt.Sprintf(
-		"iptables -t filter -C INPUT -p %s -s %s --dport %d -j %s",
+		"iptables -t filter -C DOCKER-USER -p %s -s %s --dport %d -j %s 2>/dev/null",
 		protocol,
 		rule.RemoteIP,
 		rule.ServerPort,
 		target,
 	)
 
-	// Try to check if rule exists (this will fail if it doesn't exist, which is fine)
-	// We ignore the error here since we're just checking existence
-	checkErr := m.executeIptables(checkCmd)
+	// Execute check silently - we expect it to fail (exit code 1) if rule doesn't exist
+	// Don't use executeIptables here as it logs errors, and we don't want to log expected failures
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", checkCmd)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	checkErr := cmd.Run()
 	if checkErr == nil {
 		// Rule already exists, skip insertion
 		log.WithFields(log.Fields{
@@ -262,6 +316,7 @@ func (m *Manager) ApplyRule(rule *models.FirewallRule) error {
 		}).Debug("firewall rule already exists in iptables, skipping")
 		return nil
 	}
+	// If check failed (exit code 1), rule doesn't exist - this is expected, continue with insertion
 
 	// Insert the rule with priority consideration
 	insertCmd := m.buildIptablesRule(rule, "-I")
@@ -302,8 +357,14 @@ func (m *Manager) RemoveRule(rule *models.FirewallRule) error {
 		models.FirewallRuleTypeBlock: "DROP",
 	}[rule.Type]
 
+	// We use raw table PREROUTING for both allow and block rules
+	table := "raw"
+	chain := "PREROUTING"
+
 	deleteCmd := fmt.Sprintf(
-		"iptables -t filter -D INPUT -p %s -s %s --dport %d -j %s 2>/dev/null || true",
+		"iptables -t %s -D %s -p %s -s %s --dport %d -j %s 2>/dev/null || true",
+		table,
+		chain,
 		protocol,
 		rule.RemoteIP,
 		rule.ServerPort,
@@ -334,16 +395,26 @@ func (m *Manager) applyRuleUnlocked(rule *models.FirewallRule) error {
 	}[rule.Type]
 
 	// First, check if rule already exists in iptables (to avoid duplicates)
+	// Use -C (check) which returns 0 if rule exists, 1 if it doesn't
+	// Redirect stderr to /dev/null to suppress the expected "Bad rule" message when rule doesn't exist
+	// In DOCKER-USER, --dport matches the original host port
 	checkCmd := fmt.Sprintf(
-		"iptables -t filter -C INPUT -p %s -s %s --dport %d -j %s",
+		"iptables -t filter -C DOCKER-USER -p %s -s %s --dport %d -j %s 2>/dev/null",
 		protocol,
 		rule.RemoteIP,
 		rule.ServerPort,
 		target,
 	)
 
-	// Try to check if rule exists (this will fail if it doesn't exist, which is fine)
-	checkErr := m.executeIptables(checkCmd)
+	// Execute check silently - we expect it to fail (exit code 1) if rule doesn't exist
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", checkCmd)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	checkErr := cmd.Run()
 	if checkErr == nil {
 		// Rule already exists, skip insertion
 		log.WithFields(log.Fields{
@@ -354,6 +425,7 @@ func (m *Manager) applyRuleUnlocked(rule *models.FirewallRule) error {
 		}).Debug("firewall rule already exists in iptables, skipping")
 		return nil
 	}
+	// If check failed (exit code 1), rule doesn't exist - this is expected, continue with insertion
 
 	// Insert the rule with priority consideration
 	insertCmd := m.buildIptablesRule(rule, "-I")

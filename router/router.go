@@ -7,6 +7,7 @@ import (
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/environment/docker"
 	"github.com/mythicalltd/featherwings/modules"
 	"github.com/mythicalltd/featherwings/modules/alwaysmotd"
 	"github.com/mythicalltd/featherwings/remote"
@@ -182,6 +183,12 @@ func initializeModules(serverManager *wserver.Manager) *modules.Manager {
 	if err := moduleManager.Register(alwaysMotd); err != nil {
 		log.WithError(err).Fatal("failed to register AlwaysMOTD module")
 	}
+
+	// Set up port unbinder registry to allow AlwaysMOTD to register itself
+	// This breaks the import cycle by using a callback pattern
+	alwaysmotd.SetPortUnbinderRegistry(func(unbinder alwaysmotd.PortUnbinderFunc) {
+		docker.RegisterPortUnbinder(docker.PortUnbinderFunc(unbinder))
+	})
 
 	log.Info("modules initialized")
 	return moduleManager
