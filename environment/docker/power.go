@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -19,12 +20,25 @@ import (
 type PortUnbinderFunc func(port int)
 
 // Global port unbinder hook - set by modules that need to unbind ports
-var globalPortUnbinder PortUnbinderFunc
+// Using atomic pointer to prevent data races
+var (
+	globalPortUnbinderMu sync.RWMutex
+	globalPortUnbinder   PortUnbinderFunc
+)
 
 // RegisterPortUnbinder registers a port unbinder callback
 // This should be called by modules during initialization
 func RegisterPortUnbinder(unbinder PortUnbinderFunc) {
+	globalPortUnbinderMu.Lock()
+	defer globalPortUnbinderMu.Unlock()
 	globalPortUnbinder = unbinder
+}
+
+// getPortUnbinder safely retrieves the port unbinder function
+func getPortUnbinder() PortUnbinderFunc {
+	globalPortUnbinderMu.RLock()
+	defer globalPortUnbinderMu.RUnlock()
+	return globalPortUnbinder
 }
 
 // OnBeforeStart run before the container starts and get the process
@@ -38,15 +52,16 @@ func RegisterPortUnbinder(unbinder PortUnbinderFunc) {
 func (e *Environment) OnBeforeStart(ctx context.Context) error {
 	// Unbind ports before starting container to prevent port binding conflicts
 	// This is especially important when restarting after a crash, as modules may still have ports bound
-	if globalPortUnbinder != nil {
+	unbinder := getPortUnbinder()
+	if unbinder != nil {
 		allocations := e.Configuration.Allocations()
 		if allocations.DefaultMapping != nil && allocations.DefaultMapping.Port != 0 {
-			globalPortUnbinder(allocations.DefaultMapping.Port)
+			unbinder(allocations.DefaultMapping.Port)
 		}
 		// Also unbind any mapped ports
 		for _, ports := range allocations.Mappings {
 			for _, port := range ports {
-				globalPortUnbinder(port)
+				unbinder(port)
 			}
 		}
 	}

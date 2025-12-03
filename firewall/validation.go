@@ -6,6 +6,10 @@ import (
 
 // ValidatePortForServer validates that a port is allocated to a server
 func ValidatePortForServer(allocations *environment.Allocations, port int) bool {
+	if allocations == nil {
+		return false
+	}
+	
 	// Check default mapping
 	if allocations.DefaultMapping != nil && allocations.DefaultMapping.Port == port {
 		return true

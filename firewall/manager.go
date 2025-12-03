@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,12 +29,12 @@ func NewManager() *Manager {
 	return &Manager{}
 }
 
-// executeIptables executes an iptables command
-func (m *Manager) executeIptables(command string) error {
+// executeIptables executes an iptables command with explicit arguments to prevent command injection
+func (m *Manager) executeIptables(args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "iptables", args...)
 
 	// Capture stderr to include in error messages
 	var stderr bytes.Buffer
@@ -43,6 +44,7 @@ func (m *Manager) executeIptables(command string) error {
 	err := cmd.Run()
 	if err != nil {
 		stderrStr := strings.TrimSpace(stderr.String())
+		cmdStr := strings.Join(append([]string{"iptables"}, args...), " ")
 
 		if ctx.Err() == context.DeadlineExceeded {
 			if stderrStr != "" {
@@ -68,14 +70,14 @@ func (m *Manager) executeIptables(command string) error {
 				// Include the actual command and stderr in the error
 				if stderrStr != "" {
 					log.WithFields(log.Fields{
-						"command": command,
+						"command": cmdStr,
 						"stderr":  stderrStr,
 						"exit":    exitError.ExitCode(),
 					}).Error("iptables command failed")
 					return errors.Wrapf(err, "iptables command failed (exit code: %d): %s", exitError.ExitCode(), stderrStr)
 				}
 				log.WithFields(log.Fields{
-					"command": command,
+					"command": cmdStr,
 					"exit":    exitError.ExitCode(),
 				}).Error("iptables command failed")
 				return errors.Wrapf(err, "iptables command failed (exit code: %d)", exitError.ExitCode())
@@ -84,103 +86,94 @@ func (m *Manager) executeIptables(command string) error {
 
 		if stderrStr != "" {
 			log.WithFields(log.Fields{
-				"command": command,
+				"command": cmdStr,
 				"stderr":  stderrStr,
 			}).Error("iptables command failed")
 			return errors.Wrapf(err, "iptables command failed: %s", stderrStr)
 		}
-		log.WithField("command", command).Error("iptables command failed")
+		log.WithField("command", cmdStr).Error("iptables command failed")
 		return errors.Wrap(err, "iptables command failed")
 	}
 	return nil
 }
 
-// buildIptablesRule builds an iptables rule command
-func (m *Manager) buildIptablesRule(rule *models.FirewallRule, action string) string {
+// validateProtocol validates that protocol is tcp or udp
+func validateProtocol(protocol string) error {
+	if protocol != "tcp" && protocol != "udp" {
+		return errors.Errorf("invalid protocol: %s (must be 'tcp' or 'udp')", protocol)
+	}
+	return nil
+}
+
+// buildIptablesRuleArgs builds iptables command arguments to prevent command injection
+// Validates all inputs before building the command
+func (m *Manager) buildIptablesRuleArgs(rule *models.FirewallRule, action string) ([]string, error) {
+	// Validate IP address before use
+	if err := ValidateIP(rule.RemoteIP); err != nil {
+		return nil, errors.Wrap(err, "invalid remote IP")
+	}
+
+	// Validate and normalize protocol
+	protocol := rule.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	if err := validateProtocol(protocol); err != nil {
+		return nil, err
+	}
+
+	// Validate port
+	if rule.ServerPort < 1 || rule.ServerPort > 65535 {
+		return nil, errors.Errorf("invalid port: %d (must be between 1 and 65535)", rule.ServerPort)
+	}
+
 	// For Docker containers, traffic is DNAT'd in PREROUTING (nat table)
 	// This means the destination port changes in FORWARD chain
 	// We need to match on the original destination port BEFORE DNAT
 	// Solution: Use PREROUTING in the raw table to match original port before DNAT
-	// This works for both allow and block rules - we process them in the raw table
-	// to match the original destination port
-
 	table := "raw"
 	chain := "PREROUTING"
+
 	var target string
 	if rule.Type == models.FirewallRuleTypeAllow {
 		// For allow rules, we use ACCEPT to let the packet continue
-		// It will then go through DNAT and be evaluated in DOCKER-USER
 		target = "ACCEPT"
 	} else {
 		// For blocking, use DROP to stop the packet before DNAT
 		target = "DROP"
 	}
 
-	// Build the rule
-	protocol := rule.Protocol
-	if protocol == "" {
-		protocol = "tcp"
-	}
-
-	var ruleStr string
+	// Build arguments array
+	args := []string{"-t", table}
 
 	// For INSERT, try priority-based positioning, otherwise append
 	if action == "-I" {
-		// Calculate position based on priority (lower priority number = higher in chain)
-		// We'll insert after other rules with same or lower priority
+		// Calculate position based on priority
 		position := m.calculateRulePosition(rule)
 		if position > 0 && position == 1 {
 			// Insert at the beginning (position 1)
-			ruleStr = fmt.Sprintf(
-				"iptables -t %s %s %s -p %s -s %s --dport %d -j %s",
-				table,
-				action,
-				chain,
-				protocol,
-				rule.RemoteIP,
-				rule.ServerPort,
-				target,
-			)
+			args = append(args, "-I", chain)
 		} else if position > 1 {
 			// Insert at specific position
-			ruleStr = fmt.Sprintf(
-				"iptables -t %s %s %s %d -p %s -s %s --dport %d -j %s",
-				table,
-				action,
-				chain,
-				position,
-				protocol,
-				rule.RemoteIP,
-				rule.ServerPort,
-				target,
-			)
+			args = append(args, "-I", chain, fmt.Sprintf("%d", position))
 		} else {
-			// Position calculation failed or position is 0, use append instead
-			ruleStr = fmt.Sprintf(
-				"iptables -t %s -A %s -p %s -s %s --dport %d -j %s",
-				table,
-				chain,
-				protocol,
-				rule.RemoteIP,
-				rule.ServerPort,
-				target,
-			)
+			// Position calculation failed, use append instead
+			args = append(args, "-A", chain)
 		}
 	} else {
 		// For other actions (like -D), use standard format
-		ruleStr = fmt.Sprintf(
-			"iptables -t %s %s %s -p %s -s %s --dport %d -j %s",
-			table,
-			action,
-			chain,
-			protocol,
-			rule.RemoteIP,
-			rule.ServerPort,
-			target,
-		)
+		args = append(args, action, chain)
 	}
 
-	return ruleStr
+	// Add rule parameters
+	args = append(args,
+		"-p", protocol,
+		"-s", rule.RemoteIP,
+		"--dport", fmt.Sprintf("%d", rule.ServerPort),
+		"-j", target,
+	)
+
+	return args, nil
 }
 
 // getChainLength gets the actual number of rules in the raw/PREROUTING chain from iptables
@@ -284,24 +277,30 @@ func (m *Manager) ApplyRule(rule *models.FirewallRule) error {
 		models.FirewallRuleTypeBlock: "DROP",
 	}[rule.Type]
 
+	// Validate inputs before building commands
+	if err := ValidateIP(rule.RemoteIP); err != nil {
+		return errors.Wrap(err, "invalid remote IP")
+	}
+	if err := validateProtocol(protocol); err != nil {
+		return errors.Wrap(err, "invalid protocol")
+	}
+
 	// First, check if rule already exists in iptables (to avoid duplicates)
 	// Use -C (check) which returns 0 if rule exists, 1 if it doesn't
-	// Redirect stderr to /dev/null to suppress the expected "Bad rule" message when rule doesn't exist
-	// In DOCKER-USER, --dport matches the original host port
-	checkCmd := fmt.Sprintf(
-		"iptables -t filter -C DOCKER-USER -p %s -s %s --dport %d -j %s 2>/dev/null",
-		protocol,
-		rule.RemoteIP,
-		rule.ServerPort,
-		target,
-	)
+	checkArgs := []string{
+		"-t", "raw",
+		"-C", "PREROUTING",
+		"-p", protocol,
+		"-s", rule.RemoteIP,
+		"--dport", fmt.Sprintf("%d", rule.ServerPort),
+		"-j", target,
+	}
 
 	// Execute check silently - we expect it to fail (exit code 1) if rule doesn't exist
-	// Don't use executeIptables here as it logs errors, and we don't want to log expected failures
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", checkCmd)
+	cmd := exec.CommandContext(ctx, "iptables", checkArgs...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 
@@ -318,14 +317,18 @@ func (m *Manager) ApplyRule(rule *models.FirewallRule) error {
 	}
 	// If check failed (exit code 1), rule doesn't exist - this is expected, continue with insertion
 
-	// Insert the rule with priority consideration
-	insertCmd := m.buildIptablesRule(rule, "-I")
+	// Build and insert the rule with priority consideration
+	insertArgs, err := m.buildIptablesRuleArgs(rule, "-I")
+	if err != nil {
+		return errors.Wrap(err, "failed to build iptables rule arguments")
+	}
+
 	log.WithFields(log.Fields{
 		"rule_id": rule.ID,
-		"command": insertCmd,
+		"command": strings.Join(append([]string{"iptables"}, insertArgs...), " "),
 	}).Debug("applying firewall rule to iptables")
 
-	if err := m.executeIptables(insertCmd); err != nil {
+	if err := m.executeIptables(insertArgs...); err != nil {
 		return errors.Wrapf(err, "failed to apply firewall rule %d", rule.ID)
 	}
 
@@ -345,11 +348,23 @@ func (m *Manager) ApplyRule(rule *models.FirewallRule) error {
 func (m *Manager) RemoveRule(rule *models.FirewallRule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.removeRuleUnlocked(rule)
+}
 
-	// Build delete command
+// removeRuleUnlocked removes a firewall rule from iptables without acquiring the lock
+// This is used internally when the lock is already held
+func (m *Manager) removeRuleUnlocked(rule *models.FirewallRule) error {
+	// Validate inputs
+	if err := ValidateIP(rule.RemoteIP); err != nil {
+		return errors.Wrap(err, "invalid remote IP")
+	}
+
 	protocol := rule.Protocol
 	if protocol == "" {
 		protocol = "tcp"
+	}
+	if err := validateProtocol(protocol); err != nil {
+		return errors.Wrap(err, "invalid protocol")
 	}
 
 	target := map[models.FirewallRuleType]string{
@@ -358,20 +373,17 @@ func (m *Manager) RemoveRule(rule *models.FirewallRule) error {
 	}[rule.Type]
 
 	// We use raw table PREROUTING for both allow and block rules
-	table := "raw"
-	chain := "PREROUTING"
+	// Build delete command arguments
+	deleteArgs := []string{
+		"-t", "raw",
+		"-D", "PREROUTING",
+		"-p", protocol,
+		"-s", rule.RemoteIP,
+		"--dport", strconv.Itoa(rule.ServerPort),
+		"-j", target,
+	}
 
-	deleteCmd := fmt.Sprintf(
-		"iptables -t %s -D %s -p %s -s %s --dport %d -j %s 2>/dev/null || true",
-		table,
-		chain,
-		protocol,
-		rule.RemoteIP,
-		rule.ServerPort,
-		target,
-	)
-
-	if err := m.executeIptables(deleteCmd); err != nil {
+	if err := m.executeIptables(deleteArgs...); err != nil {
 		// Log warning but don't fail - rule might not exist
 		log.WithError(err).WithField("rule_id", rule.ID).Warn("failed to remove firewall rule from iptables (rule may not exist)")
 	} else {
@@ -427,14 +439,18 @@ func (m *Manager) applyRuleUnlocked(rule *models.FirewallRule) error {
 	}
 	// If check failed (exit code 1), rule doesn't exist - this is expected, continue with insertion
 
-	// Insert the rule with priority consideration
-	insertCmd := m.buildIptablesRule(rule, "-I")
+	// Build and insert the rule with priority consideration
+	insertArgs, err := m.buildIptablesRuleArgs(rule, "-I")
+	if err != nil {
+		return errors.Wrap(err, "failed to build iptables rule arguments")
+	}
+
 	log.WithFields(log.Fields{
 		"rule_id": rule.ID,
-		"command": insertCmd,
+		"command": strings.Join(append([]string{"iptables"}, insertArgs...), " "),
 	}).Debug("applying firewall rule to iptables")
 
-	if err := m.executeIptables(insertCmd); err != nil {
+	if err := m.executeIptables(insertArgs...); err != nil {
 		return errors.Wrapf(err, "failed to apply firewall rule %d", rule.ID)
 	}
 
@@ -534,8 +550,10 @@ func (m *Manager) CreateRule(rule *models.FirewallRule) error {
 
 	// Apply to iptables
 	if err := m.ApplyRule(rule); err != nil {
-		// If iptables apply fails, delete from database
-		database.Instance().Delete(rule)
+		// If iptables apply fails, hard delete from database (rollback)
+		if delErr := database.Instance().Unscoped().Delete(rule).Error; delErr != nil {
+			log.WithError(delErr).WithField("rule_id", rule.ID).Error("failed to rollback firewall rule creation")
+		}
 		return errors.Wrap(err, "failed to apply firewall rule to iptables")
 	}
 
@@ -655,8 +673,8 @@ func (m *Manager) CleanupInvalidPortRules(serverUUID string, validPorts map[int]
 	for _, rule := range rules {
 		// Check if the port is still valid
 		if !validPorts[rule.ServerPort] {
-			// Remove from iptables
-			if err := m.RemoveRule(&rule); err != nil {
+			// Remove from iptables (lock already held, use unlocked version)
+			if err := m.removeRuleUnlocked(&rule); err != nil {
 				log.WithError(err).WithField("rule_id", rule.ID).Warn("failed to remove invalid firewall rule from iptables")
 			}
 			// Soft delete from database
