@@ -6,6 +6,7 @@
 
 * AlwaysOnline Support for Minecraft!
 * Modules support for wings!
+* Added a firewall manager for servers!
 
 ## v1.0.9
 

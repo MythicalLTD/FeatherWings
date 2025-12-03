@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/mythicalltd/featherwings/firewall"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
@@ -119,6 +120,11 @@ func postTransfers(c *gin.Context) {
 
 		if !successful {
 			trnsfr.Server.Events().Publish(server.TransferStatusEvent, "failure")
+			// Clean up firewall rules if transfer failed
+			firewallMgr := firewall.NewManager()
+			if err := firewallMgr.DeleteAllRulesForServer(trnsfr.Server.ID()); err != nil {
+				trnsfr.Log().WithError(err).Warn("failed to delete firewall rules for failed transfer")
+			}
 			manager.Remove(func(match *server.Server) bool {
 				return match.ID() == trnsfr.Server.ID()
 			})

@@ -58,6 +58,20 @@ type ServerStatus struct {
 // Ensure AlwaysMOTD implements Module interface
 var _ modules.Module = (*AlwaysMOTD)(nil)
 
+// PortUnbinderFunc is a function type for unbinding ports
+// This allows registration without import cycles
+type PortUnbinderFunc func(port int)
+
+// Global port unbinder registration - set by docker package at init time
+// This is set via SetPortUnbinderRegistry to avoid import cycles
+var registerPortUnbinderFunc func(PortUnbinderFunc)
+
+// SetPortUnbinderRegistry allows the router package to register the docker package's
+// unbinder registration function. This breaks the import cycle.
+func SetPortUnbinderRegistry(registry func(PortUnbinderFunc)) {
+	registerPortUnbinderFunc = registry
+}
+
 // New creates a new AlwaysMOTD module instance
 func New() *AlwaysMOTD {
 	return &AlwaysMOTD{
@@ -246,6 +260,12 @@ func (a *AlwaysMOTD) Enable(ctx context.Context) error {
 	// Start status monitoring (without lock)
 	a.wg.Add(1)
 	go a.monitorLoop()
+
+	// Register port unbinder with environment package to prevent import cycles
+	// This allows environment/docker to unbind ports before container start
+	if registerPortUnbinderFunc != nil {
+		registerPortUnbinderFunc(a.UnbindPort)
+	}
 
 	a.logger.Info("AlwaysMOTD module enabled")
 	return nil
@@ -918,6 +938,31 @@ func (a *AlwaysMOTD) unbindBedrockFromServerPort(port int) {
 	for _, server := range servers {
 		server.UnbindFromPort(port)
 	}
+}
+
+// UnbindPort unbinds all MOTD bindings (both TCP redirects and UDP direct binds) for a given server port
+// This implements the docker.PortUnbinder interface
+func (a *AlwaysMOTD) UnbindPort(port int) {
+	if !a.Enabled() {
+		return
+	}
+
+	a.logger.WithField("port", port).Debug("unbinding MOTD from server port before container start")
+
+	// Remove TCP redirects
+	a.removeRedirect(port)
+
+	// Remove UDP redirects
+	a.removeUDPRedirect(port)
+
+	// Unbind Bedrock servers (direct port binding)
+	a.unbindBedrockFromServerPort(port)
+}
+
+// UnbindPortForServer is an alias for UnbindPort for backwards compatibility
+// This should be called before starting a container to prevent port binding conflicts
+func (a *AlwaysMOTD) UnbindPortForServer(port int) {
+	a.UnbindPort(port)
 }
 
 // cleanupIptables removes all iptables redirects (both TCP and UDP)

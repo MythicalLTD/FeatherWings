@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -15,6 +16,31 @@ import (
 	"github.com/mythicalltd/featherwings/remote"
 )
 
+// PortUnbinderFunc is a function type for unbinding ports
+type PortUnbinderFunc func(port int)
+
+// Global port unbinder hook - set by modules that need to unbind ports
+// Using atomic pointer to prevent data races
+var (
+	globalPortUnbinderMu sync.RWMutex
+	globalPortUnbinder   PortUnbinderFunc
+)
+
+// RegisterPortUnbinder registers a port unbinder callback
+// This should be called by modules during initialization
+func RegisterPortUnbinder(unbinder PortUnbinderFunc) {
+	globalPortUnbinderMu.Lock()
+	defer globalPortUnbinderMu.Unlock()
+	globalPortUnbinder = unbinder
+}
+
+// getPortUnbinder safely retrieves the port unbinder function
+func getPortUnbinder() PortUnbinderFunc {
+	globalPortUnbinderMu.RLock()
+	defer globalPortUnbinderMu.RUnlock()
+	return globalPortUnbinder
+}
+
 // OnBeforeStart run before the container starts and get the process
 // configuration from the Panel. This is important since we use this to check
 // configuration files as well as ensure we always have the latest version of
@@ -24,6 +50,22 @@ import (
 // a bootable state. This ensures that unexpected container deletion while Wings
 // is running does not result in the server becoming un-bootable.
 func (e *Environment) OnBeforeStart(ctx context.Context) error {
+	// Unbind ports before starting container to prevent port binding conflicts
+	// This is especially important when restarting after a crash, as modules may still have ports bound
+	unbinder := getPortUnbinder()
+	if unbinder != nil {
+		allocations := e.Configuration.Allocations()
+		if allocations.DefaultMapping != nil && allocations.DefaultMapping.Port != 0 {
+			unbinder(allocations.DefaultMapping.Port)
+		}
+		// Also unbind any mapped ports
+		for _, ports := range allocations.Mappings {
+			for _, port := range ports {
+				unbinder(port)
+			}
+		}
+	}
+
 	// Always destroy and re-create the server container to ensure that synced data from the Panel is used.
 	if err := e.client.ContainerRemove(ctx, e.Id, container.RemoveOptions{RemoveVolumes: true}); err != nil {
 		if !client.IsErrNotFound(err) {

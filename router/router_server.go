@@ -14,6 +14,7 @@ import (
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
+	"github.com/mythicalltd/featherwings/firewall"
 	"github.com/mythicalltd/featherwings/router/downloader"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"
@@ -222,9 +223,31 @@ func postServerSync(c *gin.Context) {
 
 	if err := s.Sync(); err != nil {
 		middleware.CaptureAndAbort(c, err)
-	} else {
-		c.Status(http.StatusNoContent)
+		return
 	}
+
+	// Clean up firewall rules for ports that are no longer allocated to this server
+	allocations := s.Config().Allocations
+	validPorts := make(map[int]bool)
+
+	// Add default mapping port
+	if allocations.DefaultMapping != nil {
+		validPorts[allocations.DefaultMapping.Port] = true
+	}
+
+	// Add all mapped ports
+	for _, ports := range allocations.Mappings {
+		for _, port := range ports {
+			validPorts[port] = true
+		}
+	}
+
+	firewallMgr := firewall.NewManager()
+	if err := firewallMgr.CleanupInvalidPortRules(s.ID(), validPorts); err != nil {
+		log.WithError(err).WithField("server", s.ID()).Warn("failed to cleanup invalid firewall rules during sync")
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // postServerInstall performs a server installation in a background thread.
@@ -318,6 +341,14 @@ func deleteServer(c *gin.Context) {
 	err := os.Remove(filename)
 	if err != nil {
 		log.WithFields(log.Fields{"server_id": ID, "error": err}).Warn("failed to remove server install log during deletion process")
+	}
+
+	// Remove all firewall rules for this server
+	{
+		firewallMgr := firewall.NewManager()
+		if err := firewallMgr.DeleteAllRulesForServer(ID); err != nil {
+			log.WithFields(log.Fields{"server_id": ID, "error": err}).Warn("failed to delete firewall rules during server deletion")
+		}
 	}
 
 	// Remove all server backups unless config setting is specified
