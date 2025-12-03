@@ -7,6 +7,7 @@
 * AlwaysOnline Support for Minecraft!
 * Modules support for wings!
 * Added a firewall manager for servers!
+* Changed the logs upload url to featherpanel api!
 
 ## v1.0.9
 

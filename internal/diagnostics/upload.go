@@ -13,7 +13,7 @@ import (
 	"github.com/goccy/go-json"
 )
 
-const DefaultMclogsAPIURL = "https://api.mclo.gs/1/log"
+const DefaultMclogsAPIURL = "https://api.featherpanel.com/1/log"
 
 var (
 	ErrMissingUploadAPIURL = errors.New("diagnostics: upload api url is required")
