@@ -38,9 +38,11 @@ type AlwaysMOTD struct {
 	serverManager *wserver.Manager
 
 	// Server tracking
-	serverStatus    map[int]*ServerStatus
-	redirectedPorts map[int]int
-	motdServers     map[string]*MotdServer
+	serverStatus       map[int]*ServerStatus
+	redirectedPorts    map[int]int // TCP redirects: port -> motdPort
+	redirectedUDPPorts map[int]int // UDP redirects: port -> bedrockMotdPort
+	motdServers        map[string]*MotdServer
+	bedrockMotdServers map[string]*BedrockMotdServer
 
 	// Logger
 	logger *log.Entry
@@ -59,11 +61,13 @@ var _ modules.Module = (*AlwaysMOTD)(nil)
 // New creates a new AlwaysMOTD module instance
 func New() *AlwaysMOTD {
 	return &AlwaysMOTD{
-		config:          DefaultConfig(),
-		serverStatus:    make(map[int]*ServerStatus),
-		redirectedPorts: make(map[int]int),
-		motdServers:     make(map[string]*MotdServer),
-		logger:          log.WithField("module", "AlwaysMOTD"),
+		config:             DefaultConfig(),
+		serverStatus:       make(map[int]*ServerStatus),
+		redirectedPorts:    make(map[int]int),
+		redirectedUDPPorts: make(map[int]int),
+		motdServers:        make(map[string]*MotdServer),
+		bedrockMotdServers: make(map[string]*BedrockMotdServer),
+		logger:             log.WithField("module", "AlwaysMOTD"),
 	}
 }
 
@@ -92,9 +96,11 @@ func (a *AlwaysMOTD) GetConfig() interface{} {
 }
 
 // SetConfig updates the module configuration
+// If the module is enabled, it will reload to apply the new configuration
 func (a *AlwaysMOTD) SetConfig(config interface{}) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	wasEnabled := a.enabled
+	a.mu.Unlock()
 
 	var cfg *Config
 	var ok bool
@@ -116,7 +122,45 @@ func (a *AlwaysMOTD) SetConfig(config interface{}) error {
 		return err
 	}
 
+	a.mu.Lock()
 	a.config = cfg
+	a.mu.Unlock()
+
+	// If module is enabled, reload it to apply the new configuration
+	if wasEnabled {
+		if err := a.reload(); err != nil {
+			return errors.Wrap(err, "failed to reload module with new configuration")
+		}
+	}
+
+	return nil
+}
+
+// reload restarts the module with the current configuration
+// This is called when config is updated while the module is enabled
+func (a *AlwaysMOTD) reload() error {
+	a.mu.RLock()
+	if !a.enabled {
+		a.mu.RUnlock()
+		return nil // Nothing to reload
+	}
+	serverManager := a.serverManager
+	parentCtx := context.Background() // Use background context for reload
+	a.mu.RUnlock()
+
+	// Disable first (this will cancel the old context)
+	if err := a.Disable(parentCtx); err != nil {
+		return errors.Wrap(err, "failed to disable module for reload")
+	}
+
+	// Re-enable with new config
+	// Create a new context with server manager
+	newCtx := context.WithValue(parentCtx, "server_manager", serverManager)
+	if err := a.Enable(newCtx); err != nil {
+		return errors.Wrap(err, "failed to re-enable module after reload")
+	}
+
+	a.logger.Info("module configuration reloaded successfully")
 	return nil
 }
 
@@ -225,12 +269,23 @@ func (a *AlwaysMOTD) Disable(ctx context.Context) error {
 	for state, server := range a.motdServers {
 		servers[state] = server
 	}
+	bedrockServers := make(map[string]*BedrockMotdServer)
+	for state, server := range a.bedrockMotdServers {
+		bedrockServers[state] = server
+	}
 	a.mu.Unlock() // Release lock early
 
-	// Close MOTD servers (without lock)
+	// Close Java Edition MOTD servers (without lock)
 	for state, server := range servers {
 		if err := server.Close(); err != nil {
 			a.logger.WithError(err).WithField("state", state).Error("failed to close MOTD server")
+		}
+	}
+
+	// Close Bedrock Edition MOTD servers (without lock)
+	for state, server := range bedrockServers {
+		if err := server.Close(); err != nil {
+			a.logger.WithError(err).WithField("state", state).Error("failed to close Bedrock MOTD server")
 		}
 	}
 
@@ -264,42 +319,70 @@ func (a *AlwaysMOTD) Disable(ctx context.Context) error {
 
 // initializeMotdServers creates MOTD servers for each state
 func (a *AlwaysMOTD) initializeMotdServers() error {
-	var favicon string
-	if a.config.Motd.ServerIcon != "" {
-		// Load icon with timeout to avoid blocking initialization
-		iconChan := make(chan string, 1)
-		errChan := make(chan error, 1)
-		go func() {
-			icon, err := a.loadServerIcon(a.config.Motd.ServerIcon)
-			if err != nil {
-				errChan <- err
-			} else {
-				iconChan <- icon
-			}
-		}()
-
-		// Wait for icon with timeout (don't block initialization)
-		select {
-		case favicon = <-iconChan:
-			// Icon loaded successfully
-		case err := <-errChan:
-			a.logger.WithError(err).Warn("failed to load server icon, continuing without it")
-		case <-time.After(3 * time.Second):
-			a.logger.Warn("server icon loading timed out, continuing without it")
-		}
-	}
-
 	for state, stateConfig := range a.config.Motd.States {
+		// Calculate port for this state: basePort + stateOffset
+		// Example: offline=25560+0=25560, suspended=25560+1=25561, etc.
 		port := a.config.Motd.Port + a.getStatePortOffset(state)
-		server := NewMotdServer(port, stateConfig, favicon)
-		if err := server.Start(); err != nil {
-			return errors.Wrapf(err, "failed to start MOTD server for state %s", state)
+
+		// Java Edition server (TCP) - only if enabled
+		if a.config.Motd.JavaEnabled {
+			// Load favicon if enabled and URL is specified
+			var javaFavicon string
+			if a.config.Motd.Java.FaviconEnabled && a.config.Motd.Java.FaviconURL != "" {
+				// Load favicon with timeout to avoid blocking initialization
+				iconChan := make(chan string, 1)
+				errChan := make(chan error, 1)
+				go func() {
+					icon, err := a.loadServerIcon(a.config.Motd.Java.FaviconURL)
+					if err != nil {
+						errChan <- err
+					} else {
+						iconChan <- icon
+					}
+				}()
+
+				// Wait for icon with timeout (don't block initialization)
+				select {
+				case javaFavicon = <-iconChan:
+					// Icon loaded successfully
+				case err := <-errChan:
+					a.logger.WithError(err).Warn("failed to load Java favicon, continuing without it")
+				case <-time.After(3 * time.Second):
+					a.logger.Warn("Java favicon loading timed out, continuing without it")
+				}
+			}
+			server := NewMotdServer(port, stateConfig, &a.config.Motd.Java, javaFavicon)
+			if err := server.Start(); err != nil {
+				return errors.Wrapf(err, "failed to start MOTD server for state %s", state)
+			}
+			a.motdServers[state] = server
+			a.logger.WithFields(log.Fields{
+				"state":   state,
+				"port":    port,
+				"edition": "java",
+			}).Info("MOTD server initialized")
 		}
-		a.motdServers[state] = server
-		a.logger.WithFields(log.Fields{
-			"state": state,
-			"port":  port,
-		}).Info("MOTD server initialized")
+
+		// Bedrock Edition server (UDP) - only if enabled
+		if a.config.Motd.BedrockEnabled {
+			bedrockPort := port + 100
+			bedrockServer := NewBedrockMotdServer(bedrockPort, stateConfig, &a.config.Motd.Bedrock)
+			if err := bedrockServer.Start(); err != nil {
+				// Log error but don't fail - Bedrock support is optional
+				a.logger.WithError(err).WithFields(log.Fields{
+					"state":   state,
+					"port":    bedrockPort,
+					"edition": "bedrock",
+				}).Warn("failed to start Bedrock MOTD server, continuing without Bedrock support")
+			} else {
+				a.bedrockMotdServers[state] = bedrockServer
+				a.logger.WithFields(log.Fields{
+					"state":   state,
+					"port":    bedrockPort,
+					"edition": "bedrock",
+				}).Info("Bedrock MOTD server initialized")
+			}
+		}
 	}
 
 	return nil
@@ -559,7 +642,15 @@ func (a *AlwaysMOTD) processPortStatus(port int, serverID string, now time.Time)
 			"state": state,
 		}).Debug("port status detected")
 		if state != "running" {
-			a.redirectPortToMotd(port, state)
+			if a.config.Motd.JavaEnabled {
+				a.redirectPortToMotd(port, state)
+			}
+			// Bind Bedrock server directly to server port (more reliable than UDP redirects).
+			// We intentionally do NOT use UDP iptables redirects for Bedrock, as RakNet status
+			// pings are sensitive to NAT and may result in clients showing \"locating server\".
+			if a.config.Motd.BedrockEnabled {
+				a.bindBedrockToServerPort(port, state)
+			}
 		}
 	} else if state != prevState {
 		a.logger.WithFields(log.Fields{
@@ -569,12 +660,25 @@ func (a *AlwaysMOTD) processPortStatus(port int, serverID string, now time.Time)
 		}).Info("port state changed")
 		if state == "running" {
 			// Run in background to avoid blocking
-			go a.removeRedirect(port)
+			if a.config.Motd.JavaEnabled {
+				go a.removeRedirect(port)
+			}
+			if a.config.Motd.BedrockEnabled {
+				// For Bedrock we only bind directly to the server port, no UDP iptables redirects.
+				go a.unbindBedrockFromServerPort(port)
+			}
 		} else {
 			// Run in background to avoid blocking
 			go func() {
-				a.removeRedirect(port)
-				a.redirectPortToMotd(port, state)
+				if a.config.Motd.JavaEnabled {
+					a.removeRedirect(port)
+					a.redirectPortToMotd(port, state)
+				}
+				if a.config.Motd.BedrockEnabled {
+					// Rebind Bedrock MOTD server directly to server port for the new state.
+					a.unbindBedrockFromServerPort(port)
+					a.bindBedrockToServerPort(port, state)
+				}
 			}()
 		}
 	}
@@ -689,8 +793,136 @@ func (a *AlwaysMOTD) removeRedirect(port int) {
 	a.logger.WithField("port", port).Debug("redirect removed")
 }
 
-// cleanupIptables removes all iptables redirects
+// redirectUDPPortToMotd redirects a UDP port to the appropriate Bedrock MOTD server
+func (a *AlwaysMOTD) redirectUDPPortToMotd(port int, state string) {
+	bedrockMotdPort := a.config.Motd.Port + a.getStatePortOffset(state) + 100
+
+	a.mu.Lock()
+	currentRedirect := a.redirectedUDPPorts[port]
+	a.mu.Unlock()
+
+	if currentRedirect == bedrockMotdPort {
+		return
+	}
+
+	// First remove any existing redirect for this port
+	if currentRedirect != 0 {
+		// Try both REDIRECT and DNAT in case either was used
+		removeCmd1 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
+		removeCmd2 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
+		_ = a.executeIptables(removeCmd1)
+		_ = a.executeIptables(removeCmd2)
+	}
+
+	// Use REDIRECT for UDP (simpler and handles source port automatically)
+	// REDIRECT automatically rewrites the source port in responses
+	redirectCmd := fmt.Sprintf("iptables -t nat -C PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport %d -j REDIRECT --to-port %d", port, bedrockMotdPort, port, bedrockMotdPort)
+	if err := a.executeIptables(redirectCmd); err != nil {
+		a.logger.WithError(err).WithFields(log.Fields{
+			"port":            port,
+			"bedrockMotdPort": bedrockMotdPort,
+			"state":           state,
+		}).Warn("failed to redirect UDP port via iptables (Bedrock MOTD server is still running, but port redirect may not work)")
+	}
+
+	a.mu.Lock()
+	a.redirectedUDPPorts[port] = bedrockMotdPort
+	a.mu.Unlock()
+
+	a.logger.WithFields(log.Fields{
+		"port":            port,
+		"bedrockMotdPort": bedrockMotdPort,
+		"state":           state,
+		"protocol":        "udp",
+	}).Debug("UDP port redirected")
+
+	// Set server port mapping in Bedrock MOTD server so it knows which server port to use in server info
+	a.mu.RLock()
+	bedrockServer, exists := a.bedrockMotdServers[state]
+	a.mu.RUnlock()
+	if exists {
+		bedrockServer.SetServerPortMapping(bedrockMotdPort, port)
+	}
+}
+
+// removeUDPRedirect removes a UDP port redirect
+func (a *AlwaysMOTD) removeUDPRedirect(port int) {
+	a.mu.Lock()
+	currentRedirect := a.redirectedUDPPorts[port]
+	a.mu.Unlock()
+
+	if currentRedirect == 0 {
+		return
+	}
+
+	// Try to remove, but don't fail if rule doesn't exist
+	// Try both REDIRECT and DNAT in case either was used
+	command1 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
+	command2 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
+	command3 := fmt.Sprintf("iptables -t nat -D OUTPUT -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
+	_ = a.executeIptables(command1)
+	_ = a.executeIptables(command2)
+	_ = a.executeIptables(command3)
+	command := command1 // Use REDIRECT as primary
+	if err := a.executeIptables(command); err != nil {
+		// Log but continue - rule might not exist or iptables might not be available
+		a.logger.WithError(err).WithFields(log.Fields{
+			"port":     port,
+			"protocol": "udp",
+		}).Debug("failed to remove UDP redirect (rule may not exist)")
+	}
+
+	a.mu.Lock()
+	delete(a.redirectedUDPPorts, port)
+	a.mu.Unlock()
+
+	a.logger.WithFields(log.Fields{
+		"port":     port,
+		"protocol": "udp",
+	}).Debug("UDP redirect removed")
+}
+
+// bindBedrockToServerPort binds Bedrock MOTD server directly to server port when offline
+// This is more reliable than UDP redirects
+func (a *AlwaysMOTD) bindBedrockToServerPort(port int, state string) {
+	a.mu.RLock()
+	bedrockServer, exists := a.bedrockMotdServers[state]
+	a.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	if err := bedrockServer.BindToPort(port, state); err != nil {
+		a.logger.WithError(err).WithFields(log.Fields{
+			"port":  port,
+			"state": state,
+		}).Debug("failed to bind Bedrock server to port (port may be in use)")
+	} else {
+		a.logger.WithFields(log.Fields{
+			"port":  port,
+			"state": state,
+		}).Debug("Bedrock server bound to server port")
+	}
+}
+
+// unbindBedrockFromServerPort unbinds Bedrock MOTD server from server port
+func (a *AlwaysMOTD) unbindBedrockFromServerPort(port int) {
+	a.mu.RLock()
+	servers := make([]*BedrockMotdServer, 0, len(a.bedrockMotdServers))
+	for _, server := range a.bedrockMotdServers {
+		servers = append(servers, server)
+	}
+	a.mu.RUnlock()
+
+	for _, server := range servers {
+		server.UnbindFromPort(port)
+	}
+}
+
+// cleanupIptables removes all iptables redirects (both TCP and UDP)
 func (a *AlwaysMOTD) cleanupIptables() error {
+	// Flush all PREROUTING rules (this removes both TCP and UDP redirects)
 	command := "iptables -t nat -F PREROUTING"
 	if err := a.executeIptables(command); err != nil {
 		return errors.Wrap(err, "failed to cleanup iptables")
@@ -698,6 +930,7 @@ func (a *AlwaysMOTD) cleanupIptables() error {
 
 	a.mu.Lock()
 	a.redirectedPorts = make(map[int]int)
+	a.redirectedUDPPorts = make(map[int]int)
 	a.mu.Unlock()
 
 	return nil

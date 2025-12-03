@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
@@ -13,26 +14,28 @@ import (
 
 // MotdServer handles Minecraft protocol connections and serves custom MOTD
 type MotdServer struct {
-	port    int
-	config  *StateConfig
-	favicon string
-	server  net.Listener
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	logger  *log.Entry
+	port       int
+	config     *StateConfig
+	javaConfig *JavaConfig
+	favicon    string
+	server     net.Listener
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	logger     *log.Entry
 }
 
 // NewMotdServer creates a new MOTD server instance
-func NewMotdServer(port int, config *StateConfig, favicon string) *MotdServer {
+func NewMotdServer(port int, config *StateConfig, javaConfig *JavaConfig, favicon string) *MotdServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &MotdServer{
-		port:    port,
-		config:  config,
-		favicon: favicon,
-		ctx:     ctx,
-		cancel:  cancel,
-		logger:  log.WithField("port", port),
+		port:       port,
+		config:     config,
+		javaConfig: javaConfig,
+		favicon:    favicon,
+		ctx:        ctx,
+		cancel:     cancel,
+		logger:     log.WithField("port", port),
 	}
 }
 
@@ -137,7 +140,13 @@ func (s *MotdServer) handleConnection(conn net.Conn) {
 					// Status request - send response immediately with status info
 					s.sendStatusResponse(conn)
 				} else if state == "status" && packetID == 0x01 {
-					// Ping request - don't respond to make server show as unhealthy/trying to connect
+					// Ping request - handle based on config
+					if s.javaConfig != nil && !s.javaConfig.ShowAsUnhealthy {
+						// Respond to ping if configured to show as healthy
+						// Send ping response (same data back)
+						conn.Write(fullPacket)
+					}
+					// Otherwise don't respond to make server show as unhealthy/trying to connect
 					// Not responding to ping makes the client mark it as unhealthy
 					// Close connection to indicate server is not actually available
 					return
@@ -153,13 +162,30 @@ func (s *MotdServer) handleConnection(conn net.Conn) {
 
 // sendStatusResponse sends a status response to the client
 func (s *MotdServer) sendStatusResponse(conn net.Conn) {
+	// Apply status response delay if configured
+	if s.javaConfig != nil && s.javaConfig.StatusResponseDelay > 0 {
+		time.Sleep(time.Duration(s.javaConfig.StatusResponseDelay) * time.Millisecond)
+	}
+
+	// Use Java-specific description if available, otherwise fall back to regular description
+	descToUse := s.config.Description
+	if s.config.JavaDescription != nil {
+		descToUse = s.config.JavaDescription
+	}
+
 	// Parse description - can be string or JSON text component
-	description, rawDescription := s.parseDescription(s.config.Description)
+	description, rawDescription := s.parseDescription(descToUse)
+
+	// Determine protocol version
+	protocol := s.config.Protocol
+	if s.javaConfig != nil && s.javaConfig.ProtocolVersion > 0 {
+		protocol = s.javaConfig.ProtocolVersion
+	}
 
 	response := StatusResponse{
 		Version: VersionInfo{
 			Name:     s.config.Version,
-			Protocol: s.config.Protocol,
+			Protocol: protocol,
 		},
 		Players: PlayersInfo{
 			Max:    s.config.MaxPlayers,
@@ -169,8 +195,11 @@ func (s *MotdServer) sendStatusResponse(conn net.Conn) {
 		DescriptionRaw: rawDescription,
 	}
 
-	if s.favicon != "" {
-		response.Favicon = s.favicon
+	// Use favicon if enabled and available
+	if s.javaConfig == nil || s.javaConfig.FaviconEnabled {
+		if s.favicon != "" {
+			response.Favicon = s.favicon
+		}
 	}
 
 	packet, err := createStatusPacket(response)
@@ -251,8 +280,14 @@ func (s *MotdServer) parseJSONComponent(v map[string]interface{}) DescriptionInf
 func (s *MotdServer) sendDisconnect(conn net.Conn) {
 	var message string
 
+	// Use Java-specific description if available, otherwise fall back to regular description
+	descToUse := s.config.Description
+	if s.config.JavaDescription != nil {
+		descToUse = s.config.JavaDescription
+	}
+
 	// Extract text from description (can be string or JSON object)
-	switch v := s.config.Description.(type) {
+	switch v := descToUse.(type) {
 	case string:
 		message = v
 	case map[string]interface{}:
@@ -267,6 +302,11 @@ func (s *MotdServer) sendDisconnect(conn net.Conn) {
 		message = "Server is currently unavailable"
 	}
 
+	// Format message based on Java config
+	if s.javaConfig != nil {
+		message = s.formatDisconnectMessage(message)
+	}
+
 	packet, err := createDisconnectPacket(message)
 	if err != nil {
 		s.logger.WithError(err).Error("failed to create disconnect packet")
@@ -274,6 +314,49 @@ func (s *MotdServer) sendDisconnect(conn net.Conn) {
 	}
 
 	conn.Write(packet)
+
+	// Apply disconnect delay if configured
+	if s.javaConfig != nil && s.javaConfig.DisconnectDelay > 0 {
+		time.Sleep(time.Duration(s.javaConfig.DisconnectDelay) * time.Millisecond)
+	}
+}
+
+// formatDisconnectMessage formats the disconnect message based on Java config
+func (s *MotdServer) formatDisconnectMessage(message string) string {
+	if s.javaConfig == nil {
+		return message
+	}
+
+	format := s.javaConfig.DisconnectMessageFormat
+	if format == "" {
+		format = "normal"
+	}
+
+	prefix := s.javaConfig.DisconnectMessagePrefix
+	suffix := s.javaConfig.DisconnectMessageSuffix
+
+	var formatted string
+	switch format {
+	case "bold":
+		// Make it bold
+		formatted = fmt.Sprintf("%s§l%s§r%s", prefix, message, suffix)
+	case "large":
+		// Make it bold and add spacing
+		formatted = fmt.Sprintf("%s§l%s§r%s", prefix, message, suffix)
+		if prefix == "" {
+			formatted = "\n" + formatted
+		}
+		if suffix == "" {
+			formatted = formatted + "\n"
+		}
+	case "normal":
+		// Just use prefix/suffix
+		formatted = fmt.Sprintf("%s%s%s", prefix, message, suffix)
+	default:
+		formatted = message
+	}
+
+	return formatted
 }
 
 // Close stops the MOTD server
