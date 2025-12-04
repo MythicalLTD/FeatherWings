@@ -147,10 +147,14 @@ func createDockerNetwork(ctx context.Context, cli *client.Client) error {
 	// Try to create the network with the configured subnet
 	_, err := cli.NetworkCreate(ctx, nw.Name, createOpts)
 	if err != nil {
-		// Check if the error is a pool overlap issue
+		// Check if the error is a pool overlap issue or IPv6-related
 		errStr := err.Error()
-		if strings.Contains(errStr, "Pool overlaps") || strings.Contains(errStr, "invalid pool request") {
+		if strings.Contains(errStr, "Pool overlaps") || strings.Contains(errStr, "invalid pool request") || strings.Contains(errStr, "IPv6 address pool") {
 			log.Warn("configured subnet conflicts with existing network, letting Docker auto-assign subnet...")
+
+			// Disable IPv6 when retrying with auto-assigned subnet to avoid IPv6 pool issues
+			enableIPv6Retry := false
+			createOpts.EnableIPv6 = &enableIPv6Retry
 
 			// Retry without specifying IPAM config - let Docker auto-assign
 			createOpts.IPAM = &network.IPAM{
