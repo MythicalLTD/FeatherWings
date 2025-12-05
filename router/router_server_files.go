@@ -60,6 +60,11 @@ func getServerFileContents(c *gin.Context) {
 				"error":      "Cannot perform that action: file is a directory.",
 				"request_id": c.Writer.Header().Get("X-Request-Id"),
 			})
+		} else if strings.Contains(err.Error(), "bad path resolution") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":      "Access denied: The requested path is outside the server's root directory and cannot be accessed for security reasons.",
+				"request_id": c.Writer.Header().Get("X-Request-Id"),
+			})
 		} else {
 			middleware.CaptureAndAbort(c, err)
 		}
@@ -540,7 +545,7 @@ func postServerCompressFiles(c *gin.Context) {
 		return
 	}
 
-	f, mimetype, err := s.Filesystem().CompressFiles(data.RootPath, data.Name, data.Files, data.Extension)
+	f, mimetype, err := s.Filesystem().CompressFiles(c.Request.Context(), data.RootPath, data.Name, data.Files, data.Extension)
 	if err != nil {
 		middleware.CaptureAndAbort(c, err)
 		return
