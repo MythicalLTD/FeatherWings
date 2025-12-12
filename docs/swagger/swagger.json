@@ -2246,6 +2246,126 @@
                 }
             }
         },
+        "/api/servers/{server}/proxy/create": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Proxy"
+                ],
+                "summary": "Create server proxy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Proxy configuration",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable - nginx not installed",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/proxy/delete": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Proxy"
+                ],
+                "summary": "Delete server proxy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Proxy deletion request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable - nginx not installed",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/servers/{server}/reinstall": {
             "post": {
                 "security": [

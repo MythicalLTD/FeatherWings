@@ -8,6 +8,7 @@
 * Modules support for wings!
 * Added a firewall manager for servers!
 * Changed the logs upload url to featherpanel api!
+* Introduced robust reverse proxy support, enabling seamless domain-based access and SSL integration for servers.
 
 ## v1.0.9
 

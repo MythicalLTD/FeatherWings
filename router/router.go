@@ -129,6 +129,9 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		server.POST("/transfer", postServerTransfer)
 		server.DELETE("/transfer", deleteServerTransfer)
 
+		server.POST("/proxy/create", postServerProxyCreate)
+		server.POST("/proxy/delete", postServerProxyDelete)
+
 		// Deletes all backups for a server
 		server.DELETE("deleteAllBackups", deleteAllServerBackups)
 

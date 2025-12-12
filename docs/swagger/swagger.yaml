@@ -2611,6 +2611,82 @@ paths:
       summary: Execute server power action
       tags:
       - Servers
+  /api/servers/{server}/proxy/create:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Proxy configuration
+        in: body
+        name: payload
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "503":
+          description: Service Unavailable - nginx not installed
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Create server proxy
+      tags:
+      - Server Proxy
+  /api/servers/{server}/proxy/delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Proxy deletion request
+        in: body
+        name: payload
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "503":
+          description: Service Unavailable - nginx not installed
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Delete server proxy
+      tags:
+      - Server Proxy
   /api/servers/{server}/reinstall:
     post:
       parameters:

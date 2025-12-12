@@ -105,6 +105,12 @@ func postServerTransfer(c *gin.Context) {
 			trnsfr.Log().Info("cleaned up firewall rules after successful transfer")
 		}
 
+		// Clean up proxy configurations and certificates since server is moving to another node
+		serverIP := s.Config().Allocations.DefaultMapping.Ip
+		if serverIP != "" {
+			cleanupServerProxies(serverIP, s.Log())
+		}
+
 		// DO NOT NOTIFY THE PANEL OF SUCCESS HERE. The only node that should send
 		// a success status is the destination node.  When we send a failure status,
 		// the panel will automatically cancel the transfer and attempt to reset

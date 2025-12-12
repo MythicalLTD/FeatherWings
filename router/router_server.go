@@ -351,6 +351,12 @@ func deleteServer(c *gin.Context) {
 		}
 	}
 
+	// Clean up proxy configurations and certificates for this server
+	serverIP := s.Config().Allocations.DefaultMapping.Ip
+	if serverIP != "" {
+		cleanupServerProxies(serverIP, s.Log())
+	}
+
 	// Remove all server backups unless config setting is specified
 	if config.Get().System.Backups.RemoveBackupsOnServerDelete == true {
 		if err := s.RemoveAllServerBackups(); err != nil {
