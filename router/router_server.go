@@ -250,6 +250,52 @@ func postServerSync(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// postServerImport imports server files from a remote SFTP or FTP server.
+// @Summary Import server files
+// @Tags Servers
+// @Accept json
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param payload body object true "Import request" example({"user":"username","password":"password","hote":"example.com","port":22,"srclocation":"/path/to/source","dstlocation":"/path/to/destination","wipe":false,"type":"sftp"})
+// @Success 202 "Accepted"
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/import [post]
+func postServerImport(c *gin.Context) {
+	s := ExtractServer(c)
+	var data struct {
+		User        string `json:"user" binding:"required"`
+		Password    string `json:"password" binding:"required"`
+		Hote        string `json:"hote" binding:"required"`
+		Port        int    `json:"port" binding:"required,min=1,max=65535"`
+		Srclocation string `json:"srclocation" binding:"required"`
+		Dstlocation string `json:"dstlocation" binding:"required"`
+		Wipe        bool   `json:"wipe"`
+		Type        string `json:"type" binding:"required,oneof=sftp ftp"`
+	}
+	if err := c.BindJSON(&data); err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	if s.ExecutingPowerAction() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "Cannot execute server import event while another power action is running.",
+		})
+		return
+	}
+
+	go func(s *server.Server) {
+		if err := s.ImportNew(data.User, data.Password, data.Hote, data.Port, data.Srclocation, data.Dstlocation, data.Type, data.Wipe); err != nil {
+			s.Log().WithField("error", err).Error("failed to complete server import process")
+		}
+	}(s)
+
+	c.Status(http.StatusAccepted)
+}
+
 // postServerInstall performs a server installation in a background thread.
 // @Summary Trigger server install
 // @Tags Servers

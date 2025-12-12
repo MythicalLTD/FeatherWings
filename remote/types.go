@@ -175,6 +175,11 @@ type InstallStatusRequest struct {
 	Reinstall  bool `json:"reinstall"`
 }
 
+type ImportStatusRequest struct {
+	Successful bool   `json:"successful"`
+	Error      string `json:"error,omitempty"`
+}
+
 type ServerStateChange struct {
 	PrevState string `json:"previous_state"`
 	NewState  string `json:"new_state"`

@@ -20,6 +20,8 @@ const (
 	TransferStatusEvent         = "transfer status"
 	DeletedEvent                = "deleted"
 	FeatureMatchEvent           = "feature match"
+	ImportStartedEvent          = "import started"
+	ImportCompletedEvent        = "import completed"
 )
 
 // Events returns the server's emitter instance.

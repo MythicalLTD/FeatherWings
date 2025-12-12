@@ -40,6 +40,7 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/sandertv/gophertunnel v1.51.1
+	github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spf13/cobra v1.10.1
 	github.com/swaggo/files v1.0.1

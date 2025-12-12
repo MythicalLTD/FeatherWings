@@ -421,6 +421,8 @@ github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6 h1:ZfK7NCzID
 github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6/go.mod h1:/yysjwfCXm2+2OY8mBazLzcxJ3irnylKCyG3FLgUPVU=
 github.com/sandertv/gophertunnel v1.51.1 h1:NTv8Yt8CI6Hg7xNOOP1b7mtqqScK1k+OPBlmxi+tIio=
 github.com/sandertv/gophertunnel v1.51.1/go.mod h1:IhLg93aMPY/rKgB7lKxTzOZ6i11OgkL0WinVs+gMvlI=
+github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4 h1:PT+ElG/UUFMfqy5HrxJxNzj3QBOf7dZwupeVC+mG1Lo=
+github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4/go.mod h1:MnkX001NG75g3p8bhFycnyIjeQoOjGL6CEIsdE/nKSY=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/shirou/gopsutil/v3 v3.24.5 h1:i0t8kL+kQTvpAYToeuiVk3TgDeKOFioZO3Ztz/iZ9pI=
 github.com/shirou/gopsutil/v3 v3.24.5/go.mod h1:bsoOS1aStSs9ErQ1WWfxllSeS1K5D+U30r2NfcubMVk=
