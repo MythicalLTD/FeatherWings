@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.1
+
+### Improved
+
+- Added improved backup download functionality.
+
 ## v1.1.0
 
 ### Added
