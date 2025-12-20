@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.2
+
+### Added
+
+- Enable game server ip address allocation for macvlan driver. by @Freddo3000 & @madpeteguy
+- Transfer backups and install logs by @QuintenQVD0
+- Added support for SFTP key-only authentication, enhancing server security. Thanks to @rmartinoscar
+
 ## v1.1.1
 
 ### Improved

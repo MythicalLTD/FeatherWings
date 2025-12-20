@@ -53,6 +53,9 @@ type Transfer struct {
 
 	// archive is the archive that is being created for the transfer.
 	archive *Archive
+
+	// BackupUUIDs is a list of backup UUIDs to transfer along with the server.
+	BackupUUIDs []string
 }
 
 // New returns a new transfer instance for the given server.
