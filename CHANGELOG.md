@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.3
+
+### Added
+
+- Added rate limiting for websocket messages to prevent flooding.
+- Implemented a limit on the number of concurrent websocket connections per server.
+- Added support for user-specific denylisting of JWTs for enhanced security.
+- Introduced a new endpoint for deauthorizing users from websocket connections.
+
+### Improved
+- Updated websocket message handling to improve error management and connection closure.
+- Refactored websocket event handling to use a new Event type for better type safety.
+- Improved server suspension handling by disconnecting all open websockets and SFTP clients when a server is suspended.
+- Updated dependencies in go.mod to include golang.org/x/time for rate limiting functionality.
+
 ## v1.1.2
 
 ### Added

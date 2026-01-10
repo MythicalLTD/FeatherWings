@@ -442,6 +442,8 @@ func deleteServer(c *gin.Context) {
 }
 
 // postServerDenyWSTokens adds websocket JTIs to the deny list preventing reuse.
+//
+// deprecated: prefer /api/deauthorize-user
 // @Summary Invalidate websocket tokens
 // @Tags Servers
 // @Accept json

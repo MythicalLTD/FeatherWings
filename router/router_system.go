@@ -17,6 +17,7 @@ import (
 	"github.com/mythicalltd/featherwings/internal/diagnostics"
 	"github.com/mythicalltd/featherwings/internal/selfupdate"
 	"github.com/mythicalltd/featherwings/router/middleware"
+	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/installer"
 	"github.com/mythicalltd/featherwings/system"
@@ -412,6 +413,36 @@ func postUpdateConfiguration(c *gin.Context) {
 	c.JSON(http.StatusOK, postUpdateConfigurationResponse{
 		Applied: true,
 	})
+}
+
+func postDeauthorizeUser(c *gin.Context) {
+	var data struct {
+		User    string   `json:"user"`
+		Servers []string `json:"servers"`
+	}
+
+	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+
+	// todo: disconnect websockets more gracefully
+	m := middleware.ExtractManager(c)
+	if len(data.Servers) > 0 {
+		for _, uuid := range data.Servers {
+			if s, ok := m.Get(uuid); ok {
+				s.Websockets().CancelAll()
+				s.Sftp().Cancel(data.User)
+				tokens.DenyForServer(s.ID(), data.User)
+			}
+		}
+	} else {
+		for _, s := range m.All() {
+			s.Websockets().CancelAll()
+			s.Sftp().Cancel(data.User)
+		}
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // postSystemSelfUpdate triggers a self-update for the running daemon instance.

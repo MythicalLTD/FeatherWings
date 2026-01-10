@@ -46,6 +46,7 @@ type Handler struct {
 	server       *server.Server
 	ra           server.RequestActivity
 	uuid         uuid.UUID
+	limiter      *LimiterBucket
 }
 
 var (
@@ -105,6 +106,9 @@ func GetHandler(s *server.Server, w http.ResponseWriter, r *http.Request, c *gin
 		return nil, err
 	}
 
+	conn.SetReadLimit(4096)
+	_ = conn.SetCompressionLevel(5)
+
 	u, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -116,6 +120,7 @@ func GetHandler(s *server.Server, w http.ResponseWriter, r *http.Request, c *gin
 		server:     s,
 		ra:         s.NewRequestActivity("", c.ClientIP()),
 		uuid:       u,
+		limiter:    NewLimiter(),
 	}, nil
 }
 
@@ -150,7 +155,7 @@ func (h *Handler) SendJson(v Message) error {
 
 		// If the user does not have permission to see backup events, do not emit
 		// them over the socket.
-		if strings.HasPrefix(v.Event, server.BackupCompletedEvent) {
+		if strings.HasPrefix(string(v.Event), server.BackupCompletedEvent) {
 			if !j.HasPermission(PermissionReceiveBackups) {
 				return nil
 			}
@@ -277,6 +282,14 @@ func (h *Handler) setJwt(token *tokens.WebsocketPayload) {
 
 // HandleInbound handles an inbound socket request and route it to the proper action.
 func (h *Handler) HandleInbound(ctx context.Context, m Message) error {
+	if h.server.IsSuspended() {
+		return server.ErrSuspended
+	}
+
+	if h.IsThrottled(m.Event) {
+		return nil
+	}
+
 	if m.Event != AuthenticationEvent {
 		if err := h.TokenValid(); err != nil {
 			h.unsafeSendJson(Message{
@@ -285,6 +298,10 @@ func (h *Handler) HandleInbound(ctx context.Context, m Message) error {
 			})
 			return nil
 		}
+	}
+
+	if h.server.IsSuspended() {
+		return server.ErrSuspended
 	}
 
 	switch m.Event {

@@ -69,6 +69,7 @@ type Server struct {
 	// The console throttler instance used to control outputs.
 	throttler    *ConsoleThrottle
 	throttleOnce sync.Once
+	sftpBag      *system.ContextBag
 
 	// Tracks open websocket connections for the server.
 	wsBag       *WebsocketBag
@@ -254,11 +255,21 @@ func (s *Server) Sync() error {
 
 	s.SyncWithEnvironment()
 
+	// If the server is suspended immediately disconnect all open websocket connections
+	// and any connected SFTP clients. We don't need to worry about revoking any JWTs
+	// here since they'll be blocked from re-connecting to the websocket anyways. This
+	// just forces the client to disconnect and attempt to reconnect (rather than waiting
+	// on them to send a message and hit that disconnect logic).
+	if s.IsSuspended() {
+		s.Websockets().CancelAll()
+		s.Sftp().CancelAll()
+	}
+
 	return nil
 }
 
 // SyncWithConfiguration accepts a configuration object for a server and will
-// sync all of the values with the existing server state. This only replaces the
+// sync all values with the existing server state. This only replaces the
 // existing configuration and process configuration for the server. The
 // underlying environment will not be affected. This is because this function
 // can be called from scoped where the server may not be fully initialized,
