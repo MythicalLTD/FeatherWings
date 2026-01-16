@@ -8,6 +8,7 @@
 - Implemented a limit on the number of concurrent websocket connections per server.
 - Added support for user-specific denylisting of JWTs for enhanced security.
 - Introduced a new endpoint for deauthorizing users from websocket connections.
+- Native Hytale server support is now available out of the box!
 
 ### Improved
 - Updated websocket message handling to improve error management and connection closure.

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,16 +29,19 @@ func (s *Server) Mounts() []environment.Mount {
 		},
 	}
 
-	if config.Get().System.User.Passwd {
-		passwdMount := environment.Mount{
-			Default:  true,
-			Target:   "/etc/passwd",
-			Source:   config.Get().System.User.PasswdFile,
-			ReadOnly: true,
-		}
+	cfg := config.Get()
 
-		m = append(m, passwdMount)
+	if cfg.System.MachineID.Enable {
+		// Hytale wants a machine-id in order to encrypt tokens for the server.
+		// So add a mount to `/etc/machine-id` to a source that contains the
+		// server's UUID without any dashes.
+		m = append(m, environment.Mount{
+			Source:   filepath.Join(cfg.System.MachineID.Directory, s.ID()),
+			Target:   "/etc/machine-id",
+			ReadOnly: true,
+		})
 	}
+
 	// Also include any of this server's custom mounts when returning them.
 	return append(m, s.customMounts()...)
 }
@@ -49,6 +51,7 @@ func (s *Server) Mounts() []environment.Mount {
 func (s *Server) customMounts() []environment.Mount {
 	var mounts []environment.Mount
 
+	// TODO: probably need to handle things trying to mount directories that do not exist.
 	for _, m := range s.Config().Mounts {
 		source := filepath.Clean(m.Source)
 		target := filepath.Clean(m.Target)
@@ -59,18 +62,6 @@ func (s *Server) customMounts() []environment.Mount {
 			"read_only":   m.ReadOnly,
 		})
 
-		// Check if the source path exists
-		if _, err := os.Stat(source); os.IsNotExist(err) {
-			logger.WithField("missing_source_path", source).Warn("skipping custom server mount, source path does not exist")
-			continue
-		}
-
-		// Check if the target path includes /home/container
-		if strings.HasPrefix(target, "/home/container") && config.Get().BlockBaseDirMount {
-			logger.WithField("invalid_target_path", target).Warn("Skipping custom server mount; target path includes /home/container")
-			continue
-		}
-
 		mounted := false
 		for _, allowed := range config.Get().AllowedMounts {
 			// Check if the source path is included in the allowed mounts list.
@@ -78,14 +69,12 @@ func (s *Server) customMounts() []environment.Mount {
 			if !strings.HasPrefix(source, filepath.Clean(allowed)) {
 				continue
 			}
-
 			mounted = true
 			mounts = append(mounts, environment.Mount{
 				Source:   source,
 				Target:   target,
 				ReadOnly: m.ReadOnly,
 			})
-
 			break
 		}
 
