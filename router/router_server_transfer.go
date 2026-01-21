@@ -84,7 +84,7 @@ func postServerTransfer(c *gin.Context) {
 	go func() {
 		defer transfer.Outgoing().Remove(trnsfr)
 
-		if _, err := trnsfr.PushArchiveToTarget(data.URL, data.Token); err != nil {
+		if _, err := trnsfr.PushArchiveToTarget(data.URL, data.Token, data.Backups); err != nil {
 			notifyPanelOfFailure()
 
 			if err == context.Canceled {

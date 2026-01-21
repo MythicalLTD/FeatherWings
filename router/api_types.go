@@ -190,7 +190,8 @@ type ServerBackupCreateRequest struct {
 
 // ServerTransferRequest defines the payload for initiating a server transfer.
 type ServerTransferRequest struct {
-	URL    string                  `json:"url" binding:"required"`
-	Token  string                  `json:"token" binding:"required"`
-	Server installer.ServerDetails `json:"server"`
+	URL     string                  `json:"url" binding:"required"`
+	Token   string                  `json:"token" binding:"required"`
+	Backups []string                `json:"backups"`
+	Server  installer.ServerDetails `json:"server"`
 }

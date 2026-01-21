@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.4 
+
+### Added 
+
+- Enhance server transfer functionality to include backup
+
 ## v1.1.3
 
 ### Added
