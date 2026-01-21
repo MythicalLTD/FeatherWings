@@ -6,6 +6,10 @@
 
 - Enhance server transfer functionality to include backup
 
+### Improved
+
+- Fixed server online status
+
 ## v1.1.3
 
 ### Added

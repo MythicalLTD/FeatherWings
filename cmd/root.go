@@ -304,6 +304,8 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 				s.Log().Info("detected server is running, re-attaching to process...")
 
 				s.Environment.SetState(environment.ProcessRunningState)
+				// Explicitly notify the panel of the state change after startup
+				s.OnStateChange()
 				if err := s.Environment.Attach(ctx); err != nil {
 					s.Log().WithField("error", err).Warn("failed to attach to running server environment")
 				}
@@ -312,6 +314,8 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 				// make a call to set that state just to ensure we don't ever accidentally end up with some invalid
 				// state being tracked.
 				s.Environment.SetState(environment.ProcessOfflineState)
+				// Explicitly notify the panel of the state change after startup
+				s.OnStateChange()
 			}
 
 			if state := s.Environment.State(); state == environment.ProcessStartingState || state == environment.ProcessRunningState {
@@ -325,6 +329,19 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 
 	// Wait until all the servers are ready to go before we fire up the SFTP and HTTP servers.
 	pool.StopWait()
+
+	// Reset server states on Panel first to handle any servers stuck in unknown/installing/restoring states
+	log.Info("updating server states on Panel: marking installing/restoring servers as normal")
+	if err := pclient.ResetServersState(cmd.Context()); err != nil {
+		log.WithField("error", err).Error("failed to reset server states on Panel: some instances may be stuck in an installing/restoring state unexpectedly")
+	}
+
+	// Send current server status for all servers to ensure Panel is synchronized
+	log.Info("sending server status updates to Panel for all servers")
+	for _, s := range manager.All() {
+		s.OnStateChange()
+	}
+
 	defer func() {
 		// Cancel the context on all the running servers at this point, even though the
 		// program is just shutting down.
@@ -345,15 +362,6 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		if err := sftp.New(manager).Run(); err != nil {
 			log.WithError(err).Fatal("failed to initialize the sftp server")
 			return
-		}
-	}()
-
-	go func() {
-		log.Info("updating server states on Panel: marking installing/restoring servers as normal")
-		// Update all the servers on the Panel to be in a valid state if they're
-		// currently marked as installing/restoring now that Wings is restarted.
-		if err := pclient.ResetServersState(cmd.Context()); err != nil {
-			log.WithField("error", err).Error("failed to reset server states on Panel: some instances may be stuck in an installing/restoring state unexpectedly")
 		}
 	}()
 
