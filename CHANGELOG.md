@@ -6,6 +6,10 @@
 
 - Implement hard link detection in directory size calculation
 
+### Added
+
+- Added FastDL allowing for enabling/disabling and directory specification.
+
 ## v1.1.4 
 
 ### Added 
