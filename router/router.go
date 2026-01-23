@@ -134,6 +134,12 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		server.POST("/proxy/create", postServerProxyCreate)
 		server.POST("/proxy/delete", postServerProxyDelete)
 
+		// FastDL routes
+		server.GET("/fastdl", getServerFastDL)
+		server.PUT("/fastdl", putServerFastDL)
+		server.POST("/fastdl/enable", postServerFastDLEnable)
+		server.POST("/fastdl/disable", postServerFastDLDisable)
+
 		// Server import routes
 		server.POST("/import", postServerImport)
 

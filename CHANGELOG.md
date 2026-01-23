@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.4
+
+### Improved
+
+- Implement hard link detection in directory size calculation
+
 ## v1.1.4 
 
 ### Added 

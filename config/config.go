@@ -75,6 +75,19 @@ type SftpConfiguration struct {
 	KeyOnly bool `default:"false" yaml:"key_only"`
 }
 
+type FastDLConfiguration struct {
+	// Enabled controls whether FastDL is enabled. When enabled, nginx configuration
+	// will be generated for servers that have FastDL enabled. Requires nginx to be installed.
+	Enabled bool `default:"false" json:"enabled" yaml:"enabled"`
+
+	// The bind port for the nginx FastDL server.
+	Port int `default:"80" json:"bind_port" yaml:"bind_port"`
+
+	// NginxConfigPath is the path where nginx config files will be written.
+	// Defaults to /etc/nginx/sites-available/featherwings-fastdl
+	NginxConfigPath string `default:"/etc/nginx/sites-available/featherwings-fastdl" json:"nginx_config_path" yaml:"nginx_config_path"`
+}
+
 // ApiConfiguration defines the configuration for the internal API that is
 // exposed by the Wings webserver.
 type ApiConfiguration struct {
@@ -302,6 +315,8 @@ type SystemConfiguration struct {
 	WebsocketLogCount int `default:"150" yaml:"websocket_log_count"`
 
 	Sftp SftpConfiguration `yaml:"sftp"`
+
+	FastDL FastDLConfiguration `yaml:"fastdl"`
 
 	CrashDetection CrashDetection `yaml:"crash_detection"`
 

@@ -916,6 +916,195 @@
                 }
             }
         },
+        "/api/servers/{server}/fastdl": {
+            "get": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Get server FastDL configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Update server FastDL configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "FastDL configuration",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/fastdl/disable": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Disable FastDL for server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/fastdl/enable": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Enable FastDL for server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "FastDL configuration (directory optional)",
+                        "name": "config",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/router.FastDLConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/servers/{server}/files/chmod": {
             "post": {
                 "security": [
@@ -2033,6 +2222,66 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/servers/{server}/import": {
+            "post": {
+                "security": [
+                    {
+                        "NodeToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Servers"
+                ],
+                "summary": "Import server files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Server identifier",
+                        "name": "server",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Import request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/router.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/router.ErrorResponse"
                         }
@@ -3349,6 +3598,26 @@
                 }
             }
         },
+        "config.FastDLConfiguration": {
+            "type": "object",
+            "properties": {
+                "bind_port": {
+                    "description": "The bind port for the nginx FastDL server.",
+                    "type": "integer",
+                    "default": 80
+                },
+                "enabled": {
+                    "description": "Enabled controls whether FastDL is enabled. When enabled, nginx configuration\nwill be generated for servers that have FastDL enabled. Requires nginx to be installed.",
+                    "type": "boolean",
+                    "default": false
+                },
+                "nginx_config_path": {
+                    "description": "NginxConfigPath is the path where nginx config files will be written.\nDefaults to /etc/nginx/sites-available/featherwings-fastdl",
+                    "type": "string",
+                    "default": "/etc/nginx/sites-available/featherwings-fastdl"
+                }
+            }
+        },
         "config.HostTerminalConfiguration": {
             "type": "object",
             "properties": {
@@ -3383,6 +3652,11 @@
                     "description": "The bind port of the SFTP server.",
                     "type": "integer",
                     "default": 2022
+                },
+                "keyOnly": {
+                    "description": "If set to true users won't be able to login using their password.",
+                    "type": "boolean",
+                    "default": false
                 },
                 "readOnly": {
                     "description": "If set to true, no write actions will be allowed on the SFTP server.",
@@ -3430,6 +3704,9 @@
                     "type": "boolean",
                     "default": true
                 },
+                "fastDL": {
+                    "$ref": "#/definitions/config.FastDLConfiguration"
+                },
                 "hostTerminal": {
                     "description": "HostTerminal controls interactive shell access to the host over websockets.",
                     "allOf": [
@@ -3437,6 +3714,22 @@
                             "$ref": "#/definitions/config.HostTerminalConfiguration"
                         }
                     ]
+                },
+                "machineID": {
+                    "description": "MachineID controls the mounting of a generated `/etc/machine-id` file into containers started by Wings.",
+                    "type": "object",
+                    "properties": {
+                        "directory": {
+                            "description": "Directory is the directory on disk where the generated machine-id files will be stored.\nThis directory may be temporary as it will be re-created whenever Wings is started.\n\nThis path **WILL** be both written to by Wings and mounted into containers created by\nWings. If you are running Wings itself in a container, this path will need to be mounted\ninto the Wings container as the exact path on the host, which should match the value\nspecified here. If you are using SELinux, you will need to make sure this file has the\ncorrect SELinux context in order for containers to use it.",
+                            "type": "string",
+                            "default": "/run/wings/machine-id"
+                        },
+                        "enable": {
+                            "description": "Enable controls whether a generated machine-id file should be mounted\ninto containers.\n\nBy default this option is enabled and Wings will mount an additional\nmachine-id file into containers.",
+                            "type": "boolean",
+                            "default": true
+                        }
+                    }
                 },
                 "openatMode": {
                     "type": "string",
@@ -3861,6 +4154,20 @@
                     "type": "string"
                 },
                 "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "router.FastDLConfigResponse": {
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "url": {
                     "type": "string"
                 }
             }
@@ -4312,6 +4619,12 @@
                 "url"
             ],
             "properties": {
+                "backups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "server": {
                     "$ref": "#/definitions/installer.ServerDetails"
                 },
@@ -4445,6 +4758,21 @@
                             "$ref": "#/definitions/environment.Variables"
                         }
                     ]
+                },
+                "fastdl": {
+                    "description": "FastDL configuration for this server",
+                    "type": "object",
+                    "properties": {
+                        "directory": {
+                            "description": "Directory is the relative path within the server directory to serve files from.\nIf empty, serves from the root of the server directory.\nExample: \"csgo\" would serve files from /var/lib/featherpanel/volumes/{uuid}/csgo/",
+                            "type": "string"
+                        },
+                        "enabled": {
+                            "description": "Enabled controls whether FastDL is enabled for this server",
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
                 },
                 "invocation": {
                     "description": "The command that should be used when booting up the server instance.",

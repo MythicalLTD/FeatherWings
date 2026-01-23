@@ -121,6 +121,25 @@ definitions:
         default: true
         type: boolean
     type: object
+  config.FastDLConfiguration:
+    properties:
+      bind_port:
+        default: 80
+        description: The bind port for the nginx FastDL server.
+        type: integer
+      enabled:
+        default: false
+        description: |-
+          Enabled controls whether FastDL is enabled. When enabled, nginx configuration
+          will be generated for servers that have FastDL enabled. Requires nginx to be installed.
+        type: boolean
+      nginx_config_path:
+        default: /etc/nginx/sites-available/featherwings-fastdl
+        description: |-
+          NginxConfigPath is the path where nginx config files will be written.
+          Defaults to /etc/nginx/sites-available/featherwings-fastdl
+        type: string
+    type: object
   config.HostTerminalConfiguration:
     properties:
       disabledCommands:
@@ -148,6 +167,10 @@ definitions:
         default: 2022
         description: The bind port of the SFTP server.
         type: integer
+      keyOnly:
+        default: false
+        description: If set to true users won't be able to login using their password.
+        type: boolean
       readOnly:
         default: false
         description: If set to true, no write actions will be allowed on the SFTP
@@ -203,11 +226,39 @@ definitions:
           If set to false Wings will not attempt to write a log rotate configuration to the disk
           when it boots and one is not detected.
         type: boolean
+      fastDL:
+        $ref: '#/definitions/config.FastDLConfiguration'
       hostTerminal:
         allOf:
         - $ref: '#/definitions/config.HostTerminalConfiguration'
         description: HostTerminal controls interactive shell access to the host over
           websockets.
+      machineID:
+        description: MachineID controls the mounting of a generated `/etc/machine-id`
+          file into containers started by Wings.
+        properties:
+          directory:
+            default: /run/wings/machine-id
+            description: |-
+              Directory is the directory on disk where the generated machine-id files will be stored.
+              This directory may be temporary as it will be re-created whenever Wings is started.
+
+              This path **WILL** be both written to by Wings and mounted into containers created by
+              Wings. If you are running Wings itself in a container, this path will need to be mounted
+              into the Wings container as the exact path on the host, which should match the value
+              specified here. If you are using SELinux, you will need to make sure this file has the
+              correct SELinux context in order for containers to use it.
+            type: string
+          enable:
+            default: true
+            description: |-
+              Enable controls whether a generated machine-id file should be mounted
+              into containers.
+
+              By default this option is enabled and Wings will mount an additional
+              machine-id file into containers.
+            type: boolean
+        type: object
       openatMode:
         default: auto
         type: string
@@ -560,6 +611,15 @@ definitions:
       request_id:
         type: string
     type: object
+  router.FastDLConfigResponse:
+    properties:
+      directory:
+        type: string
+      enabled:
+        type: boolean
+      url:
+        type: string
+    type: object
   router.FirewallRuleRequest:
     properties:
       priority:
@@ -845,6 +905,10 @@ definitions:
     type: object
   router.ServerTransferRequest:
     properties:
+      backups:
+        items:
+          type: string
+        type: array
       server:
         $ref: '#/definitions/installer.ServerDetails'
       token:
@@ -936,6 +1000,20 @@ definitions:
         description: |-
           An array of environment variables that should be passed along to the running
           server process.
+      fastdl:
+        description: FastDL configuration for this server
+        properties:
+          directory:
+            description: |-
+              Directory is the relative path within the server directory to serve files from.
+              If empty, serves from the root of the server directory.
+              Example: "csgo" would serve files from /var/lib/featherpanel/volumes/{uuid}/csgo/
+            type: string
+          enabled:
+            default: false
+            description: Enabled controls whether FastDL is enabled for this server
+            type: boolean
+        type: object
       invocation:
         description: The command that should be used when booting up the server instance.
         type: string
@@ -1768,6 +1846,124 @@ paths:
       summary: Delete all server backups
       tags:
       - Servers
+  /api/servers/{server}/fastdl:
+    get:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FastDLConfigResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Get server FastDL configuration
+      tags:
+      - Servers
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: FastDL configuration
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/router.FastDLConfigResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FastDLConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Update server FastDL configuration
+      tags:
+      - Servers
+  /api/servers/{server}/fastdl/disable:
+    post:
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FastDLConfigResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Disable FastDL for server
+      tags:
+      - Servers
+  /api/servers/{server}/fastdl/enable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: FastDL configuration (directory optional)
+        in: body
+        name: config
+        schema:
+          $ref: '#/definitions/router.FastDLConfigResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/router.FastDLConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Enable FastDL for server
+      tags:
+      - Servers
   /api/servers/{server}/files/chmod:
     post:
       consumes:
@@ -2485,6 +2681,44 @@ paths:
       summary: Sync firewall rules to iptables
       tags:
       - Firewall
+  /api/servers/{server}/import:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server identifier
+        in: path
+        name: server
+        required: true
+        type: string
+      - description: Import request
+        in: body
+        name: payload
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/router.ErrorResponse'
+      security:
+      - NodeToken: []
+      summary: Import server files
+      tags:
+      - Servers
   /api/servers/{server}/install:
     post:
       parameters:

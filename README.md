@@ -7,12 +7,14 @@ instances, fetch server logs, generate backups, and control all aspects of the s
 In addition, Wings ships with a built-in SFTP server allowing your system to remain free of FeatherPanel specific
 dependencies, and allowing users to authenticate with the same credentials they would normally use to access the Panel.
 
+
 ## API Documentation
 
 Swagger/OpenAPI documentation is generated from inline annotations under `router/`.
 
 ```bash
 export PATH="$(go env GOPATH)/bin:$PATH" # In some distors you might need this
+go install github.com/swaggo/swag/cmd/swag@latest
 go generate ./router
 ```
 

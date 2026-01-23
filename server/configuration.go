@@ -81,6 +81,16 @@ type Configuration struct {
 		// Defines the Docker image that will be used for this server
 		Image string `json:"image,omitempty"`
 	} `json:"container,omitempty"`
+
+	// FastDL configuration for this server
+	FastDL struct {
+		// Enabled controls whether FastDL is enabled for this server
+		Enabled bool `json:"enabled" default:"false"`
+		// Directory is the relative path within the server directory to serve files from.
+		// If empty, serves from the root of the server directory.
+		// Example: "csgo" would serve files from /var/lib/featherpanel/volumes/{uuid}/csgo/
+		Directory string `json:"directory" default:""`
+	} `json:"fastdl,omitempty"`
 }
 
 func (s *Server) Config() *Configuration {
@@ -112,4 +122,19 @@ func (c *Configuration) SetSuspended(s bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Suspended = s
+}
+
+// SetFastDL updates the FastDL configuration for this server.
+func (c *Configuration) SetFastDL(enabled bool, directory string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.FastDL.Enabled = enabled
+	c.FastDL.Directory = directory
+}
+
+// GetFastDL returns the FastDL configuration for this server.
+func (c *Configuration) GetFastDL() (enabled bool, directory string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.FastDL.Enabled, c.FastDL.Directory
 }

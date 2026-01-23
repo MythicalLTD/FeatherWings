@@ -34,6 +34,7 @@ import (
 	"github.com/mythicalltd/featherwings/internal/database"
 	"github.com/mythicalltd/featherwings/loggers/cli"
 	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/fastdl"
 	"github.com/mythicalltd/featherwings/router"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/sftp"
@@ -364,6 +365,23 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 			return
 		}
 	}()
+
+	// FastDL - only uses nginx, no built-in server
+	fastdlCfg := config.Get().System.FastDL
+	
+	if fastdlCfg.Enabled {
+		// Check if nginx is installed
+		if !fastdl.IsNginxInstalled() {
+			log.Warn("fastdl: enabled but nginx is not installed - FastDL will not be available. Install nginx or disable FastDL.")
+		} else {
+			// Generate nginx configuration
+			if err := fastdl.GenerateNginxConfig(manager); err != nil {
+				log.WithError(err).Warn("failed to generate nginx config for fastdl")
+			} else {
+				log.Info("fastdl: nginx configuration generated successfully - reload nginx to apply changes")
+			}
+		}
+	}
 
 	sys := config.Get().System
 	// Ensure the archive directory exists.
