@@ -433,6 +433,10 @@ func (ip *InstallationProcess) Execute() (string, error) {
 
 	cfg := config.Get()
 	tmpfsSize := strconv.Itoa(int(cfg.Docker.TmpfsSize))
+	var dns []string
+	if len(cfg.Docker.Network.Dns) > 0 {
+		dns = cfg.Docker.Network.Dns
+	}
 	hostConf := &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -452,7 +456,7 @@ func (ip *InstallationProcess) Execute() (string, error) {
 		Tmpfs: map[string]string{
 			"/tmp": "rw,exec,nosuid,size=" + tmpfsSize + "M",
 		},
-		DNS:         cfg.Docker.Network.Dns,
+		DNS:         dns,
 		LogConfig:   cfg.Docker.ContainerLogConfig(),
 		NetworkMode: container.NetworkMode(cfg.Docker.Network.Mode),
 		UsernsMode:  container.UsernsMode(cfg.Docker.UsernsMode),

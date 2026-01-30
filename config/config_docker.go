@@ -25,7 +25,11 @@ type DockerNetworkConfiguration struct {
 	// with any other interfaces in use by Docker or on the system.
 	Interface string `default:"172.19.0.1" json:"interface" yaml:"interface"`
 
-	// The DNS settings for containers.
+	// Dns is the list of DNS servers for containers. When empty or omitted, Docker
+	// uses its embedded resolver (127.0.0.11), which forwards to the host's resolvers
+	// and avoids resolution failures when custom DNS IPs are unreachable from the
+	// bridge (e.g. firewall, or api.minecraftservices.com / Yggdrasil auth failing).
+	// Set explicitly if you need containers to use specific resolvers (e.g. 8.8.8.8).
 	Dns []string `default:"[\"1.1.1.1\", \"1.0.0.1\"]"`
 
 	// The name of the network to use. If this network already exists it will not
@@ -36,6 +40,9 @@ type DockerNetworkConfiguration struct {
 	IPv6       bool                    `default:"true" yaml:"IPv6"`
 	Driver     string                  `default:"bridge"`
 	Mode       string                  `default:"featherpanel_nw" yaml:"network_mode"`
+	// IsInternal, when true, creates an internal-only network: containers cannot
+	// reach the internet (e.g. Minecraft auth to api.minecraftservices.com will fail).
+	// Leave false for game servers that need outbound access.
 	IsInternal bool                    `default:"false" yaml:"is_internal"`
 	EnableICC  bool                    `default:"true" yaml:"enable_icc"`
 	NetworkMTU int64                   `default:"1500" yaml:"network_mtu"`

@@ -5,6 +5,7 @@
 ### Improved
 
 - Implement hard link detection in directory size calculation
+- Updated DockerNetworkConfiguration struct to provide detailed comments on DNS settings and internal network behavior.
 
 ### Added
 

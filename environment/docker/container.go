@@ -233,6 +233,14 @@ func (e *Environment) Create() error {
 		}
 	}
 
+	// Only set DNS when at least one server is configured. When nil/empty, Docker uses
+	// its embedded resolver (127.0.0.11) which forwards to the host's resolvers, avoiding
+	// UnknownHostException when custom DNS IPs (e.g. 1.1.1.1) are unreachable from the bridge.
+	var dns []string
+	if len(cfg.Docker.Network.Dns) > 0 {
+		dns = cfg.Docker.Network.Dns
+	}
+
 	hostConf := &container.HostConfig{
 		PortBindings: a.DockerBindings(),
 
@@ -250,7 +258,7 @@ func (e *Environment) Create() error {
 		// from the Panel.
 		Resources: e.Configuration.Limits().AsContainerResources(),
 
-		DNS: cfg.Docker.Network.Dns,
+		DNS: dns,
 
 		// Configure logging for the container to make it easier on the Daemon to grab
 		// the server output. Ensure that we don't use too much space on the host machine
