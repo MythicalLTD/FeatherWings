@@ -4164,6 +4164,10 @@ const docTemplate = `{
         "router.FastDLConfigResponse": {
             "type": "object",
             "properties": {
+                "command": {
+                    "description": "Command is a helper string showing how to use the FastDL URL\nin a typical Source-engine based game (e.g. CS:GO, CS2, TF2).\nPanels can display this directly to the user.",
+                    "type": "string"
+                },
                 "directory": {
                     "type": "string"
                 },

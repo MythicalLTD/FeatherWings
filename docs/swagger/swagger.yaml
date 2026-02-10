@@ -613,6 +613,12 @@ definitions:
     type: object
   router.FastDLConfigResponse:
     properties:
+      command:
+        description: |-
+          Command is a helper string showing how to use the FastDL URL
+          in a typical Source-engine based game (e.g. CS:GO, CS2, TF2).
+          Panels can display this directly to the user.
+        type: string
       directory:
         type: string
       enabled:

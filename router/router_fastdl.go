@@ -17,6 +17,10 @@ type FastDLConfigResponse struct {
 	Enabled   bool   `json:"enabled"`
 	Directory string `json:"directory"`
 	URL       string `json:"url,omitempty"`
+	// Command is a helper string showing how to use the FastDL URL
+	// in a typical Source-engine based game (e.g. CS:GO, CS2, TF2).
+	// Panels can display this directly to the user.
+	Command string `json:"command,omitempty"`
 }
 
 // getServerFastDL returns the FastDL configuration for a server.
@@ -32,9 +36,16 @@ func getServerFastDL(c *gin.Context) {
 	s := ExtractServer(c)
 	cfg := s.Config()
 
+	// Apply a user-friendly default directory if none is set.
+	// This makes FastDL "just work" in /fastdl for new servers.
+	effectiveDir := cfg.FastDL.Directory
+	if effectiveDir == "" {
+		effectiveDir = "fastdl"
+	}
+
 	response := FastDLConfigResponse{
 		Enabled:   cfg.FastDL.Enabled,
-		Directory: cfg.FastDL.Directory,
+		Directory: effectiveDir,
 	}
 
 	// Build FastDL URL if enabled
@@ -57,9 +68,14 @@ func getServerFastDL(c *gin.Context) {
 			response.URL += ":" + fmt.Sprintf("%d", fastdlCfg.Port)
 		}
 		response.URL += "/" + s.ID()
-		if cfg.FastDL.Directory != "" {
-			response.URL += "/" + strings.TrimPrefix(cfg.FastDL.Directory, "/")
+		if effectiveDir != "" {
+			response.URL += "/" + strings.TrimPrefix(effectiveDir, "/")
 		}
+
+		// Build a helpful example command that can be shown in the Panel.
+		// This is intentionally generic and matches common Source-engine usage.
+		// Example: sv_downloadurl "http://example.com:80/uuid/csgo"
+		response.Command = fmt.Sprintf(`sv_downloadurl "%s"`, response.URL)
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -137,17 +153,20 @@ func postServerFastDLEnable(c *gin.Context) {
 	}
 	c.BindJSON(&data)
 
-	// Validate directory if provided
-	if data.Directory != "" {
-		cleaned := filepath.Clean(data.Directory)
-		if strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "..") {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid directory path: path traversal not allowed",
-			})
-			return
-		}
-		data.Directory = cleaned
+	// Default directory to "fastdl" if not provided, so users get a predictable location.
+	if data.Directory == "" {
+		data.Directory = "fastdl"
 	}
+
+	// Validate directory (prevent path traversal)
+	cleaned := filepath.Clean(data.Directory)
+	if strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "..") {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid directory path: path traversal not allowed",
+		})
+		return
+	}
+	data.Directory = cleaned
 
 	// Update server configuration
 	s.Config().SetFastDL(true, data.Directory)
