@@ -3,6 +3,7 @@ package fastdl
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -26,6 +27,11 @@ func GenerateNginxConfig(manager *server.Manager) error {
 	// Check if nginx is installed
 	if !IsNginxInstalled() {
 		return errors.New("nginx is not installed or not available")
+	}
+
+	// Validate that the FastDL port does not conflict with the Wings API port.
+	if fastdlCfg.Port == cfg.Api.Port {
+		return errors.Errorf("fastdl: configured port (%d) conflicts with Wings API port — please use a different port", fastdlCfg.Port)
 	}
 
 	// Get all servers with FastDL enabled
@@ -75,6 +81,11 @@ func GenerateNginxConfig(manager *server.Manager) error {
 				log.WithField("link", sitesEnabled).Info("fastdl: nginx symlink created")
 			}
 		}
+	}
+
+	// Reload nginx so the new configuration takes effect.
+	if err := ReloadNginx(); err != nil {
+		log.WithError(err).Warn("fastdl: nginx config written but reload failed — please reload nginx manually")
 	}
 
 	return nil
@@ -139,8 +150,15 @@ func buildNginxConfig(cfg *config.Configuration, servers []serverConfig) string 
 
 // ReloadNginx attempts to reload nginx configuration.
 func ReloadNginx() error {
-	// This would typically run: nginx -s reload
-	// For now, just log that a reload is needed
-	log.Info("fastdl: nginx configuration updated - run 'nginx -s reload' or 'systemctl reload nginx' to apply changes")
+	// Try systemctl reload first (preferred on systemd systems).
+	cmd := exec.Command("systemctl", "reload", "nginx")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		// Fall back to nginx -s reload.
+		cmd2 := exec.Command("nginx", "-s", "reload")
+		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			return errors.Wrapf(err2, "fastdl: failed to reload nginx: %s", strings.TrimSpace(string(out2)))
+		}
+	}
+	log.Info("fastdl: nginx reloaded successfully")
 	return nil
 }
