@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.3
+
+### Added
+
+- Only pull relevant image for this runtime (pelican/upstream)
+- chown dir when creating (pelican/upstream)
+
 ## v1.2.4
 
 ### Improved
