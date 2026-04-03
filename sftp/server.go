@@ -138,29 +138,73 @@ func (c *SFTPServer) AcceptInbound(conn net.Conn, config *ssh.ServerConfig) erro
 			continue
 		}
 
-		go func(in <-chan *ssh.Request) {
-			for req := range in {
-				// Channels have a type that is dependent on the protocol. For SFTP
-				// this is "subsystem" with a payload that (should) be "sftp". Discard
-				// anything else we receive ("pty", "shell", etc)
-				_ = req.Reply(req.Type == "subsystem" && string(req.Payload[4:]) == "sftp", nil)
-			}
-		}(requests)
-
-		// If no UUID has been set on this inbound request then we can assume we
-		// have screwed up something in the authentication code. This is a sanity
-		// check, but should never be encountered (ideally...).
-		//
-		// This will also attempt to match a specific server out of the global server
-		// store and return nil if there is no match.
-		if srv, ok := c.manager.Get(sconn.Permissions.Extensions["uuid"]); ok {
-			if err := c.Handle(sconn, srv, channel); err != nil {
-				return err
-			}
+		srv, ok := c.manager.Get(sconn.Permissions.Extensions["uuid"])
+		if !ok {
+			channel.Close()
+			continue
 		}
+
+		go c.dispatchSession(sconn, srv, channel, requests)
 	}
 
 	return nil
+}
+
+// dispatchSession handles SSH session channels: SFTP subsystem (file transfer) or an interactive
+// shell that mirrors the panel websocket console when the user has control.console.
+func (c *SFTPServer) dispatchSession(conn *ssh.ServerConn, srv *server.Server, channel ssh.Channel, requests <-chan *ssh.Request) {
+	userUUID := conn.Permissions.Extensions["user"]
+	ip := conn.RemoteAddr().String()
+	perms := splitPermissions(conn.Permissions.Extensions["permissions"])
+
+	subsysStarted := false
+	shellStarted := false
+
+	for req := range requests {
+		switch req.Type {
+		case "pty-req":
+			_ = req.Reply(true, nil)
+		case "env":
+			_ = req.Reply(true, nil)
+		case "subsystem":
+			if shellStarted {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			if isSftpSubsystem(req.Payload) {
+				if subsysStarted {
+					_ = req.Reply(false, nil)
+					continue
+				}
+				_ = req.Reply(true, nil)
+				subsysStarted = true
+				go func() {
+					if err := c.Handle(conn, srv, channel); err != nil {
+						log.WithField("error", err).WithField("subsystem", "sftp").Debug("sftp session ended")
+					}
+				}()
+				continue
+			}
+			_ = req.Reply(false, nil)
+		case "shell":
+			if subsysStarted || shellStarted {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			if !config.Get().System.Sftp.AllowConsoleShell && !hasPermission(perms, permissionConsole) {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			_ = req.Reply(true, nil)
+			shellStarted = true
+			go c.handleConsole(conn, srv, channel, userUUID, ip, perms)
+			continue
+		case "window-change":
+			_ = req.Reply(true, nil)
+		default:
+			_ = req.Reply(false, nil)
+		}
+	}
 }
 
 // Handle spins up a SFTP server instance for the authenticated user's server allowing

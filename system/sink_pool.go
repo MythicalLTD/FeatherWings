@@ -22,7 +22,7 @@ type SinkPool struct {
 	sinks []chan []byte
 }
 
-// NewSinkPool returns a new empty SinkPool. A sink pool generally lives with a
+// NewSinkPool returns a new empty SinkPool. A SinkPool generally lives with a
 // server instance for its full lifetime.
 func NewSinkPool() *SinkPool {
 	return &SinkPool{}
@@ -95,6 +95,12 @@ func (p *SinkPool) Destroy() {
 // likely the best option anyways. This uses waitgroups to allow every channel
 // to attempt its send concurrently thus making the total blocking time of this
 // function "O(1)" instead of "O(n)".
+//
+// Buffered sinks use a non-blocking send first, then drop-oldest if full (no sleep).
+//
+// Unbuffered sinks (cap == 0): brief wait for a rendezvous. Listeners should use
+// a buffered channel (see events tests); if nobody receives, we give up quickly
+// so Push does not stall the whole pool (e.g. dead unbuffered sinks in tests).
 func (p *SinkPool) Push(data []byte) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -105,15 +111,24 @@ func (p *SinkPool) Push(data []byte) {
 			defer wg.Done()
 			select {
 			case c <- data:
-			case <-time.After(time.Millisecond * 10):
-				// If there is nothing in the channel to read, but we also cannot write
-				// to the channel, just skip over sending data. If we don't do this you'll
-				// end up blocking the application on the channel read below.
-				if len(c) == 0 {
-					break
+				return
+			default:
+			}
+			if cap(c) == 0 {
+				select {
+				case c <- data:
+					return
+				case <-time.After(5 * time.Millisecond):
+					return
 				}
-				<-c
-				c <- data
+			}
+			if len(c) == 0 {
+				return
+			}
+			<-c
+			select {
+			case c <- data:
+			default:
 			}
 		}(c)
 	}

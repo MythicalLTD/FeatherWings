@@ -29,7 +29,8 @@ func TestNewBus(t *testing.T) {
 			g.It("publishes message", func() {
 				bus := NewBus()
 
-				listener := make(chan []byte)
+				// Buffer avoids relying on unbuffered rendezvous timing (flakey under -race).
+				listener := make(chan []byte, 1)
 				bus.On(listener)
 
 				done := make(chan struct{}, 1)
@@ -54,9 +55,9 @@ func TestNewBus(t *testing.T) {
 			g.It("publishes message to all listeners", func() {
 				bus := NewBus()
 
-				listener := make(chan []byte)
-				listener2 := make(chan []byte)
-				listener3 := make(chan []byte)
+				listener := make(chan []byte, 1)
+				listener2 := make(chan []byte, 1)
+				listener3 := make(chan []byte, 1)
 				bus.On(listener)
 				bus.On(listener2)
 				bus.On(listener3)

@@ -50,6 +50,7 @@ func GenerateDiagnosticsReport(includeEndpoints bool, includeLogs bool, logLines
 	fmt.Fprintln(output, "")
 	fmt.Fprintln(output, "         SFTP Server:", redactField(cfg.System.Sftp.Address, includeEndpoints), ":", cfg.System.Sftp.Port)
 	fmt.Fprintln(output, "      SFTP Read-Only:", cfg.System.Sftp.ReadOnly)
+	fmt.Fprintln(output, " SFTP SSH console shell:", cfg.System.Sftp.AllowConsoleShell)
 	fmt.Fprintln(output, "")
 	fmt.Fprintln(output, "         FastDL Enabled:", cfg.System.FastDL.Enabled)
 	fmt.Fprintln(output, "      FastDL Port:", cfg.System.FastDL.Port)
