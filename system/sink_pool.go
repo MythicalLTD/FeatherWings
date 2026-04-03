@@ -111,10 +111,10 @@ func (p *SinkPool) Push(data []byte) {
 			default:
 			}
 			// Full (or unbuffered with no receiver): drop oldest and retry once.
-			if len(c) == 0 {
-				return
+			select {
+			case <-c: // dropped oldest
+			default:  // nothing to drop
 			}
-			<-c
 			select {
 			case c <- data:
 			default:

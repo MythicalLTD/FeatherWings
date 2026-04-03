@@ -233,12 +233,25 @@ func (c *SFTPServer) handleConsole(conn *ssh.ServerConn, srv *server.Server, cha
 				}
 				// One write per line: fewer mutex round-trips to the SSH channel.
 				var payload []byte
-				if len(line) > 0 && line[len(line)-1] != '\n' {
+				if len(line) > 0 && line[len(line)-1] == '\n' {
+					// Ends with \n: replace trailing \n with \r\n
+					if len(line) > 1 && line[len(line)-2] == '\r' {
+						// Already ends with \r\n, use as-is
+						payload = line
+					} else {
+						// Ends with \n but not \r\n: replace \n with \r\n
+						payload = make([]byte, 0, len(line)+1)
+						payload = append(payload, line[:len(line)-1]...)
+						payload = append(payload, '\r', '\n')
+					}
+				} else if len(line) > 0 {
+					// No trailing newline: append \r\n
 					payload = make([]byte, 0, len(line)+2)
 					payload = append(payload, line...)
 					payload = append(payload, '\r', '\n')
 				} else {
-					payload = line
+					// Empty line: append \r\n
+					payload = []byte{'\r', '\n'}
 				}
 				if err := out.WriteRaw(payload); err != nil {
 					cancel()
