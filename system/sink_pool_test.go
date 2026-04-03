@@ -169,7 +169,8 @@ func TestSink(t *testing.T) {
 			ch := make(chan []byte, 4)
 
 			pool.On(ch)
-			pool.On(make(chan []byte))
+			// Buffered so a sink with no consumer does not force a long per-push wait.
+			pool.On(make(chan []byte, 1))
 
 			for i := 0; i < 100; i++ {
 				pool.Push([]byte(fmt.Sprintf("iteration %d", i)))

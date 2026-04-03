@@ -2,6 +2,7 @@ package system
 
 import (
 	"sync"
+	"time"
 )
 
 // SinkName represents one of the registered sinks for a server.
@@ -21,7 +22,7 @@ type SinkPool struct {
 	sinks []chan []byte
 }
 
-// NewSinkPool returns a new empty SinkPool. A sink pool generally lives with a
+// NewSinkPool returns a new empty SinkPool. A SinkPool generally lives with a
 // server instance for its full lifetime.
 func NewSinkPool() *SinkPool {
 	return &SinkPool{}
@@ -95,8 +96,11 @@ func (p *SinkPool) Destroy() {
 // to attempt its send concurrently thus making the total blocking time of this
 // function "O(1)" instead of "O(n)".
 //
-// Sends are non-blocking: we never sleep (previously up to 10ms per full sink),
-// which was adding noticeable latency to console output when any sink fell behind.
+// Buffered sinks use a non-blocking send first, then drop-oldest if full (no sleep).
+//
+// Unbuffered sinks (cap == 0): brief wait for a rendezvous. Listeners should use
+// a buffered channel (see events tests); if nobody receives, we give up quickly
+// so Push does not stall the whole pool (e.g. dead unbuffered sinks in tests).
 func (p *SinkPool) Push(data []byte) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -110,11 +114,18 @@ func (p *SinkPool) Push(data []byte) {
 				return
 			default:
 			}
-			// Full (or unbuffered with no receiver): drop oldest and retry once.
-			select {
-			case <-c: // dropped oldest
-			default:  // nothing to drop
+			if cap(c) == 0 {
+				select {
+				case c <- data:
+					return
+				case <-time.After(5 * time.Millisecond):
+					return
+				}
 			}
+			if len(c) == 0 {
+				return
+			}
+			<-c
 			select {
 			case c <- data:
 			default:
