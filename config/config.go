@@ -73,6 +73,11 @@ type SftpConfiguration struct {
 
 	// If set to true users won't be able to login using their password.
 	KeyOnly bool `default:"false" yaml:"key_only"`
+
+	// AllowConsoleShell permits interactive SSH (shell/PTY) access to the game console for anyone
+	// who successfully authenticates on this listener. When false, the panel must include
+	// "control.console" in SFTP validation permissions (file-only subusers cannot open a shell).
+	AllowConsoleShell bool `default:"true" yaml:"allow_console_shell"`
 }
 
 type FastDLConfiguration struct {

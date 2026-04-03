@@ -2,7 +2,6 @@ package system
 
 import (
 	"sync"
-	"time"
 )
 
 // SinkName represents one of the registered sinks for a server.
@@ -95,6 +94,9 @@ func (p *SinkPool) Destroy() {
 // likely the best option anyways. This uses waitgroups to allow every channel
 // to attempt its send concurrently thus making the total blocking time of this
 // function "O(1)" instead of "O(n)".
+//
+// Sends are non-blocking: we never sleep (previously up to 10ms per full sink),
+// which was adding noticeable latency to console output when any sink fell behind.
 func (p *SinkPool) Push(data []byte) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -105,15 +107,17 @@ func (p *SinkPool) Push(data []byte) {
 			defer wg.Done()
 			select {
 			case c <- data:
-			case <-time.After(time.Millisecond * 10):
-				// If there is nothing in the channel to read, but we also cannot write
-				// to the channel, just skip over sending data. If we don't do this you'll
-				// end up blocking the application on the channel read below.
-				if len(c) == 0 {
-					break
-				}
-				<-c
-				c <- data
+				return
+			default:
+			}
+			// Full (or unbuffered with no receiver): drop oldest and retry once.
+			if len(c) == 0 {
+				return
+			}
+			<-c
+			select {
+			case c <- data:
+			default:
 			}
 		}(c)
 	}
