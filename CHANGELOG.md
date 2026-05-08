@@ -6,6 +6,7 @@
 
 - Upstream with pelican/upstream! (fix: preserve boolean/numeric types when panel expands template)
 
+
 ## v1.3.3
 
 ### Added

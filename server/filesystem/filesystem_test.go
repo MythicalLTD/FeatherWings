@@ -383,13 +383,38 @@ func TestFilesystem_Copy(t *testing.T) {
 			g.Assert(errors.Is(err, ufs.ErrBadPathResolution)).IsTrue("err is not ErrBadPathResolution")
 		})
 
-		g.It("should return an error if the source is a directory", func() {
+		g.It("should create a copy when source is a directory", func() {
 			err := os.Mkdir(filepath.Join(rfs.root, "server/dir"), 0o755)
 			g.Assert(err).IsNil()
 
+			err = rfs.CreateServerFileFromString("dir/readme.txt", "hello")
+			g.Assert(err).IsNil()
+
+			err = fs.Copy("dir")
+			g.Assert(err).IsNil()
+
+			_, err = rfs.StatServerFile("dir")
+			g.Assert(err).IsNil()
+
+			_, err = rfs.StatServerFile("dir - copy")
+			g.Assert(err).IsNil()
+
+			_, err = rfs.StatServerFile("dir - copy/readme.txt")
+			g.Assert(err).IsNil()
+		})
+
+		g.It("should return an error if there is not space to copy a directory file", func() {
+			err := os.Mkdir(filepath.Join(rfs.root, "server/dir"), 0o755)
+			g.Assert(err).IsNil()
+
+			err = rfs.CreateServerFileFromString("dir/readme.txt", "hello")
+			g.Assert(err).IsNil()
+
+			fs.SetDiskLimit(3)
+
 			err = fs.Copy("dir")
 			g.Assert(err).IsNotNil()
-			g.Assert(errors.Is(err, ufs.ErrNotExist)).IsTrue("err is not ErrNotExist")
+			g.Assert(IsErrorCode(err, ErrCodeDiskSpace)).IsTrue("err is not ErrCodeDiskSpace")
 		})
 
 		g.It("should return an error if there is not space to copy the file", func() {
@@ -407,7 +432,7 @@ func TestFilesystem_Copy(t *testing.T) {
 			_, err = rfs.StatServerFile("source.txt")
 			g.Assert(err).IsNil()
 
-			_, err = rfs.StatServerFile("source copy.txt")
+			_, err = rfs.StatServerFile("source - copy.txt")
 			g.Assert(err).IsNil()
 		})
 
@@ -418,7 +443,7 @@ func TestFilesystem_Copy(t *testing.T) {
 			err = fs.Copy("source.txt")
 			g.Assert(err).IsNil()
 
-			r := []string{"source.txt", "source copy.txt", "source copy 1.txt"}
+			r := []string{"source.txt", "source - copy.txt", "source - copy 2.txt"}
 
 			for _, name := range r {
 				_, err = rfs.StatServerFile(name)
@@ -441,7 +466,7 @@ func TestFilesystem_Copy(t *testing.T) {
 			_, err = rfs.StatServerFile("nested/in/dir/source.txt")
 			g.Assert(err).IsNil()
 
-			_, err = rfs.StatServerFile("nested/in/dir/source copy.txt")
+			_, err = rfs.StatServerFile("nested/in/dir/source - copy.txt")
 			g.Assert(err).IsNil()
 		})
 

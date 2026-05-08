@@ -223,25 +223,20 @@ func (fs *Filesystem) Chmod(path string, mode ufs.FileMode) error {
 	return fs.unixFS.Chmod(path, mode)
 }
 
-// Begin looping up to 50 times to try and create a unique copy file name. This will take
-// an input of "file.txt" and generate "file copy.txt". If that name is already taken, it will
-// then try to write "file copy 2.txt" and so on, until reaching 50 loops. At that point we
-// won't waste anymore time, just use the current timestamp and make that copy.
-//
-// Could probably make this more efficient by checking if there are any files matching the copy
-// pattern, and trying to find the highest number and then incrementing it by one rather than
-// looping endlessly.
+// Begin looping up to 50 times to try and create a unique copy file or directory name.
+// This will take an input of "file.txt" and generate "file - copy.txt". If that name
+// already exists, it will then try "file - copy 2.txt" and so on.
 func (fs *Filesystem) findCopySuffix(dirfd int, name, extension string) (string, error) {
 	var i int
 	suffix := ""
 
 	for i = 0; i < 51; i++ {
 		if i == 1 {
-			suffix = " copy"
+			suffix = " - copy"
 		} else if i == 50 {
-			suffix = " copy." + time.Now().Format(time.RFC3339)
+			suffix = " - copy." + time.Now().Format(time.RFC3339)
 		} else if i > 1 {
-			suffix = " copy " + strconv.Itoa(i-1)
+			suffix = " - copy " + strconv.Itoa(i)
 		}
 
 		n := name + suffix + extension
@@ -258,60 +253,158 @@ func (fs *Filesystem) findCopySuffix(dirfd int, name, extension string) (string,
 	return name + suffix + extension, nil
 }
 
-// Copy copies a given file to the same location and appends a suffix to the
-// file to indicate that it has been copied.
+func (fs *Filesystem) copyFile(dirfd int, sourceName, destinationName string, mode ufs.FileMode) error {
+	source, err := fs.unixFS.OpenFileat(dirfd, sourceName, ufs.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+
+	dst, err := fs.unixFS.OpenFileat(dirfd, destinationName, ufs.O_WRONLY|ufs.O_CREATE|ufs.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	n, err := io.Copy(dst, io.LimitReader(source, info.Size()))
+	fs.unixFS.Add(n)
+	if err != nil {
+		return err
+	}
+
+	if fs.isTest {
+		return nil
+	}
+
+	return fs.unixFS.Lchownat(dirfd, destinationName, config.Get().System.User.Uid, config.Get().System.User.Gid)
+}
+
+func (fs *Filesystem) copyDirectory(sourcePath, destinationPath string) error {
+	if err := fs.unixFS.MkdirAll(destinationPath, 0o755); err != nil {
+		return err
+	}
+	if !fs.isTest {
+		if err := fs.chownFile(destinationPath); err != nil {
+			return err
+		}
+	}
+
+	entries, err := fs.unixFS.ReadDir(sourcePath)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		childSource := filepath.Join(sourcePath, entry.Name())
+		childDestination := filepath.Join(destinationPath, entry.Name())
+		info, err := fs.unixFS.Lstat(childSource)
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			if err := fs.copyDirectory(childSource, childDestination); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !info.Mode().IsRegular() {
+			return ufs.ErrNotExist
+		}
+
+		if err := fs.copyFileByPath(childSource, childDestination, info.Mode()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (fs *Filesystem) copyFileByPath(sourcePath, destinationPath string, mode ufs.FileMode) error {
+	source, err := fs.unixFS.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if err := fs.HasSpaceFor(info.Size()); err != nil {
+		return err
+	}
+
+	destination, err := fs.unixFS.OpenFile(destinationPath, ufs.O_WRONLY|ufs.O_CREATE|ufs.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	n, err := io.Copy(destination, io.LimitReader(source, info.Size()))
+	fs.unixFS.Add(n)
+	if err != nil {
+		return err
+	}
+
+	if fs.isTest {
+		return nil
+	}
+
+	return fs.chownFile(destinationPath)
+}
+
+// Copy copies a given file or directory to the same location and appends a suffix.
 func (fs *Filesystem) Copy(p string) error {
 	dirfd, name, closeFd, err := fs.unixFS.SafePath(p)
 	defer closeFd()
 	if err != nil {
 		return err
 	}
-	source, err := fs.unixFS.OpenFileat(dirfd, name, ufs.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	info, err := source.Stat()
-	if err != nil {
-		return err
-	}
-	if info.IsDir() || !info.Mode().IsRegular() {
-		// If this is a directory or not a regular file, just throw a not-exist error
-		// since anything calling this function should understand what that means.
-		return ufs.ErrNotExist
-	}
-	currentSize := info.Size()
 
-	// Check that copying this file wouldn't put the server over its limit.
-	if err := fs.HasSpaceFor(currentSize); err != nil {
+	info, err := fs.unixFS.Lstatat(dirfd, name)
+	if err != nil {
 		return err
 	}
 
 	base := info.Name()
-	extension := fs.Ext(base)
-	baseName := strings.TrimSuffix(base, extension)
+	extension := ""
+	baseName := base
+	if !info.IsDir() {
+		if !info.Mode().IsRegular() {
+			return ufs.ErrNotExist
+		}
+		extension = fs.Ext(base)
+		baseName = strings.TrimSuffix(base, extension)
+	}
 
 	newName, err := fs.findCopySuffix(dirfd, baseName, extension)
 	if err != nil {
 		return err
 	}
-	dst, err := fs.unixFS.OpenFileat(dirfd, newName, ufs.O_WRONLY|ufs.O_CREATE, info.Mode())
-	if err != nil {
+
+	if info.IsDir() {
+		sourcePath := filepath.Join(filepath.Dir(p), base)
+		destinationPath := filepath.Join(filepath.Dir(p), newName)
+		return fs.copyDirectory(sourcePath, destinationPath)
+	}
+
+	// Check that copying this file wouldn't put the server over its limit.
+	if err := fs.HasSpaceFor(info.Size()); err != nil {
 		return err
 	}
 
-	// Do not use CopyBuffer here, it is wasteful as the file implements
-	// io.ReaderFrom, which causes it to not use the buffer anyways.
-	n, err := io.Copy(dst, io.LimitReader(source, currentSize))
-	fs.unixFS.Add(n)
-
-	if !fs.isTest {
-		if err := fs.unixFS.Lchownat(dirfd, newName, config.Get().System.User.Uid, config.Get().System.User.Gid); err != nil {
-			return err
-		}
+	if err := fs.copyFile(dirfd, name, newName, info.Mode()); err != nil {
+		return ufs.ErrNotExist
 	}
-	// Return the error from io.Copy.
-	return err
+
+	return nil
 }
 
 func (fs *Filesystem) Ext(n string) string {
