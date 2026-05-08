@@ -6,6 +6,9 @@
 
 - Upstream with pelican/upstream! (fix: preserve boolean/numeric types when panel expands template)
 
+### Added
+
+- Support for BIG query, search inside the file manager for file contents and more!
 
 ## v1.3.3
 
