@@ -35,22 +35,6 @@ var configMatchRegex = regexp.MustCompile(`{{\s?config\.([\w.-]+)\s?}}`)
 // noinspection RegExpRedundantEscape
 var xmlValueMatchRegex = regexp.MustCompile(`^\[([\w]+)='(.*)'\]$`)
 
-// Gets the value of a key based on the value type defined.
-func (cfr *ConfigurationFileReplacement) getKeyValue(value string) interface{} {
-	if cfr.ReplaceWith.Type() == jsonparser.Boolean {
-		v, _ := strconv.ParseBool(value)
-		return v
-	}
-
-	// Try to parse into an int, if this fails just ignore the error and continue
-	// through, returning the string.
-	if v, err := strconv.Atoi(value); err == nil {
-		return v
-	}
-
-	return value
-}
-
 // Iterate over an unstructured JSON/YAML/etc. interface and set all of the required
 // key/value pairs for the configuration file.
 //
@@ -68,6 +52,7 @@ func (f *ConfigurationFile) IterateOverJson(data []byte) ([]byte, error) {
 	}
 
 	jsonStr := string(data)
+
 	for _, v := range f.Replace {
 		value, err := f.LookupConfigurationValue(v)
 		if err != nil {
@@ -80,29 +65,18 @@ func (f *ConfigurationFile) IterateOverJson(data []byte) ([]byte, error) {
 			parts := strings.SplitN(v.Match, ".*", 2)
 			basePath := strings.Trim(parts[0], ".")
 			remainingPath := strings.Trim(parts[1], ".")
+
 			result := gjson.Get(jsonStr, basePath)
 			if !result.Exists() {
 				continue
 			}
 
-			// Build fullPath without a leading dot when basePath is empty (e.g. ".*.key"),
-			// since gjson/sjson expect paths like "someKey" not ".someKey".
-			buildFullPath := func(key gjson.Result) string {
-				var fullPath string
-				if basePath != "" {
-					fullPath = basePath + "." + key.String()
-				} else {
-					fullPath = key.String()
-				}
-				if remainingPath != "" {
-					fullPath += "." + remainingPath
-				}
-				return fullPath
-			}
-
 			if result.IsArray() {
 				result.ForEach(func(key, val gjson.Result) bool {
-					fullPath := buildFullPath(key)
+					fullPath := basePath + "." + key.String()
+					if remainingPath != "" {
+						fullPath += "." + remainingPath
+					}
 					var setErr error
 					jsonStr, setErr = v.setValueWithSjson(jsonStr, fullPath, value)
 					if setErr != nil {
@@ -116,7 +90,10 @@ func (f *ConfigurationFile) IterateOverJson(data []byte) ([]byte, error) {
 				}
 			} else if result.IsObject() {
 				result.ForEach(func(key, val gjson.Result) bool {
-					fullPath := buildFullPath(key)
+					fullPath := basePath + "." + key.String()
+					if remainingPath != "" {
+						fullPath += "." + remainingPath
+					}
 					var setErr error
 					jsonStr, setErr = v.setValueWithSjson(jsonStr, fullPath, value)
 					if setErr != nil {
@@ -145,8 +122,6 @@ func (f *ConfigurationFile) IterateOverJson(data []byte) ([]byte, error) {
 	return []byte(jsonStr), nil
 }
 
-// setValueWithSjson sets the value at path in the JSON string, respecting IfValue
-// (exact match or regex replacement). Returns the updated JSON string.
 func (cfr *ConfigurationFileReplacement) setValueWithSjson(jsonStr string, path string, value string) (string, error) {
 	if cfr.IfValue != "" {
 		// Check if we are replacing instead of overwriting.
@@ -182,12 +157,40 @@ func (cfr *ConfigurationFileReplacement) setValueWithSjson(jsonStr string, path 
 
 	var setValue interface{}
 	if cfr.ReplaceWith.Type() == jsonparser.Boolean {
-		v, _ := strconv.ParseBool(value)
-		setValue = v
-	} else if v, err := strconv.Atoi(value); err == nil {
+		// Explicit boolean type declared in the egg definition.
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			log.WithFields(log.Fields{"value": value, "path": path, "match": cfr.Match}).Warn("cannot parse replacement as boolean, falling back to string value")
+			return sjson.Set(jsonStr, path, value)
+		}
 		setValue = v
 	} else {
-		setValue = value
+		// Mirror the type already present in the document so booleans and numbers
+		// survive template expansion (panel always sends values as JSON strings).
+		existing := gjson.Get(jsonStr, path)
+		switch existing.Type {
+		case gjson.True, gjson.False:
+			v, err := strconv.ParseBool(value)
+			if err != nil {
+				log.WithFields(log.Fields{"value": value, "path": path, "match": cfr.Match}).Warn("cannot parse replacement as boolean, falling back to string value")
+				return sjson.Set(jsonStr, path, value)
+			}
+			setValue = v
+		case gjson.Number:
+			// Write the numeric literal as-is via SetRaw to avoid float64 precision
+			// loss for large integers (> 2^53). Fall back to string if the incoming
+			// value is not a valid JSON number.
+			if gjson.Parse(value).Type == gjson.Number {
+				return sjson.SetRaw(jsonStr, path, value)
+			}
+			setValue = value
+		default:
+			if v, err := strconv.Atoi(value); err == nil {
+				setValue = v
+			} else {
+				setValue = value
+			}
+		}
 	}
 
 	return sjson.Set(jsonStr, path, setValue)
