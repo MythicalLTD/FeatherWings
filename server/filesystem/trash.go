@@ -506,12 +506,6 @@ func (fs *Filesystem) EmptyTrash() error {
 	return fs.ensureTrashLayout()
 }
 
-func (fs *Filesystem) enforceTrashLimits(limits TrashLimits) error {
-	trashIndexMu.Lock()
-	defer trashIndexMu.Unlock()
-	return fs.enforceTrashLimitsLocked(limits)
-}
-
 func (fs *Filesystem) enforceTrashLimitsLocked(limits TrashLimits) error {
 	idx, err := fs.readTrashIndexLocked()
 	if err != nil {

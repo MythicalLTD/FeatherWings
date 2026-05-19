@@ -97,6 +97,15 @@ func expandArchiveEntriesToFiles(fsys iofs.FS, rawEntries []string) ([]string, e
 	return out, nil
 }
 
+func validateExtractionRelativePath(p string) error {
+	p = strings.TrimSpace(filepath.ToSlash(p))
+	if p == "" {
+		return nil
+	}
+	_, err := sanitizeArchiveMemberPath(p)
+	return err
+}
+
 func destinationRelativePath(destDir, member string) string {
 	d := filepath.ToSlash(strings.TrimSpace(destDir))
 	d = strings.TrimPrefix(d, "/")
@@ -155,8 +164,8 @@ func (fs *Filesystem) ExtractArchiveMembers(ctx context.Context, root, archiveFi
 		}
 
 		outRel := destinationRelativePath(destination, member)
-		if strings.Contains(outRel, "..") {
-			return errors.New("invalid extraction path")
+		if err := validateExtractionRelativePath(outRel); err != nil {
+			return errors.Wrap(err, "invalid extraction path")
 		}
 		if err := fs.IsIgnored(outRel); err != nil {
 			continue

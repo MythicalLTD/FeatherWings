@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/apex/log"
-	"golang.org/x/sync/semaphore"
 )
 
 type folderSizeEntry struct {
@@ -17,8 +16,7 @@ type folderSizeEntry struct {
 }
 
 func (fs *Filesystem) folderSizeTTL() time.Duration {
-	// Matches disk_usage.go: time.Second * fs.diskCheckInterval
-	return time.Second * fs.diskCheckInterval
+	return fs.diskCheckInterval
 }
 
 // normalizedFolderCacheKey returns a stable map key for a path under the server root.
@@ -112,14 +110,13 @@ func (fs *Filesystem) scheduleDirectorySizeRefreshes(keys []string) {
 	}
 	go func(keys []string) {
 		ctx := context.Background()
-		sem := semaphore.NewWeighted(maxConcurrentDirectorySizeWalks)
 		for _, k := range keys {
 			k := k
-			if err := sem.Acquire(ctx, 1); err != nil {
+			if err := fs.folderSizeWalkSem.Acquire(ctx, 1); err != nil {
 				return
 			}
 			go func() {
-				defer sem.Release(1)
+				defer fs.folderSizeWalkSem.Release(1)
 				fs.refreshDirectoryContentsSize(k)
 			}()
 		}

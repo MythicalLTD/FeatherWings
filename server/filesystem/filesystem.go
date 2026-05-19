@@ -19,6 +19,7 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/internal/ufs"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 )
@@ -32,9 +33,10 @@ type Filesystem struct {
 	diskCheckInterval time.Duration
 	denylist          *ignore.GitIgnore
 
-	folderSizeMu      sync.Mutex
-	folderSizeCache   map[string]folderSizeEntry
-	folderSizeGroup   singleflight.Group
+	folderSizeMu       sync.Mutex
+	folderSizeCache    map[string]folderSizeEntry
+	folderSizeGroup    singleflight.Group
+	folderSizeWalkSem  *semaphore.Weighted
 
 	isTest bool
 }
@@ -56,10 +58,11 @@ func New(root string, size int64, denylist []string) (*Filesystem, error) {
 	return &Filesystem{
 		unixFS: quota,
 
-		diskCheckInterval: time.Duration(config.Get().System.DiskCheckInterval),
+		diskCheckInterval: time.Duration(config.Get().System.DiskCheckInterval) * time.Second,
 		lastLookupTime:    &usageLookupTime{},
 		denylist:          ignore.CompileIgnoreLines(combinedDeny...),
 		folderSizeCache:   make(map[string]folderSizeEntry),
+		folderSizeWalkSem: semaphore.NewWeighted(maxConcurrentDirectorySizeWalks),
 	}, nil
 }
 

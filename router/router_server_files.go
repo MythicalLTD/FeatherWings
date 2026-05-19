@@ -408,7 +408,7 @@ func postServerDeleteFiles(c *gin.Context) {
 		return
 	}
 
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(c.Request.Context())
 
 	// Loop over the array of files passed in and delete them. If any of the file deletions
 	// fail just abort the process entirely.
@@ -863,7 +863,7 @@ func postServerChmodFile(c *gin.Context) {
 		return
 	}
 
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(c.Request.Context())
 
 	// Loop over the array of files passed in and perform the move or rename action against each.
 	for _, file := range data.Files {

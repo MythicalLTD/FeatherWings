@@ -108,7 +108,7 @@ func (fs *Filesystem) DiskUsage(allowStaleValue bool) (int64, error) {
 		return 0, nil
 	}
 
-	if !fs.lastLookupTime.Get().After(time.Now().Add(time.Second * fs.diskCheckInterval * -1)) {
+	if !fs.lastLookupTime.Get().After(time.Now().Add(-fs.diskCheckInterval)) {
 		// If we are now allowing a stale response go ahead  and perform the lookup and return the fresh
 		// value. This is a blocking operation to the calling process.
 		if !allowStaleValue {
