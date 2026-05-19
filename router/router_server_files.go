@@ -114,6 +114,7 @@ func getServerFileContents(c *gin.Context) {
 // @Produce json
 // @Param server path string true "Server identifier"
 // @Param directory query string true "Directory path"
+// @Param directory_sizes query bool false "When true, include recursive directory_size for subfolders (cached; refreshes asynchronously)"
 // @Success 200 {array} filesystem.Stat
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -122,7 +123,8 @@ func getServerFileContents(c *gin.Context) {
 func getServerListDirectory(c *gin.Context) {
 	s := middleware.ExtractServer(c)
 	dir := c.Query("directory")
-	if stats, err := s.Filesystem().ListDirectory(dir); err != nil {
+	withSizes := parseBoolWithDefault(c.Query("directory_sizes"), false)
+	if stats, err := s.Filesystem().ListDirectory(dir, withSizes); err != nil {
 		// If the error is that the folder does not exist return a 404.
 		if errors.Is(err, os.ErrNotExist) {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
@@ -134,6 +136,120 @@ func getServerListDirectory(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusOK, stats)
 	}
+}
+
+// getServerArchiveList lists a single directory level inside an archive file (zip, tar, …)
+// on the server without extracting the archive.
+// @Summary List directory inside an archive
+// @Tags Server Files
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param directory query string false "Server directory containing the archive"
+// @Param file query string true "Archive file path relative to directory"
+// @Param path query string false "Path inside the archive to list (empty or . for root)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/archive/list [get]
+func getServerArchiveList(c *gin.Context) {
+	s := middleware.ExtractServer(c)
+	root := c.Query("directory")
+	archiveFile := strings.TrimSpace(c.Query("file"))
+	if archiveFile == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "A file query parameter is required (path to the archive relative to directory).",
+		})
+		return
+	}
+	inner := c.Query("path")
+
+	entries, truncated, err := s.Filesystem().ListArchiveContents(c.Request.Context(), root, archiveFile, inner)
+	if err != nil {
+		if filesystem.IsErrorCode(err, filesystem.ErrCodeUnknownArchive) {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "The file is not an archive format that can be browsed, or it is not readable.",
+			})
+			return
+		}
+		if filesystem.IsErrorCode(err, filesystem.ErrCodeDenylistFile) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "Access to this archive is denied by the server file denylist.",
+			})
+			return
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+				"error": "The archive or path inside the archive was not found.",
+			})
+			return
+		}
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"contents":   entries,
+		"truncated": truncated,
+	})
+}
+
+// postServerArchiveExtract extracts specific paths from an on-disk archive into a destination directory.
+// @Summary Extract selected paths from archive
+// @Tags Server Files
+// @Accept json
+// @Param server path string true "Server identifier"
+// @Param payload body ServerArchiveExtractRequest true "Extraction request"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/archive/extract [post]
+func postServerArchiveExtract(c *gin.Context) {
+	var data ServerArchiveExtractRequest
+	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+	if len(data.Entries) == 0 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "At least one archive entry path is required.",
+		})
+		return
+	}
+
+	s := middleware.ExtractServer(c)
+	err := s.Filesystem().ExtractArchiveMembers(c.Request.Context(), data.Root, data.File, data.Destination, data.Entries)
+	if err != nil {
+		if filesystem.IsErrorCode(err, filesystem.ErrCodeUnknownArchive) {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "The archive is not in a supported format or could not be read.",
+			})
+			return
+		}
+		if filesystem.IsErrorCode(err, filesystem.ErrCodeDiskSpace) {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "This server does not have enough disk space to extract the selected files.",
+			})
+			return
+		}
+		if filesystem.IsErrorCode(err, filesystem.ErrCodeDenylistFile) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "Extraction is blocked by the file denylist.",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "too many files") {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // putServerRenameFiles renames (or moves) files for a server.
@@ -274,6 +390,24 @@ func postServerDeleteFiles(c *gin.Context) {
 		return
 	}
 
+	fs := s.Filesystem()
+
+	if data.UseTrash && !data.Permanent {
+		limits := filesystem.TrashLimits{}
+		if data.Trash != nil {
+			limits = filesystem.TrashLimits{
+				MaxSizeBytes:  data.Trash.MaxSizeBytes,
+				RetentionDays: data.Trash.RetentionDays,
+			}
+		}
+		if err := fs.MoveFilesToTrash(data.Root, data.Files, limits); err != nil {
+			middleware.CaptureAndAbort(c, err)
+			return
+		}
+		c.Status(http.StatusNoContent)
+		return
+	}
+
 	g, ctx := errgroup.WithContext(context.Background())
 
 	// Loop over the array of files passed in and delete them. If any of the file deletions
@@ -287,7 +421,7 @@ func postServerDeleteFiles(c *gin.Context) {
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
-					return s.Filesystem().SafeDeleteRecursively(pi)
+					return fs.SafeDeleteRecursively(pi)
 				}
 			}
 		}(pi))
@@ -299,6 +433,96 @@ func postServerDeleteFiles(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// getServerTrash lists trashed files for a server.
+func getServerTrash(c *gin.Context) {
+	s := ExtractServer(c)
+	limits := filesystem.TrashLimits{
+		MaxSizeBytes:  parseInt64Default(c.Query("max_size_bytes"), 0),
+		RetentionDays: parseIntDefault(c.Query("retention_days"), 0),
+	}
+	entries, total, err := s.Filesystem().ListTrash(limits)
+	if err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"entries":    entries,
+		"total_size": total,
+	})
+}
+
+// postServerTrashRestore restores files from the trash bin.
+func postServerTrashRestore(c *gin.Context) {
+	s := ExtractServer(c)
+	var data ServerTrashRestoreRequest
+	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+	if len(data.IDs) == 0 {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "No trash entries were specified for restoration.",
+		})
+		return
+	}
+	if err := s.Filesystem().RestoreTrashEntries(data.IDs, data.Overwrite); err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// postServerTrashDelete permanently deletes selected trash entries.
+func postServerTrashDelete(c *gin.Context) {
+	s := ExtractServer(c)
+	var data ServerTrashDeleteRequest
+	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+	if len(data.IDs) == 0 {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "No trash entries were specified for deletion.",
+		})
+		return
+	}
+	if err := s.Filesystem().DeleteTrashEntries(data.IDs); err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// deleteServerTrash empties the entire trash bin for a server.
+func deleteServerTrash(c *gin.Context) {
+	s := ExtractServer(c)
+	if err := s.Filesystem().EmptyTrash(); err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func parseInt64Default(raw string, def int64) int64 {
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+func parseIntDefault(raw string, def int) int {
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return v
 }
 
 // postServerWriteFile writes the contents of the request to a file on a server.

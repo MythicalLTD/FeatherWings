@@ -186,11 +186,15 @@ func (s *Server) onBeforeStart() error {
 
 	// If a server has unlimited disk space, we don't care enough to block the startup to check remaining.
 	// However, we should trigger a size anyway, as it'd be good to kick it off for other processes.
+	//
+	// For limited disk, use a non-blocking check (cached or stale usage + background refresh). A full
+	// filesystem walk on every start is prohibitive on servers with very large file counts; writes
+	// still enforce quota via the filesystem layer.
 	if s.DiskSpace() <= 0 {
 		s.Filesystem().HasSpaceAvailable(true)
 	} else {
-		s.PublishConsoleOutputFromDaemon("Checking server disk space usage, this could take a few seconds...")
-		if err := s.Filesystem().HasSpaceErr(false); err != nil {
+		s.PublishConsoleOutputFromDaemon("Checking server disk space usage (cached; refreshing in background if needed)...")
+		if err := s.Filesystem().HasSpaceErr(true); err != nil {
 			return err
 		}
 	}

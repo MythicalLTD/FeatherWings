@@ -92,10 +92,30 @@ type ServerCopyRequest struct {
 	Location string `json:"location"`
 }
 
+// TrashLimits configures trash retention enforced by Wings.
+type TrashLimits struct {
+	MaxSizeBytes  int64 `json:"max_size_bytes"`
+	RetentionDays int   `json:"retention_days"`
+}
+
 // ServerDeleteRequest describes deleted file targets.
 type ServerDeleteRequest struct {
-	Root  string   `json:"root"`
-	Files []string `json:"files"`
+	Root      string       `json:"root"`
+	Files     []string     `json:"files"`
+	UseTrash  bool         `json:"use_trash"`
+	Permanent bool         `json:"permanent"`
+	Trash     *TrashLimits `json:"trash,omitempty"`
+}
+
+// ServerTrashRestoreRequest lists trash entry IDs to restore.
+type ServerTrashRestoreRequest struct {
+	IDs       []string `json:"ids" binding:"required"`
+	Overwrite bool     `json:"overwrite"`
+}
+
+// ServerTrashDeleteRequest lists trash entry IDs to permanently delete.
+type ServerTrashDeleteRequest struct {
+	IDs []string `json:"ids" binding:"required"`
 }
 
 // ServerPullStatusResponse returns active remote downloads.
@@ -141,6 +161,14 @@ type ServerArchiveResponse struct {
 type ServerDecompressRequest struct {
 	RootPath string `json:"root"`
 	File     string `json:"file"`
+}
+
+// ServerArchiveExtractRequest selects files/directories inside an archive to extract without unpacking the whole archive.
+type ServerArchiveExtractRequest struct {
+	Root        string   `json:"root"`
+	File        string   `json:"file"`
+	Destination string   `json:"destination"`
+	Entries     []string `json:"entries"`
 }
 
 // ServerChmodFile describes a chmod action.

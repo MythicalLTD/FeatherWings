@@ -160,47 +160,60 @@ func (fs *Filesystem) CompressFiles(ctx context.Context, dir string, name string
 	return info, mimetype, err
 }
 
-func (fs *Filesystem) archiverFileSystem(ctx context.Context, p string) (iofs.FS, error) {
-	f, err := fs.unixFS.Open(p)
+// openArchiveFS opens an on-disk archive as an io/fs.FS. The caller must invoke cleanup
+// when finished to close the backing file descriptor.
+func (fs *Filesystem) openArchiveFS(ctx context.Context, archivePath string) (_ iofs.FS, cleanup func(), err error) {
+	cleanup = func() {}
+
+	f, err := fs.unixFS.Open(archivePath)
 	if err != nil {
-		return nil, err
+		return nil, cleanup, err
 	}
-	// Do not use defer to close `f`, it will likely be used later.
+	cleanup = func() { _ = f.Close() }
 
-	format, _, err := archives.Identify(ctx, filepath.Base(p), f)
+	format, _, err := archives.Identify(ctx, filepath.Base(archivePath), f)
 	if err != nil && !errors.Is(err, archives.NoMatch) {
-		_ = f.Close()
-		return nil, err
+		cleanup()
+		return nil, func() {}, err
 	}
 
-	// Reset the file reader.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		_ = f.Close()
-		return nil, err
+		cleanup()
+		return nil, func() {}, err
 	}
 
 	info, err := f.Stat()
 	if err != nil {
-		_ = f.Close()
-		return nil, err
+		cleanup()
+		return nil, func() {}, err
 	}
 
-	if format != nil {
-		switch ff := format.(type) {
-		case archives.Zip:
-			// zip.Reader is more performant than ArchiveFS, because zip.Reader caches content information
-			// and zip.Reader can open several content files concurrently because of io.ReaderAt requirement
-			// while ArchiveFS can't.
-			// zip.Reader doesn't suffer from issue #330 and #310 according to local test (but they should be fixed anyway)
-			return zip.NewReader(f, info.Size())
-		case archives.Extraction:
-			return &archives.ArchiveFS{Stream: io.NewSectionReader(f, 0, info.Size()), Format: ff, Context: ctx}, nil
-		case archives.Compression:
-			return archiverext.FileFS{File: f, Compression: ff}, nil
-		}
+	if format == nil {
+		cleanup()
+		return nil, func() {}, archives.NoMatch
 	}
-	_ = f.Close()
-	return nil, archives.NoMatch
+
+	switch ff := format.(type) {
+	case archives.Zip:
+		zr, err := zip.NewReader(f, info.Size())
+		if err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+		return zr, cleanup, nil
+	case archives.Extraction:
+		afs := &archives.ArchiveFS{
+			Stream:  io.NewSectionReader(f, 0, info.Size()),
+			Format:  ff,
+			Context: ctx,
+		}
+		return afs, cleanup, nil
+	case archives.Compression:
+		return archiverext.FileFS{File: f, Compression: ff}, cleanup, nil
+	}
+
+	cleanup()
+	return nil, func() {}, archives.NoMatch
 }
 
 // SpaceAvailableForDecompression looks through a given archive and determines
@@ -212,13 +225,14 @@ func (fs *Filesystem) SpaceAvailableForDecompression(ctx context.Context, dir st
 		return nil
 	}
 
-	fsys, err := fs.archiverFileSystem(ctx, filepath.Join(dir, file))
+	fsys, cleanup, err := fs.openArchiveFS(ctx, filepath.Join(dir, file))
 	if err != nil {
 		if errors.Is(err, archives.NoMatch) {
 			return newFilesystemError(ErrCodeUnknownArchive, err)
 		}
 		return err
 	}
+	defer cleanup()
 
 	var size atomic.Int64
 	return iofs.WalkDir(fsys, ".", func(path string, d iofs.DirEntry, err error) error {

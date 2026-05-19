@@ -14,33 +14,41 @@ import (
 type Stat struct {
 	ufs.FileInfo
 	Mimetype string
+	// DirectorySize is the recursive size of a directory's contents (regular files, hard-link aware).
+	// Only set when listing with directory sizes enabled and a cached or computed value exists.
+	DirectorySize *int64 `json:"-"`
 }
 
 func (s *Stat) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Name      string `json:"name"`
-		Created   string `json:"created"`
-		Modified  string `json:"modified"`
-		Mode      string `json:"mode"`
-		ModeBits  string `json:"mode_bits"`
-		Size      int64  `json:"size"`
-		Directory bool   `json:"directory"`
-		File      bool   `json:"file"`
-		Symlink   bool   `json:"symlink"`
-		Mime      string `json:"mime"`
-	}{
-		Name:     s.Name(),
-		Created:  s.ModTime().Format(time.RFC3339), // Using ModTime since CTime is unreliable
-		Modified: s.ModTime().Format(time.RFC3339),
-		Mode:     s.Mode().String(),
-		// Using `&ModePerm` on the file's mode will cause the mode to only have the permission values, and nothing else.
+	type statPayload struct {
+		Name          string `json:"name"`
+		Created       string `json:"created"`
+		Modified      string `json:"modified"`
+		Mode          string `json:"mode"`
+		ModeBits      string `json:"mode_bits"`
+		Size          int64  `json:"size"`
+		Directory     bool   `json:"directory"`
+		File          bool   `json:"file"`
+		Symlink       bool   `json:"symlink"`
+		Mime          string `json:"mime"`
+		DirectorySize *int64 `json:"directory_size,omitempty"`
+	}
+	payload := statPayload{
+		Name:      s.Name(),
+		Created:   s.ModTime().Format(time.RFC3339), // Using ModTime since CTime is unreliable
+		Modified:  s.ModTime().Format(time.RFC3339),
+		Mode:      s.Mode().String(),
 		ModeBits:  strconv.FormatUint(uint64(s.Mode()&ufs.ModePerm), 8),
 		Size:      s.Size(),
 		Directory: s.IsDir(),
 		File:      !s.IsDir(),
 		Symlink:   s.Mode().Type()&ufs.ModeSymlink != 0,
 		Mime:      s.Mimetype,
-	})
+	}
+	if s.DirectorySize != nil {
+		payload.DirectorySize = s.DirectorySize
+	}
+	return json.Marshal(payload)
 }
 
 func statFromFile(f ufs.File) (Stat, error) {

@@ -306,10 +306,10 @@ type SystemConfiguration struct {
 	// ActivitySendCount is the number of activity events to send per batch.
 	ActivitySendCount int `default:"100" yaml:"activity_send_count"`
 
-	// If set to true, file permissions for a server will be checked when the process is
-	// booted. This can cause boot delays if the server has a large amount of files. In most
-	// cases disabling this should not have any major impact unless external processes are
-	// frequently modifying a servers' files.
+	// If set to true, file ownership for a server will be synced to the Wings user when the
+	// process is booted (recursive chown). On large trees this can still take noticeable time;
+	// chown is skipped for files that already match the configured uid/gid. Set false if external
+	// tools do not modify ownership, or use a dedicated repair action when needed.
 	CheckPermissionsOnBoot bool `default:"true" yaml:"check_permissions_on_boot"`
 
 	// If set to false Wings will not attempt to write a log rotate configuration to the disk

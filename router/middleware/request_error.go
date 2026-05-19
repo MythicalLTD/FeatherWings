@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -133,6 +134,26 @@ func (re *RequestError) asFilesystemError() (int, string) {
 	}
 	if strings.HasSuffix(err.Error(), "file name too long") {
 		return http.StatusBadRequest, "Cannot perform that action: file name is too long."
+	}
+	if filesystem.IsErrorCode(err, filesystem.ErrCodeTrashItemTooLarge) {
+		var fserr *filesystem.Error
+		if errors.As(err, &fserr) && fserr.ItemName() != "" {
+			return http.StatusBadRequest, fmt.Sprintf("%s is larger than the trash size limit. Permanently delete it instead, or ask an admin to raise the limit.", fserr.ItemName())
+		}
+		return http.StatusBadRequest, "This item is larger than the trash size limit. Permanently delete it instead, or ask an admin to raise the limit."
+	}
+	if filesystem.IsErrorCode(err, filesystem.ErrCodeTrashEntryNotFound) ||
+		strings.Contains(err.Error(), "trash entry") && strings.Contains(err.Error(), "was not found") {
+		return http.StatusNotFound, "That item is no longer in the trash. Refresh the page and try again."
+	}
+	if filesystem.IsErrorCode(err, filesystem.ErrCodeTrashRestoreConflict) {
+		var fserr *filesystem.Error
+		if errors.As(err, &fserr) {
+			if name := fserr.ConflictName(); name != "" {
+				return http.StatusConflict, fmt.Sprintf("Cannot restore %s: a file or folder already exists at the original location.", name)
+			}
+		}
+		return http.StatusConflict, "Cannot restore: a file or folder already exists at the original location."
 	}
 	if e, ok := err.(*os.SyscallError); ok && e.Syscall == "readdirent" {
 		return http.StatusNotFound, "The requested directory does not exist."

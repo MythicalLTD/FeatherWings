@@ -204,8 +204,10 @@ func (h *Handler) Filecmd(request *sftp.Request) error {
 		if !h.can(PermissionFileDelete) {
 			return sftp.ErrSSHFxPermissionDenied
 		}
-		p := filepath.Clean(request.Filepath)
-		if err := h.fs.Delete(p); err != nil {
+		if err := h.deletePath(request.Filepath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return sftp.ErrSSHFxNoSuchFile
+			}
 			l.WithField("error", err).Error("failed to remove directory")
 			return sftp.ErrSSHFxFailure
 		}
@@ -240,7 +242,7 @@ func (h *Handler) Filecmd(request *sftp.Request) error {
 		if !h.can(PermissionFileDelete) {
 			return sftp.ErrSSHFxPermissionDenied
 		}
-		if err := h.fs.Delete(request.Filepath); err != nil {
+		if err := h.deletePath(request.Filepath); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return sftp.ErrSSHFxNoSuchFile
 			}
@@ -299,6 +301,11 @@ func (h *Handler) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
 
 // Determines if a user has permission to perform a specific action on the SFTP server. These
 // permissions are defined and returned by the Panel API.
+func (h *Handler) deletePath(p string) error {
+	useTrash := h.server.FileTrashEnabled()
+	return h.fs.DeletePath(p, h.server.FileTrashLimits(), useTrash)
+}
+
 func (h *Handler) can(permission string) bool {
 	if h.server.IsSuspended() {
 		return false

@@ -221,7 +221,7 @@ func searchDirectory(s *server.Server, dir string, depth int, options *searchOpt
 		return // Stop recursion if depth exceeds
 	}
 
-	stats, err := s.Filesystem().ListDirectory(dir)
+	stats, err := s.Filesystem().ListDirectory(dir, false)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "Directory not found"})
 		return
