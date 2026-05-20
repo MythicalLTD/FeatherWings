@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 type EggConfiguration struct {
@@ -41,6 +42,13 @@ func (egg *EggConfiguration) UnmarshalJSON(b []byte) (err error) {
 type ConfigurationMeta struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// FileTrashConfiguration controls soft-delete behavior for file manager and SFTP.
+type FileTrashConfiguration struct {
+	Enabled       bool  `json:"enabled"`
+	MaxSizeBytes  int64 `json:"max_size_bytes"`
+	RetentionDays int   `json:"retention_days"`
 }
 
 type Configuration struct {
@@ -81,6 +89,8 @@ type Configuration struct {
 		// Defines the Docker image that will be used for this server
 		Image string `json:"image,omitempty"`
 	} `json:"container,omitempty"`
+
+	FileTrash FileTrashConfiguration `json:"file_trash,omitempty"`
 
 	// FastDL configuration for this server
 	FastDL struct {
@@ -137,4 +147,21 @@ func (c *Configuration) GetFastDL() (enabled bool, directory string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.FastDL.Enabled, c.FastDL.Directory
+}
+
+// FileTrashEnabled reports whether deleted files should be moved to trash.
+func (s *Server) FileTrashEnabled() bool {
+	s.cfg.mu.RLock()
+	defer s.cfg.mu.RUnlock()
+	return s.cfg.FileTrash.Enabled
+}
+
+// FileTrashLimits returns retention limits synced from the Panel.
+func (s *Server) FileTrashLimits() filesystem.TrashLimits {
+	s.cfg.mu.RLock()
+	defer s.cfg.mu.RUnlock()
+	return filesystem.TrashLimits{
+		MaxSizeBytes:  s.cfg.FileTrash.MaxSizeBytes,
+		RetentionDays: s.cfg.FileTrash.RetentionDays,
+	}
 }

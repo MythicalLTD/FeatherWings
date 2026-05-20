@@ -17,9 +17,12 @@ const (
 	ErrCodeDiskSpace      ErrorCode = "E_NODISK"
 	ErrCodeUnknownArchive ErrorCode = "E_UNKNFMT"
 	ErrCodePathResolution ErrorCode = "E_BADPATH"
-	ErrCodeDenylistFile   ErrorCode = "E_DENYLIST"
-	ErrCodeUnknownError   ErrorCode = "E_UNKNOWN"
-	ErrNotExist           ErrorCode = "E_NOTEXIST"
+	ErrCodeDenylistFile          ErrorCode = "E_DENYLIST"
+	ErrCodeTrashRestoreConflict  ErrorCode = "E_TRASHRESTORE"
+	ErrCodeTrashEntryNotFound    ErrorCode = "E_TRASHMISSING"
+	ErrCodeTrashItemTooLarge     ErrorCode = "E_TRASHLARGE"
+	ErrCodeUnknownError          ErrorCode = "E_UNKNOWN"
+	ErrNotExist                  ErrorCode = "E_NOTEXIST"
 )
 
 type Error struct {
@@ -72,6 +75,18 @@ func (e *Error) Error() string {
 		return fmt.Sprintf("filesystem: server path [%s] resolves to a location outside the server root: %s", e.path, r)
 	case ErrNotExist:
 		return "filesystem: does not exist"
+	case ErrCodeTrashRestoreConflict:
+		if e.resolved != "" {
+			return fmt.Sprintf("filesystem: cannot restore %s: destination already exists", e.resolved)
+		}
+		return "filesystem: cannot restore file: destination already exists"
+	case ErrCodeTrashEntryNotFound:
+		return "filesystem: trash entry was not found"
+	case ErrCodeTrashItemTooLarge:
+		if e.resolved != "" {
+			return fmt.Sprintf("filesystem: %s is larger than the trash size limit", e.resolved)
+		}
+		return "filesystem: item is larger than the trash size limit"
 	case ErrCodeUnknownError:
 		fallthrough
 	default:
@@ -128,6 +143,34 @@ func IsErrorCode(err error, code ErrorCode) bool {
 // NewBadPathResolution returns a new BadPathResolution error.
 func NewBadPathResolution(path string, resolved string) error {
 	return errors.WithStackDepth(&Error{code: ErrCodePathResolution, path: path, resolved: resolved}, 1)
+}
+
+// NewTrashRestoreConflict reports that the restore target path already exists.
+func NewTrashRestoreConflict(name string) error {
+	return errors.WithStackDepth(&Error{code: ErrCodeTrashRestoreConflict, resolved: name}, 1)
+}
+
+// NewTrashEntryNotFound reports that a trash index entry does not exist.
+func NewTrashEntryNotFound() error {
+	return errors.WithStackDepth(&Error{code: ErrCodeTrashEntryNotFound}, 1)
+}
+
+// NewTrashItemTooLarge reports that an item exceeds the configured trash size limit.
+func NewTrashItemTooLarge(name string) error {
+	return errors.WithStackDepth(&Error{code: ErrCodeTrashItemTooLarge, resolved: name}, 1)
+}
+
+// ConflictName returns the conflicting file name for a trash restore conflict error.
+func (e *Error) ConflictName() string {
+	if e.code != ErrCodeTrashRestoreConflict {
+		return ""
+	}
+	return e.resolved
+}
+
+// ItemName returns the file or folder name attached to a trash-related error.
+func (e *Error) ItemName() string {
+	return e.resolved
 }
 
 // wrapError wraps the provided error as a Filesystem error and attaches the

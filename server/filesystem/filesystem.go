@@ -19,6 +19,9 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/internal/ufs"
+	"golang.org/x/sync/semaphore"
+	"golang.org/x/sync/singleflight"
+	"golang.org/x/sys/unix"
 )
 
 type Filesystem struct {
@@ -29,6 +32,11 @@ type Filesystem struct {
 	lookupInProgress  atomic.Bool
 	diskCheckInterval time.Duration
 	denylist          *ignore.GitIgnore
+
+	folderSizeMu       sync.Mutex
+	folderSizeCache    map[string]folderSizeEntry
+	folderSizeGroup    singleflight.Group
+	folderSizeWalkSem  *semaphore.Weighted
 
 	isTest bool
 }
@@ -44,12 +52,17 @@ func New(root string, size int64, denylist []string) (*Filesystem, error) {
 	}
 	quota := ufs.NewQuota(unixFS, size)
 
+	builtinDeny := []string{TrashDirName, TrashDirName + "/**"}
+	combinedDeny := append(builtinDeny, denylist...)
+
 	return &Filesystem{
 		unixFS: quota,
 
-		diskCheckInterval: time.Duration(config.Get().System.DiskCheckInterval),
+		diskCheckInterval: time.Duration(config.Get().System.DiskCheckInterval) * time.Second,
 		lastLookupTime:    &usageLookupTime{},
-		denylist:          ignore.CompileIgnoreLines(denylist...),
+		denylist:          ignore.CompileIgnoreLines(combinedDeny...),
+		folderSizeCache:   make(map[string]folderSizeEntry),
+		folderSizeWalkSem: semaphore.NewWeighted(maxConcurrentDirectorySizeWalks),
 	}, nil
 }
 
@@ -161,6 +174,15 @@ func (fs *Filesystem) Symlink(oldpath, newpath string) error {
 	return fs.unixFS.Symlink(oldpath, newpath)
 }
 
+// needsChown reports whether the file's uid/gid differ from the configured daemon user.
+func needsChown(st ufs.FileInfo, uid, gid int) bool {
+	sys, ok := st.Sys().(*unix.Stat_t)
+	if !ok {
+		return true
+	}
+	return int(sys.Uid) != uid || int(sys.Gid) != gid
+}
+
 func (fs *Filesystem) chownFile(name string) error {
 	if fs.isTest {
 		return nil
@@ -189,14 +211,19 @@ func (fs *Filesystem) Chown(p string) error {
 		return err
 	}
 
-	// Start by just chowning the initial path that we received.
-	if err := fs.unixFS.Lchownat(dirfd, name, uid, gid); err != nil {
-		return errors.Wrap(err, "server/filesystem: chown: failed to chown path")
+	st, err := fs.unixFS.Lstatat(dirfd, name)
+	if err != nil {
+		return errors.Wrap(err, "server/filesystem: chown: failed to stat path")
+	}
+	if needsChown(st, uid, gid) {
+		if err := fs.unixFS.Lchownat(dirfd, name, uid, gid); err != nil {
+			return errors.Wrap(err, "server/filesystem: chown: failed to chown path")
+		}
 	}
 
 	// If this is not a directory we can now return from the function, there is nothing
 	// left that we need to do.
-	if st, err := fs.unixFS.Lstatat(dirfd, name); err != nil || !st.IsDir() {
+	if !st.IsDir() {
 		return nil
 	}
 
@@ -205,9 +232,16 @@ func (fs *Filesystem) Chown(p string) error {
 	// need to check if every individual path it touches is safe as the code
 	// doesn't traverse symlinks, is immune to symlink timing attacks, and
 	// gives us a dirfd and file name to make a direct syscall with.
-	if err := fs.unixFS.WalkDirat(dirfd, name, func(dirfd int, name, _ string, info ufs.DirEntry, err error) error {
+	if err := fs.unixFS.WalkDirat(dirfd, name, func(dirfd int, name, _ string, _ ufs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		nst, err := fs.unixFS.Lstatat(dirfd, name)
+		if err != nil {
+			return err
+		}
+		if !needsChown(nst, uid, gid) {
+			return nil
 		}
 		if err := fs.unixFS.Lchownat(dirfd, name, uid, gid); err != nil {
 			return err
@@ -514,7 +548,11 @@ func (fs *Filesystem) SafeDeleteRecursively(p string) error {
 
 // ListDirectory lists the contents of a given directory and returns stat
 // information about each file and folder within it.
-func (fs *Filesystem) ListDirectory(p string) ([]Stat, error) {
+// When includeDirectorySizes is true, each subdirectory includes directory_size
+// (total bytes of regular files under that folder, with hard-link deduplication)
+// from a TTL cache; stale or missing entries are refreshed asynchronously so the
+// HTTP handler returns promptly.
+func (fs *Filesystem) ListDirectory(p string, includeDirectorySizes bool) ([]Stat, error) {
 	// Read entries from the path on the filesystem, using the mapped reader, so
 	// we can map the DirEntry slice into a Stat slice with mimetype information.
 	out, err := ufs.ReadDirMap(fs.unixFS.UnixFS, p, func(e ufs.DirEntry) (Stat, error) {
@@ -579,6 +617,10 @@ func (fs *Filesystem) ListDirectory(p string) ([]Stat, error) {
 			return 1
 		}
 	})
+
+	if includeDirectorySizes {
+		fs.attachDirectorySizes(&out, p)
+	}
 
 	return out, nil
 }

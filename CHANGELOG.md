@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.7.3
+
+### Added
+
+- Added support for directory size listing in the file manager.
+- `GET /api/servers/{server}/files/archive/list` — list a directory inside an on-disk archive (zip, tar, …) without extracting.
+- Added support for trash bin in the file manager.
+- Added support for previewing contents inside an archive.
+
+### Improved
+
+- Faster server start on large file trees: disk quota preflight uses cached usage (refreshes in the background) instead of blocking on a full walk every boot.
+- Recursive boot-time `chown` skips files that already match the configured Wings uid/gid, reducing syscall load when ownership is already correct.
+
 ## v1.3.7
 
 ### Improved

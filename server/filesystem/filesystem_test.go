@@ -630,3 +630,29 @@ func TestFilesystem_Delete(t *testing.T) {
 		})
 	})
 }
+
+func TestListDirectoryRecursiveDirectorySize(t *testing.T) {
+	fs, rfs := NewFs()
+	t.Cleanup(func() { _ = os.RemoveAll(rfs.root) })
+	if err := os.MkdirAll(filepath.Join(rfs.root, "server", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := rfs.CreateServerFile("sub/hi.txt", []byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	fs.refreshDirectoryContentsSize("sub")
+	stats, err := fs.ListDirectory(".", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range stats {
+		if st.Name() != "sub" || !st.IsDir() {
+			continue
+		}
+		if st.DirectorySize == nil || *st.DirectorySize != 3 {
+			t.Fatalf("sub directory_size = %v, want 3", st.DirectorySize)
+		}
+		return
+	}
+	t.Fatal("directory sub not found in listing")
+}
