@@ -256,6 +256,50 @@ func TestMoveFilesToTrash_EvictsOldestForRoom(t *testing.T) {
 	}
 }
 
+func TestMoveFilesToTrash_DeferredEvictPreservesOldTrashOnRenameFailure(t *testing.T) {
+	fs, rfs := NewFs()
+	defer os.RemoveAll(rfs.root)
+
+	limits := TrashLimits{MaxSizeBytes: 3000, RetentionDays: 30}
+
+	if err := rfs.CreateServerFileFromString("old.jar", strings.Repeat("o", 2048)); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.MoveFilesToTrash("/", []string{"old.jar"}, limits); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _, err := fs.ListTrash(TrashLimits{})
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ListTrash: %+v err=%v", entries, err)
+	}
+	oldID := entries[0].ID
+	oldTrashPath := filepath.Join(trashItemsDir(rfs), oldID)
+
+	if err := rfs.CreateServerFileFromString("new.jar", strings.Repeat("n", 2048)); err != nil {
+		t.Fatal(err)
+	}
+
+	err = fs.MoveFilesToTrash("/", []string{"new.jar", "missing.jar"}, limits)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if _, statErr := rfs.StatServerFile("new.jar"); statErr != nil {
+		t.Fatalf("new.jar should be rolled back: %v", statErr)
+	}
+	if _, err := os.Stat(oldTrashPath); err != nil {
+		t.Fatalf("evicted trash item should remain on disk after failed move: %v", err)
+	}
+
+	entries, _, err = fs.ListTrash(TrashLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != oldID {
+		t.Fatalf("index should still list only old.jar, got %+v", entries)
+	}
+}
+
 func TestMoveFilesToTrash_RollbackOnPartialFailure(t *testing.T) {
 	fs, rfs := NewFs()
 	defer os.RemoveAll(rfs.root)

@@ -227,16 +227,14 @@ func (fs *Filesystem) MoveFilesToTrash(root string, files []string, limits Trash
 		incomingTotal += size
 	}
 
+	var toDelete []TrashEntry
 	if limits.MaxSizeBytes > 0 {
 		if incomingTotal > limits.MaxSizeBytes {
 			return NewTrashItemTooLarge("")
 		}
 		var err error
-		idx, err = fs.makeRoomInTrashLocked(idx, limits, incomingTotal)
+		idx, toDelete, err = fs.makeRoomInTrashLocked(idx, limits, incomingTotal)
 		if err != nil {
-			return err
-		}
-		if err := fs.writeTrashIndexFile(idx); err != nil {
 			return err
 		}
 	}
@@ -264,6 +262,13 @@ func (fs *Filesystem) MoveFilesToTrash(root string, files []string, limits Trash
 		})
 	}
 
+	for _, e := range toDelete {
+		if err := fs.Delete(trashItemPath(e.ID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackMoves()
+			return err
+		}
+	}
+
 	if err := fs.writeTrashIndexFile(idx); err != nil {
 		rollbackMoves()
 		return err
@@ -271,13 +276,15 @@ func (fs *Filesystem) MoveFilesToTrash(root string, files []string, limits Trash
 	return nil
 }
 
-// makeRoomInTrashLocked permanently deletes the oldest trashed items until incomingTotal will
-// fit within MaxSizeBytes. Must be called before new items are moved into trash.
-func (fs *Filesystem) makeRoomInTrashLocked(idx trashIndex, limits TrashLimits, incomingTotal int64) (trashIndex, error) {
+// makeRoomInTrashLocked computes which existing trash entries must be removed so incomingTotal
+// fits within MaxSizeBytes. It does not delete on disk; the caller must delete toDelete only
+// after new items are moved into trash successfully.
+func (fs *Filesystem) makeRoomInTrashLocked(idx trashIndex, limits TrashLimits, incomingTotal int64) (trashIndex, []TrashEntry, error) {
 	if limits.MaxSizeBytes <= 0 {
-		return idx, nil
+		return idx, nil, nil
 	}
 
+	var toDelete []TrashEntry
 	now := time.Now().UTC()
 	cutoff := now
 	if limits.RetentionDays > 0 {
@@ -287,7 +294,7 @@ func (fs *Filesystem) makeRoomInTrashLocked(idx trashIndex, limits TrashLimits, 
 	kept := make([]TrashEntry, 0, len(idx.Entries))
 	for _, e := range idx.Entries {
 		if limits.RetentionDays > 0 && e.DeletedAt.Before(cutoff) {
-			_ = fs.Delete(trashItemPath(e.ID))
+			toDelete = append(toDelete, e)
 			continue
 		}
 		kept = append(kept, e)
@@ -305,17 +312,15 @@ func (fs *Filesystem) makeRoomInTrashLocked(idx trashIndex, limits TrashLimits, 
 	for total+incomingTotal > limits.MaxSizeBytes && len(kept) > 0 {
 		oldest := kept[0]
 		kept = kept[1:]
-		if err := fs.Delete(trashItemPath(oldest.ID)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return trashIndex{}, err
-		}
+		toDelete = append(toDelete, oldest)
 		total -= oldest.Size
 	}
 
 	if total+incomingTotal > limits.MaxSizeBytes {
-		return trashIndex{}, NewTrashItemTooLarge("")
+		return trashIndex{}, nil, NewTrashItemTooLarge("")
 	}
 
-	return trashIndex{Entries: kept}, nil
+	return trashIndex{Entries: kept}, toDelete, nil
 }
 
 func hasPathPrefix(p, prefix string) bool {
