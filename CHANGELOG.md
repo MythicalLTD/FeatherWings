@@ -6,6 +6,10 @@
 - Upstream with pelican/upstream! (implement security changes from ptero 1.12.3)
 - Upstream with pelican/upstream! (parser correctness fixes (integer precision, nil safety, multi-variable lookup, type coercion, IfValue, XML duplicates))
 
+### Fixed
+
+- Fixed a bug where the container interface was not being set correctly.
+
 ## v1.3.7.3
 
 ### Added

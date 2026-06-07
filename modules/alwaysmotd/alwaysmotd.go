@@ -58,6 +58,9 @@ type ServerStatus struct {
 // Ensure AlwaysMOTD implements Module interface
 var _ modules.Module = (*AlwaysMOTD)(nil)
 
+// iptablesRuleComment tags AlwaysMOTD NAT rules so cleanup never flushes Docker's PREROUTING chain.
+const iptablesRuleComment = "featherwings-alwaysmotd"
+
 // PortUnbinderFunc is a function type for unbinding ports
 // This allows registration without import cycles
 type PortUnbinderFunc func(port int)
@@ -757,13 +760,16 @@ func (a *AlwaysMOTD) redirectPortToMotd(port int, state string) {
 
 	// First remove any existing redirect for this port
 	if currentRedirect != 0 {
-		removeCmd := fmt.Sprintf("iptables -t nat -D PREROUTING -p tcp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
-		_ = a.executeIptables(removeCmd) // Ignore errors, rule might not exist
+		a.deleteTCPRedirectRule(port, currentRedirect)
 	}
 
-	// Add new redirect rule (use -I to insert at beginning, or check if exists first)
-	// Try to add rule, ignore if it already exists
-	command := fmt.Sprintf("iptables -t nat -C PREROUTING -p tcp --dport %d -j REDIRECT --to-port %d 2>/dev/null || iptables -t nat -A PREROUTING -p tcp --dport %d -j REDIRECT --to-port %d", port, motdPort, port, motdPort)
+	// Tag rules so cleanup only removes AlwaysMOTD redirects, not Docker DNAT rules.
+	command := fmt.Sprintf(
+		"iptables -t nat -C PREROUTING -p tcp --dport %d -m comment --comment %q -j REDIRECT --to-port %d 2>/dev/null || "+
+			"iptables -t nat -A PREROUTING -p tcp --dport %d -m comment --comment %q -j REDIRECT --to-port %d",
+		port, iptablesRuleComment, motdPort,
+		port, iptablesRuleComment, motdPort,
+	)
 	if err := a.executeIptables(command); err != nil {
 		// Log but don't fail - iptables might not be available or might need different permissions
 		// The module can still function without iptables redirects (MOTD servers will still work)
@@ -798,13 +804,7 @@ func (a *AlwaysMOTD) removeRedirect(port int) {
 	}
 
 	// Try to remove, but don't fail if rule doesn't exist
-	command := fmt.Sprintf("iptables -t nat -D PREROUTING -p tcp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
-	if err := a.executeIptables(command); err != nil {
-		// Log but continue - rule might not exist or iptables might not be available
-		a.logger.WithError(err).WithFields(log.Fields{
-			"port": port,
-		}).Debug("failed to remove redirect (rule may not exist)")
-	}
+	a.deleteTCPRedirectRule(port, currentRedirect)
 
 	a.mu.Lock()
 	delete(a.redirectedPorts, port)
@@ -827,16 +827,16 @@ func (a *AlwaysMOTD) redirectUDPPortToMotd(port int, state string) {
 
 	// First remove any existing redirect for this port
 	if currentRedirect != 0 {
-		// Try both REDIRECT and DNAT in case either was used
-		removeCmd1 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
-		removeCmd2 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
-		_ = a.executeIptables(removeCmd1)
-		_ = a.executeIptables(removeCmd2)
+		a.deleteUDPRedirectRules(port, currentRedirect)
 	}
 
 	// Use REDIRECT for UDP (simpler and handles source port automatically)
-	// REDIRECT automatically rewrites the source port in responses
-	redirectCmd := fmt.Sprintf("iptables -t nat -C PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport %d -j REDIRECT --to-port %d", port, bedrockMotdPort, port, bedrockMotdPort)
+	redirectCmd := fmt.Sprintf(
+		"iptables -t nat -C PREROUTING -p udp --dport %d -m comment --comment %q -j REDIRECT --to-port %d 2>/dev/null || "+
+			"iptables -t nat -A PREROUTING -p udp --dport %d -m comment --comment %q -j REDIRECT --to-port %d",
+		port, iptablesRuleComment, bedrockMotdPort,
+		port, iptablesRuleComment, bedrockMotdPort,
+	)
 	if err := a.executeIptables(redirectCmd); err != nil {
 		a.logger.WithError(err).WithFields(log.Fields{
 			"port":            port,
@@ -875,22 +875,7 @@ func (a *AlwaysMOTD) removeUDPRedirect(port int) {
 		return
 	}
 
-	// Try to remove, but don't fail if rule doesn't exist
-	// Try both REDIRECT and DNAT in case either was used
-	command1 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, currentRedirect)
-	command2 := fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
-	command3 := fmt.Sprintf("iptables -t nat -D OUTPUT -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, currentRedirect)
-	_ = a.executeIptables(command1)
-	_ = a.executeIptables(command2)
-	_ = a.executeIptables(command3)
-	command := command1 // Use REDIRECT as primary
-	if err := a.executeIptables(command); err != nil {
-		// Log but continue - rule might not exist or iptables might not be available
-		a.logger.WithError(err).WithFields(log.Fields{
-			"port":     port,
-			"protocol": "udp",
-		}).Debug("failed to remove UDP redirect (rule may not exist)")
-	}
+	a.deleteUDPRedirectRules(port, currentRedirect)
 
 	a.mu.Lock()
 	delete(a.redirectedUDPPorts, port)
@@ -965,12 +950,89 @@ func (a *AlwaysMOTD) UnbindPortForServer(port int) {
 	a.UnbindPort(port)
 }
 
-// cleanupIptables removes all iptables redirects (both TCP and UDP)
+// deleteTCPRedirectRule removes a single AlwaysMOTD TCP redirect, including legacy rules without a comment.
+func (a *AlwaysMOTD) deleteTCPRedirectRule(port, motdPort int) {
+	rules := []string{
+		fmt.Sprintf("iptables -t nat -D PREROUTING -p tcp --dport %d -m comment --comment %q -j REDIRECT --to-port %d 2>/dev/null || true", port, iptablesRuleComment, motdPort),
+		fmt.Sprintf("iptables -t nat -D PREROUTING -p tcp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, motdPort),
+	}
+	for _, rule := range rules {
+		_ = a.executeIptables(rule)
+	}
+}
+
+// deleteUDPRedirectRules removes AlwaysMOTD UDP redirect rules for a port.
+func (a *AlwaysMOTD) deleteUDPRedirectRules(port, motdPort int) {
+	rules := []string{
+		fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -m comment --comment %q -j REDIRECT --to-port %d 2>/dev/null || true", port, iptablesRuleComment, motdPort),
+		fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j REDIRECT --to-port %d 2>/dev/null || true", port, motdPort),
+		fmt.Sprintf("iptables -t nat -D PREROUTING -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, motdPort),
+		fmt.Sprintf("iptables -t nat -D OUTPUT -p udp --dport %d -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || true", port, motdPort),
+	}
+	for _, rule := range rules {
+		_ = a.executeIptables(rule)
+	}
+}
+
+// deleteIptablesRulesByComment removes stale AlwaysMOTD rules left from a previous wings run.
+func (a *AlwaysMOTD) deleteIptablesRulesByComment(table, chain string) error {
+	for {
+		out, err := exec.Command("iptables", "-t", table, "-S", chain).Output()
+		if err != nil {
+			return errors.Wrapf(err, "failed to list iptables rules for %s/%s", table, chain)
+		}
+
+		deleted := false
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "-A ") || !strings.Contains(line, iptablesRuleComment) {
+				continue
+			}
+
+			args := strings.Fields(strings.TrimPrefix(line, "-A "))
+			if len(args) < 2 || args[0] != chain {
+				continue
+			}
+
+			deleteCmd := fmt.Sprintf("iptables -t %s -D %s %s", table, chain, strings.Join(args[1:], " "))
+			if err := a.executeIptables(deleteCmd); err == nil {
+				deleted = true
+				break
+			}
+		}
+
+		if !deleted {
+			return nil
+		}
+	}
+}
+
+// cleanupIptables removes only AlwaysMOTD iptables redirects. Never flush PREROUTING:
+// doing so deletes Docker's DNAT rules and breaks player source IP preservation.
 func (a *AlwaysMOTD) cleanupIptables() error {
-	// Flush all PREROUTING rules (this removes both TCP and UDP redirects)
-	command := "iptables -t nat -F PREROUTING"
-	if err := a.executeIptables(command); err != nil {
-		return errors.Wrap(err, "failed to cleanup iptables")
+	a.mu.Lock()
+	tcpRedirects := make(map[int]int, len(a.redirectedPorts))
+	for port, motdPort := range a.redirectedPorts {
+		tcpRedirects[port] = motdPort
+	}
+	udpRedirects := make(map[int]int, len(a.redirectedUDPPorts))
+	for port, motdPort := range a.redirectedUDPPorts {
+		udpRedirects[port] = motdPort
+	}
+	a.mu.Unlock()
+
+	for port, motdPort := range tcpRedirects {
+		a.deleteTCPRedirectRule(port, motdPort)
+	}
+	for port, motdPort := range udpRedirects {
+		a.deleteUDPRedirectRules(port, motdPort)
+	}
+
+	if err := a.deleteIptablesRulesByComment("nat", "PREROUTING"); err != nil {
+		return err
+	}
+	if err := a.deleteIptablesRulesByComment("nat", "OUTPUT"); err != nil {
+		return err
 	}
 
 	a.mu.Lock()
