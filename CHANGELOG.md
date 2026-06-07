@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.7.4
+
+### Improved
+- Upstream with pelican/upstream! (implement security changes from ptero 1.12.3)
+- Upstream with pelican/upstream! (parser correctness fixes (integer precision, nil safety, multi-variable lookup, type coercion, IfValue, XML duplicates))
+
 ## v1.3.7.3
 
 ### Added
