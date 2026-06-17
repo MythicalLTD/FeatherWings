@@ -44,7 +44,7 @@ func getDownloadBackup(c *gin.Context) {
 	}
 
 	// Get the server using the UUID from the token.
-	if _, ok := manager.Get(token.ServerUuid); !ok {
+	if _, ok := manager.Get(token.ServerUuid); !ok || !token.HasScope(tokens.BackupDownload) {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 			"error": "The requested resource was not found on this server.",
 		})
@@ -109,7 +109,7 @@ func getDownloadFile(c *gin.Context) {
 	}
 
 	s, ok := manager.Get(token.ServerUuid)
-	if !ok || !token.IsUniqueRequest() {
+	if !ok || !token.IsUniqueRequest() || !token.HasScope(tokens.FileDownload) {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 			"error": "The requested resource was not found on this server.",
 		})
