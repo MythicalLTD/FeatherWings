@@ -354,6 +354,11 @@ type CrashDetection struct {
 	// to be automatically restarted, this value is used to prevent servers from
 	// becoming stuck in a boot-loop after multiple consecutive crashes.
 	Timeout int `default:"60" json:"timeout"`
+
+	// MaxRestarts specifies how many times a server may be automatically restarted
+	// after a crash before Wings stops attempting to recover it. The counter resets
+	// when the server is manually started. A value of 0 disables this limit.
+	MaxRestarts int `default:"0" yaml:"max_restarts"`
 }
 
 type Backups struct {

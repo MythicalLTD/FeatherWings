@@ -24,6 +24,20 @@ func IsTooFrequentCrashError(err error) bool {
 	return ok
 }
 
+type crashMaxRestartsReached struct {
+	limit int
+}
+
+func (e *crashMaxRestartsReached) Error() string {
+	return "server has reached the maximum number of automatic restarts"
+}
+
+func IsMaxRestartsCrashError(err error) bool {
+	_, ok := err.(*crashMaxRestartsReached)
+
+	return ok
+}
+
 type serverDoesNotExist struct{}
 
 func (e *serverDoesNotExist) Error() string {

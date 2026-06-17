@@ -19,6 +19,10 @@ type CrashHandler struct {
 
 	// Tracks the time of the last server crash event.
 	lastCrash time.Time
+
+	// Tracks how many times the server has been automatically restarted since it was
+	// last manually started.
+	consecutiveRestarts int
 }
 
 // Returns the time of the last crash for this server instance.
@@ -33,6 +37,29 @@ func (cd *CrashHandler) LastCrashTime() time.Time {
 func (cd *CrashHandler) SetLastCrash(t time.Time) {
 	cd.mu.Lock()
 	cd.lastCrash = t
+	cd.mu.Unlock()
+}
+
+// ConsecutiveRestarts returns the number of automatic restarts since the server was
+// last manually started.
+func (cd *CrashHandler) ConsecutiveRestarts() int {
+	cd.mu.RLock()
+	defer cd.mu.RUnlock()
+
+	return cd.consecutiveRestarts
+}
+
+// IncrementConsecutiveRestarts increments the automatic restart counter for a server.
+func (cd *CrashHandler) IncrementConsecutiveRestarts() {
+	cd.mu.Lock()
+	cd.consecutiveRestarts++
+	cd.mu.Unlock()
+}
+
+// ResetConsecutiveRestarts clears the automatic restart counter for a server.
+func (cd *CrashHandler) ResetConsecutiveRestarts() {
+	cd.mu.Lock()
+	cd.consecutiveRestarts = 0
 	cd.mu.Unlock()
 }
 
@@ -83,14 +110,20 @@ func (s *Server) handleServerCrash() error {
 
 	c := s.crasher.LastCrashTime()
 	timeout := config.Get().System.CrashDetection.Timeout
+	maxRestarts := config.Get().System.CrashDetection.MaxRestarts
 
 	// If the last crash time was within the last `timeout` seconds we do not want to perform
 	// an automatic reboot of the process. Return an error that can be handled.
 	//
 	// If timeout is set to 0, always reboot the server (this is probably a terrible idea, but some people want it)
-	if timeout != 0 && !c.IsZero() && c.Add(time.Second*time.Duration(config.Get().System.CrashDetection.Timeout)).After(time.Now()) {
+	if timeout != 0 && !c.IsZero() && c.Add(time.Second*time.Duration(timeout)).After(time.Now()) {
 		s.PublishConsoleOutputFromDaemon("Aborting automatic restart, last crash occurred less than " + strconv.Itoa(timeout) + " seconds ago.")
 		return &crashTooFrequent{}
+	}
+
+	if maxRestarts > 0 && s.crasher.ConsecutiveRestarts() >= maxRestarts {
+		s.PublishConsoleOutputFromDaemon("Aborting automatic restart, maximum automatic restart limit of " + strconv.Itoa(maxRestarts) + " has been reached.")
+		return &crashMaxRestartsReached{limit: maxRestarts}
 	}
 
 	// Log that the server has crashed
@@ -101,6 +134,7 @@ func (s *Server) handleServerCrash() error {
 	})
 
 	s.crasher.SetLastCrash(time.Now())
+	s.crasher.IncrementConsecutiveRestarts()
 
-	return errors.Wrap(s.HandlePowerAction(PowerActionStart), "failed to start server after crash detection")
+	return errors.Wrap(s.handlePowerAction(PowerActionStart, true), "failed to start server after crash detection")
 }

@@ -404,6 +404,8 @@ func (s *Server) OnStateChange() {
 			if err := server.handleServerCrash(); err != nil {
 				if IsTooFrequentCrashError(err) {
 					server.Log().Info("did not restart server after crash; occurred too soon after the last")
+				} else if IsMaxRestartsCrashError(err) {
+					server.Log().Info("did not restart server after crash; maximum automatic restart limit reached")
 				} else {
 					s.PublishConsoleOutputFromDaemon("Server crash was detected but an error occurred while handling it.")
 					server.Log().WithField("error", err).Error("failed to handle server crash")

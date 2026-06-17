@@ -114,6 +114,13 @@ definitions:
           to be automatically restarted, this value is used to prevent servers from
           becoming stuck in a boot-loop after multiple consecutive crashes.
         type: integer
+      maxRestarts:
+        default: 0
+        description: |-
+          MaxRestarts specifies how many times a server may be automatically restarted
+          after a crash before Wings stops attempting to recover it. The counter resets
+          when the server is manually started. A value of 0 disables this limit.
+        type: integer
     type: object
   config.DocsConfiguration:
     properties:

@@ -546,6 +546,12 @@ func generateConfigSchema() []ConfigSchemaField {
 							Description: "Timeout between crashes in seconds",
 							Default:     60,
 						},
+						{
+							Key:         "max_restarts",
+							Type:        "integer",
+							Description: "Maximum automatic restarts after a crash before recovery is stopped (0 = unlimited)",
+							Default:     0,
+						},
 					},
 				},
 				{

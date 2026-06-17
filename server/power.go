@@ -54,6 +54,10 @@ func (s *Server) ExecutingPowerAction() bool {
 // function rather than making direct calls to the start/stop/restart functions on the
 // environment struct.
 func (s *Server) HandlePowerAction(action PowerAction, waitSeconds ...int) error {
+	return s.handlePowerAction(action, false, waitSeconds...)
+}
+
+func (s *Server) handlePowerAction(action PowerAction, fromCrashDetection bool, waitSeconds ...int) error {
 	if s.IsInstalling() || s.IsTransferring() || s.IsRestoring() {
 		if s.IsRestoring() {
 			return ErrServerIsRestoring
@@ -126,6 +130,10 @@ func (s *Server) HandlePowerAction(action PowerAction, waitSeconds ...int) error
 			return ErrIsRunning
 		}
 
+		if !fromCrashDetection {
+			s.crasher.ResetConsecutiveRestarts()
+		}
+
 		// Run the pre-boot logic for the server before processing the environment start.
 		if err := s.onBeforeStart(); err != nil {
 			return err
@@ -151,6 +159,10 @@ func (s *Server) HandlePowerAction(action PowerAction, waitSeconds ...int) error
 
 		if action == PowerActionStop {
 			return nil
+		}
+
+		if !fromCrashDetection {
+			s.crasher.ResetConsecutiveRestarts()
 		}
 
 		// Now actually try to start the process by executing the normal pre-boot logic.

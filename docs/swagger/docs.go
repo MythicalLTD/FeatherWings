@@ -3589,6 +3589,11 @@ const docTemplate = `{
                     "description": "Timeout specifies the timeout between crashes that will not cause the server\nto be automatically restarted, this value is used to prevent servers from\nbecoming stuck in a boot-loop after multiple consecutive crashes.",
                     "type": "integer",
                     "default": 60
+                },
+                "maxRestarts": {
+                    "description": "MaxRestarts specifies how many times a server may be automatically restarted\nafter a crash before Wings stops attempting to recover it. The counter resets\nwhen the server is manually started. A value of 0 disables this limit.",
+                    "type": "integer",
+                    "default": 0
                 }
             }
         },

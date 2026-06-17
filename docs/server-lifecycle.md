@@ -369,6 +369,7 @@ system:
     enabled: true
     detect_clean_exit_as_crash: true
     timeout: 60  # seconds between crashes before marking as too frequent
+    max_restarts: 0  # maximum automatic restarts after a crash before recovery stops (0 = unlimited)
 ```
 
 ---
@@ -455,6 +456,7 @@ system:
     enabled: true
     detect_clean_exit_as_crash: true
     timeout: 60
+    max_restarts: 0
 ```
 
 #### Docker Configuration
