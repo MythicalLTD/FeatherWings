@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.7.5
+
+### Added
+
+- Disk quota support for ext4/xfs using Linux project quotas (pelican/upstream!)
+- Quiet config option to suppress the startup logo and reduce log verbosity (pelican/upstream!)
+- Shared storage pool transfers to skip file copy when nodes share the same volume (pelican/upstream!)
+
+### Improved
+
+- Upstream with pelican/upstream! (JWT scope security for download, upload, transfer, websocket, and backup tokens)
+- Upstream with pelican/upstream! (64 MB max config file parse size to prevent OOM from oversized configs)
+- Upstream with pelican/upstream! (conditional block I/O weight only when cgroup supports io.weight)
+- Upstream with pelican/upstream! (mkdirAll returns created directories and chowns new parents to the server user)
+- Upstream with pelican/upstream! (close Docker inspect and archive file descriptors after use)
+
+### Fixed
+
+- Upstream with pelican/upstream! (do not follow symlinks when performing chmod operations)
+- Upstream with pelican/upstream! (SFTP subsystem payload length check before slicing)
+- Upstream with pelican/upstream! (directories created via panel are no longer owned by root:root)
+- Upstream with pelican/upstream! (remove quota projects when a server is deleted)
+- Upstream with pelican/upstream! (remove machine-id file when a server is deleted)
+- Upstream with pelican/upstream! (use golang.org/x/sys/unix for errno and statfs handling)
+
 ## v1.3.7.4
 
 ### Improved

@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/apex/log"
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/environment"
+	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 )
 
 type PowerAction string
@@ -198,11 +200,17 @@ func (s *Server) onBeforeStart() error {
 
 	// If a server has unlimited disk space, we don't care enough to block the startup to check remaining.
 	// However, we should trigger a size anyway, as it'd be good to kick it off for other processes.
-	//
-	// For limited disk, use a non-blocking check (cached or stale usage + background refresh). A full
-	// filesystem walk on every start is prohibitive on servers with very large file counts; writes
-	// still enforce quota via the filesystem layer.
-	if s.DiskSpace() <= 0 {
+	if config.Get().System.Quotas.Enabled {
+		s.PublishConsoleOutputFromDaemon("checking disk space via quota, just a second")
+		used, err := quotas.GetQuota(s.Config().Uuid)
+		if err != nil {
+			log.WithField("error", err).Error("failed to get quota for server")
+			return err
+		}
+		if s.DiskSpace() > 0 && used >= s.DiskSpace() {
+			return errors.New("currently used disk space is more than allocated")
+		}
+	} else if s.DiskSpace() <= 0 {
 		s.Filesystem().HasSpaceAvailable(true)
 	} else {
 		s.PublishConsoleOutputFromDaemon("Checking server disk space usage (cached; refreshing in background if needed)...")

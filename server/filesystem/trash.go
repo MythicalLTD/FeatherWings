@@ -46,7 +46,7 @@ func trashItemPath(id string) string {
 }
 
 func (fs *Filesystem) ensureTrashLayout() error {
-	if err := fs.unixFS.MkdirAll(path.Join(TrashDirName, "items"), 0o755); err != nil {
+	if _, err := fs.unixFS.MkdirAll(path.Join(TrashDirName, "items"), 0o755); err != nil {
 		return err
 	}
 	indexPath := trashIndexPath()
@@ -91,7 +91,7 @@ func (fs *Filesystem) readTrashIndexLocked() (trashIndex, error) {
 func (fs *Filesystem) writeTrashIndex(idx trashIndex) error {
 	trashIndexMu.Lock()
 	defer trashIndexMu.Unlock()
-	if err := fs.unixFS.MkdirAll(path.Join(TrashDirName, "items"), 0o755); err != nil {
+	if _, err := fs.unixFS.MkdirAll(path.Join(TrashDirName, "items"), 0o755); err != nil {
 		return err
 	}
 	return fs.writeTrashIndexFile(idx)
@@ -446,7 +446,7 @@ func (fs *Filesystem) RestoreTrashEntries(ids []string, overwrite bool) error {
 
 		destDir := path.Dir(dest)
 		if destDir != "/" && destDir != "." {
-			if err := fs.unixFS.MkdirAll(destDir, 0o755); err != nil {
+			if _, err := fs.unixFS.MkdirAll(destDir, 0o755); err != nil {
 				rollbackMoves()
 				return err
 			}

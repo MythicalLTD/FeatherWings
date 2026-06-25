@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/gammazero/workerpool"
 	"github.com/mitchellh/colorstring"
+	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -111,7 +112,9 @@ func isDockerSnap() bool {
 }
 
 func rootCmdRun(cmd *cobra.Command, _ []string) {
-	printLogo()
+	if config.Get().Debug || !config.Get().Quiet {
+		printLogo()
+	}
 	log.Debug("running in debug mode")
 	log.WithField("config_file", configPath).Info("loading configuration from file")
 
@@ -186,6 +189,16 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	if err := database.Initialize(); err != nil {
 		log.WithField("error", err).Fatal("failed to initialize database")
 		return
+	}
+
+	// if quotas are enabled ensure they are added and enabled.
+	if runtime.GOOS == "linux" && config.Get().System.Quotas.Enabled {
+		log.Info("validating system is configured for quotas")
+		if !quotas.IsSupportedFS() {
+			log.Fatal("failed to validate quota configuration")
+		}
+
+		log.Info("quotas are supported and enabled")
 	}
 
 	manager, err := server.NewManager(cmd.Context(), pclient)
@@ -508,6 +521,8 @@ func initLogging() {
 	log.SetLevel(log.InfoLevel)
 	if config.Get().Debug {
 		log.SetLevel(log.DebugLevel)
+	} else if config.Get().Quiet {
+		log.SetLevel(log.WarnLevel)
 	}
 	log.SetHandler(multi.New(cli.Default, cli.New(w.File, false)))
 	log.WithField("path", p).Info("writing log files to disk")

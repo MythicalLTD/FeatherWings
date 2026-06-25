@@ -59,6 +59,10 @@ type Configuration struct {
 	// docker containers as well as in log output.
 	Uuid string `json:"uuid"`
 
+	// Pid is the database id from the panel that is guaranteed to be unique.
+	// This is used for filesystem quota project IDs.
+	Pid int `json:"id"`
+
 	Meta ConfigurationMeta `json:"meta"`
 
 	// Whether or not the server is in a suspended state. Suspended servers cannot
@@ -126,6 +130,12 @@ func (c *Configuration) GetUuid() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.Uuid
+}
+
+func (c *Configuration) GetPID() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Pid
 }
 
 func (c *Configuration) SetSuspended(s bool) {

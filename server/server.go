@@ -24,6 +24,7 @@ import (
 	"github.com/mythicalltd/featherwings/events"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/server/filesystem"
+	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 	"github.com/mythicalltd/featherwings/system"
 )
 
@@ -253,7 +254,13 @@ func (s *Server) Sync() error {
 
 	// Update the disk space limits for the server whenever the configuration for
 	// it changes.
-	s.fs.SetDiskLimit(s.DiskSpace())
+	if config.Get().System.Quotas.Enabled {
+		if err = quotas.SetQuota(s.DiskSpace(), s.ID()); err != nil {
+			return err
+		}
+	} else {
+		s.fs.SetDiskLimit(s.DiskSpace())
+	}
 
 	s.SyncWithEnvironment()
 
