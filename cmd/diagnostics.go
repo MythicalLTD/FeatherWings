@@ -20,7 +20,7 @@ var diagnosticsArgs struct {
 	IncludeEndpoints   bool
 	IncludeLogs        bool
 	ReviewBeforeUpload bool
-	MclogsURL          string
+	PasteAPIURL        string
 	LogLines           int
 }
 
@@ -35,7 +35,9 @@ func newDiagnosticsCommand() *cobra.Command {
 		Run: diagnosticsCmdRun,
 	}
 
-	command.Flags().StringVar(&diagnosticsArgs.MclogsURL, "mclogs-api-url", diagnostics.DefaultMclogsAPIURL, "the mclo.gs API endpoint to use for uploads")
+	command.Flags().StringVar(&diagnosticsArgs.PasteAPIURL, "paste-api-url", diagnostics.DefaultPasteAPIURL, "the MythicalSystems pastes (mclo.gs-compatible) API endpoint to use for uploads")
+	command.Flags().StringVar(&diagnosticsArgs.PasteAPIURL, "mclogs-api-url", diagnostics.DefaultPasteAPIURL, "deprecated: use --paste-api-url")
+	_ = command.Flags().MarkDeprecated("mclogs-api-url", "use --paste-api-url instead")
 	command.Flags().IntVar(&diagnosticsArgs.LogLines, "log-lines", DefaultLogLines, "the number of log lines to include in the report")
 
 	return command
@@ -65,7 +67,7 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 				Accessor(defaultTrueConfirmAccessor()).
 				Value(&diagnosticsArgs.IncludeLogs),
 			huh.NewConfirm().
-				Title(fmt.Sprintf("Do you want to review the collected data before uploading to %s?", diagnosticsArgs.MclogsURL)).
+				Title(fmt.Sprintf("Do you want to review the collected data before uploading to %s?", diagnosticsArgs.PasteAPIURL)).
 				Description("The data, especially the logs, might contain sensitive information, so you should review it. You will be asked again if you want to upload.").
 				Accessor(defaultTrueConfirmAccessor()).
 				Value(&diagnosticsArgs.ReviewBeforeUpload),
@@ -94,13 +96,13 @@ func diagnosticsCmdRun(*cobra.Command, []string) {
 
 	if diagnosticsArgs.ReviewBeforeUpload {
 		upload := false
-		huh.NewConfirm().Title("Upload to " + diagnosticsArgs.MclogsURL + "?").Value(&upload).Run()
+		huh.NewConfirm().Title("Upload to " + diagnosticsArgs.PasteAPIURL + "?").Value(&upload).Run()
 		if !upload {
 			return
 		}
 	}
 
-	u, err := diagnostics.UploadReport(context.Background(), diagnosticsArgs.MclogsURL, report)
+	u, err := diagnostics.UploadReport(context.Background(), diagnosticsArgs.PasteAPIURL, report)
 	if err != nil {
 		fmt.Println("Failed to upload report:", err)
 		return

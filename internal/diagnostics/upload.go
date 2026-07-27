@@ -6,21 +6,32 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 
 	"github.com/goccy/go-json"
 )
 
-const DefaultMclogsAPIURL = "https://api.featherpanel.com/1/log"
+// DefaultPasteAPIURL is the MythicalSystems pastes API (mclo.gs-compatible) endpoint used for diagnostics uploads.
+const DefaultPasteAPIURL = "https://pastes.mythicalsystems.org/log"
+
+// DefaultMclogsAPIURL is kept as an alias for backwards compatibility with existing callers and CLI flags.
+const DefaultMclogsAPIURL = DefaultPasteAPIURL
+
+const defaultPasteSource = "featherwings"
 
 var (
 	ErrMissingUploadAPIURL = errors.New("diagnostics: upload api url is required")
 	ErrInvalidUploadAPIURL = errors.New("diagnostics: upload api url is invalid")
 )
 
-type mclogsUploadResponse struct {
+type pasteUploadRequest struct {
+	Content  string `json:"content"`
+	Source   string `json:"source,omitempty"`
+	Metadata []any  `json:"metadata,omitempty"`
+}
+
+type pasteUploadResponse struct {
 	Success bool   `json:"success"`
 	ID      string `json:"id"`
 	URL     string `json:"url"`
@@ -28,7 +39,7 @@ type mclogsUploadResponse struct {
 	Error   string `json:"error"`
 }
 
-// UploadReport posts diagnostics content to the given mclogs-compatible API endpoint and returns the resulting URL.
+// UploadReport posts diagnostics content to the given mclo.gs-compatible paste API endpoint and returns the resulting URL.
 func UploadReport(ctx context.Context, apiURL string, content string) (string, error) {
 	if apiURL == "" {
 		return "", ErrMissingUploadAPIURL
@@ -39,20 +50,20 @@ func UploadReport(ctx context.Context, apiURL string, content string) (string, e
 		return "", fmt.Errorf("%w: %v", ErrInvalidUploadAPIURL, err)
 	}
 
-	formData := new(bytes.Buffer)
-	formWriter := multipart.NewWriter(formData)
-	if err := formWriter.WriteField("content", content); err != nil {
-		return "", fmt.Errorf("failed to write form field: %w", err)
-	}
-	if err := formWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to finalize form data: %w", err)
+	payload, err := json.Marshal(pasteUploadRequest{
+		Content: content,
+		Source:  defaultPasteSource,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode upload payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), formData)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload request: %w", err)
 	}
-	req.Header.Set("Content-Type", formWriter.FormDataContentType())
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -69,7 +80,7 @@ func UploadReport(ctx context.Context, apiURL string, content string) (string, e
 		return "", fmt.Errorf("upload failed with status %s: %s", res.Status, string(body))
 	}
 
-	var uploadResponse mclogsUploadResponse
+	var uploadResponse pasteUploadResponse
 	if err := json.Unmarshal(body, &uploadResponse); err != nil {
 		return "", fmt.Errorf("failed to decode upload response: %w", err)
 	}

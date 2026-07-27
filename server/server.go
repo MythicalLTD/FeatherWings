@@ -23,6 +23,7 @@ import (
 	"github.com/mythicalltd/featherwings/environment"
 	"github.com/mythicalltd/featherwings/events"
 	"github.com/mythicalltd/featherwings/remote"
+	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 	"github.com/mythicalltd/featherwings/system"
@@ -466,5 +467,16 @@ func (s *Server) RemoveAllServerBackups() error {
 	if sp == config.Get().System.BackupDirectory {
 		return errors.New("invalid server, cannot delete backup dir")
 	}
-	return os.RemoveAll(sp)
+	localErr := os.RemoveAll(sp)
+
+	// Also forget PBS snapshots for this server when PBS is enabled.
+	if config.Get().System.Backups.PBS.Enabled {
+		if err := backup.ForgetServerSnapshots(s.Context(), s.ID()); err != nil {
+			s.Log().WithField("error", err).Warn("failed to forget PBS snapshots while removing server backups")
+			if localErr == nil {
+				localErr = err
+			}
+		}
+	}
+	return localErr
 }

@@ -30,6 +30,7 @@ type AdapterType string
 const (
 	LocalBackupAdapter AdapterType = "wings"
 	S3BackupAdapter    AdapterType = "s3"
+	PBSBackupAdapter   AdapterType = "pbs"
 )
 
 // RestoreCallback is a generic restoration callback that exists for both local

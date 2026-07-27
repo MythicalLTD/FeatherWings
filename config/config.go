@@ -388,6 +388,54 @@ type Backups struct {
 
 	// RemoveBackupsOnServerDelete deletes backups associated with a server when the server is deleted
 	RemoveBackupsOnServerDelete bool `default:"true" yaml:"remove_backups_on_server_delete"`
+
+	// PBS configures the optional Proxmox Backup Server destination. When enabled,
+	// the panel may request adapter "pbs" so server files are streamed with
+	// proxmox-backup-client (pxar) instead of writing local tar.gz archives.
+	PBS PBSBackups `yaml:"pbs"`
+}
+
+// PBSBackups holds Proxmox Backup Client settings used by the "pbs" backup adapter.
+type PBSBackups struct {
+	// Enabled marks this node as capable of using PBS as a backup destination.
+	// The panel reads this via Wings config to choose adapter "pbs" automatically.
+	Enabled bool `default:"false" json:"enabled" yaml:"enabled"`
+
+	// Repository is the PBS repository string, e.g.
+	// "backup@pbs!token@pbs.example.com:datastore".
+	// Alternative component fields below may be used instead.
+	Repository string `json:"repository" yaml:"repository"`
+
+	// Server, Port, Datastore, and AuthID are optional alternatives to Repository.
+	Server    string `json:"server" yaml:"server"`
+	Port      int    `json:"port" yaml:"port"`
+	Datastore string `json:"datastore" yaml:"datastore"`
+	AuthID    string `json:"auth_id" yaml:"auth_id"`
+
+	// Password is the PBS user password or API token secret (PBS_PASSWORD).
+	Password string `json:"password" yaml:"password"`
+
+	// Fingerprint is the optional TLS fingerprint for the PBS server certificate.
+	Fingerprint string `json:"fingerprint" yaml:"fingerprint"`
+
+	// Namespace is the PBS namespace for FeatherPanel backups (default "featherpanel").
+	Namespace string `default:"featherpanel" json:"namespace" yaml:"namespace"`
+
+	// Binary is the proxmox-backup-client executable path/name.
+	Binary string `default:"proxmox-backup-client" json:"binary" yaml:"binary"`
+
+	// ArchiveName is the pxar archive name inside each snapshot (without path).
+	ArchiveName string `default:"server.pxar" json:"archive_name" yaml:"archive_name"`
+
+	// ChangeDetectionMode is passed to proxmox-backup-client (--change-detection-mode).
+	// "metadata" is recommended so unchanged files are not re-read when possible.
+	ChangeDetectionMode string `default:"metadata" json:"change_detection_mode" yaml:"change_detection_mode"`
+
+	// KeyFile is an optional client-side encryption key file path.
+	KeyFile string `json:"keyfile" yaml:"keyfile"`
+
+	// EncryptionPassword unlocks KeyFile when set (PBS_ENCRYPTION_PASSWORD).
+	EncryptionPassword string `json:"encryption_password" yaml:"encryption_password"`
 }
 
 type Transfers struct {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mythicalltd/featherwings/config"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mythicalltd/featherwings/firewall"
+	environmentDocker "github.com/mythicalltd/featherwings/environment/docker"
 	"github.com/mythicalltd/featherwings/router/downloader"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"
@@ -209,6 +211,84 @@ func postServerCommands(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// postServerContainerExec runs a shell command inside the server Docker container via docker exec.
+// @Summary Execute shell command in container
+// @Description Runs a one-shot /bin/sh -c command inside the running server container and returns stdout/stderr/exit code.
+// @Tags Servers
+// @Accept json
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param payload body router.ServerExecRequest true "Exec request"
+// @Success 200 {object} router.ServerExecResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
+// @Failure 504 {object} router.ServerExecResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/exec [post]
+func postServerContainerExec(c *gin.Context) {
+	s := ExtractServer(c)
+
+	if running, err := s.Environment.IsRunning(c.Request.Context()); err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	} else if !running {
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error": "Cannot execute shell commands on a stopped server instance.",
+		})
+		return
+	}
+
+	var data ServerExecRequest
+	if err := c.BindJSON(&data); err != nil {
+		return
+	}
+
+	data.Command = strings.TrimSpace(data.Command)
+	if data.Command == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Command cannot be blank.",
+		})
+		return
+	}
+	if len(data.Command) > 4096 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Command exceeds maximum length of 4096 characters.",
+		})
+		return
+	}
+
+	dockerEnv, ok := s.Environment.(*environmentDocker.Environment)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "Container shell execution is only supported for Docker environments.",
+		})
+		return
+	}
+
+	timeout := time.Duration(data.TimeoutSeconds) * time.Second
+	result, err := dockerEnv.Exec(c.Request.Context(), data.Command, timeout)
+	if err != nil {
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	response := ServerExecResponse{
+		ExitCode:   result.ExitCode,
+		Stdout:     result.Stdout,
+		Stderr:     result.Stderr,
+		DurationMs: result.DurationMs,
+		TimedOut:   result.TimedOut,
+	}
+
+	if result.TimedOut {
+		c.AbortWithStatusJSON(http.StatusGatewayTimeout, response)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // postServerSync triggers a re-sync of the given server against the panel.

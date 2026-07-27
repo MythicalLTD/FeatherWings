@@ -4,12 +4,16 @@
 
 ### Added
 
+- Proxmox Backup Server (PBS) backup adapter (`pbs`): stream server files with `proxmox-backup-client` (pxar) — no local tar.gz/zip when PBS is enabled; configure under `system.backups.pbs` in `config.yml`
+- `GET /api/system/backups` reports the default backup adapter and PBS status for the panel
 - Disk quota support for ext4/xfs using Linux project quotas (pelican/upstream!)
 - Quiet config option to suppress the startup logo and reduce log verbosity (pelican/upstream!)
 - Shared storage pool transfers to skip file copy when nodes share the same volume (pelican/upstream!)
+- Server container shell exec endpoint at `POST /api/servers/{server}/exec` for one-shot `/bin/sh -c` commands via Docker exec (stdout/stderr/exit code)
 
 ### Improved
 
+- Diagnostics uploads now use the MythicalSystems pastes API (`https://pastes.mythicalsystems.org/log`) with JSON payloads
 - Upstream with pelican/upstream! (JWT scope security for download, upload, transfer, websocket, and backup tokens)
 - Upstream with pelican/upstream! (64 MB max config file parse size to prevent OOM from oversized configs)
 - Upstream with pelican/upstream! (conditional block I/O weight only when cgroup supports io.weight)

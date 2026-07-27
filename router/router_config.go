@@ -568,7 +568,7 @@ func generateConfigSchema() []ConfigSchemaField {
 						{
 							Key:         "compression_level",
 							Type:        "string",
-							Description: "Compression level: none, best_speed, best_compression",
+							Description: "Compression level: none, best_speed, best_compression (local tar.gz only)",
 							Default:     "best_speed",
 						},
 						{
@@ -576,6 +576,88 @@ func generateConfigSchema() []ConfigSchemaField {
 							Type:        "boolean",
 							Description: "Delete backups when server is deleted",
 							Default:     true,
+						},
+						{
+							Key:         "pbs",
+							Type:        "object",
+							Description: "Proxmox Backup Server (PBS) destination — streams files with proxmox-backup-client (no local zip/tar.gz)",
+							Fields: []ConfigSchemaField{
+								{
+									Key:         "enabled",
+									Type:        "boolean",
+									Description: "Use PBS as the default backup destination for this node",
+									Default:     false,
+								},
+								{
+									Key:         "repository",
+									Type:        "string",
+									Description: "PBS repository (e.g. backup@pbs!token@host:datastore)",
+								},
+								{
+									Key:         "server",
+									Type:        "string",
+									Description: "PBS server hostname (alternative to repository)",
+								},
+								{
+									Key:         "port",
+									Type:        "integer",
+									Description: "PBS API port (default 8007)",
+								},
+								{
+									Key:         "datastore",
+									Type:        "string",
+									Description: "PBS datastore name (alternative to repository)",
+								},
+								{
+									Key:         "auth_id",
+									Type:        "string",
+									Description: "PBS auth id (user@realm or user@realm!token)",
+								},
+								{
+									Key:         "password",
+									Type:        "string",
+									Description: "PBS password or API token secret",
+								},
+								{
+									Key:         "fingerprint",
+									Type:        "string",
+									Description: "Optional TLS certificate fingerprint",
+								},
+								{
+									Key:         "namespace",
+									Type:        "string",
+									Description: "PBS namespace for FeatherPanel backups",
+									Default:     "featherpanel",
+								},
+								{
+									Key:         "binary",
+									Type:        "string",
+									Description: "proxmox-backup-client binary path",
+									Default:     "proxmox-backup-client",
+								},
+								{
+									Key:         "archive_name",
+									Type:        "string",
+									Description: "pxar archive name inside each snapshot",
+									Default:     "server.pxar",
+								},
+								{
+									Key:         "change_detection_mode",
+									Type:        "string",
+									Description: "legacy, data, or metadata (recommended)",
+									Default:     "metadata",
+								},
+								{
+									Key:         "keyfile",
+									Type:        "string",
+									Description: "Optional client-side encryption key file",
+								},
+								{
+									Key:         "encryption_password",
+									Type:        "string",
+									Description: "Password for the encryption key file",
+								},
+							},
 						},
 					},
 				},

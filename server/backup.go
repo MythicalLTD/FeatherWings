@@ -33,25 +33,48 @@ func (s *Server) notifyPanelOfBackup(uuid string, ad *backup.ArchiveDetails, suc
 	return nil
 }
 
-// Get all of the ignored files for a server based on its .featherpanelignore file in the root.
+// serverwideIgnoreFiles is the preferred ignore file, followed by legacy names from
+// Pelican (.pelicanignore) and Pterodactyl (.pteroignore) for migrated servers.
+var serverwideIgnoreFiles = []string{
+	".featherpanelignore",
+	".pelicanignore",
+	".pteroignore",
+}
+
+// Get all of the ignored files for a server based on its ignore file in the root.
+// Prefers .featherpanelignore, then falls back to .pelicanignore / .pteroignore.
 func (s *Server) getServerwideIgnoredFiles() (string, error) {
-	f, st, err := s.Filesystem().File(".featherpanelignore")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
+	var firstErr error
+	for _, name := range serverwideIgnoreFiles {
+		f, st, err := s.Filesystem().File(name)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
-		return "", err
+		if st.Mode()&os.ModeSymlink != 0 || st.Size() > 32*1024 {
+			// Don't read a symlinked ignore file, or a file larger than 32KiB in size.
+			_ = f.Close()
+			continue
+		}
+		b, err := io.ReadAll(f)
+		_ = f.Close()
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		return string(b), nil
 	}
-	defer f.Close()
-	if st.Mode()&os.ModeSymlink != 0 || st.Size() > 32*1024 {
-		// Don't read a symlinked ignore file, or a file larger than 32KiB in size.
-		return "", nil
+	if firstErr != nil {
+		return "", firstErr
 	}
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return "", nil
 }
 
 // Backup performs a server backup and then emits the event over the server
@@ -146,6 +169,15 @@ func (s *Server) RestoreBackup(b backup.BackupInterface, reader io.ReadCloser) (
 				return errors.WrapIf(err, "server/backup: restore: failed to wait for container stop")
 			}
 		}
+	}
+
+	// PBS (and similar) adapters can restore an entire archive directly into the
+	// server data directory without a local tar stream.
+	if dr, ok := b.(backup.DirectRestorer); ok {
+		s.Log().Info("starting direct restoration process for server backup")
+		s.Events().Publish(DaemonMessageEvent, "(restoring): restoring from Proxmox Backup Server…")
+		err = dr.RestoreDirect(s.Context(), s.Filesystem().Path())
+		return errors.WithStackIf(err)
 	}
 
 	// Attempt to restore the backup to the server by running through each entry

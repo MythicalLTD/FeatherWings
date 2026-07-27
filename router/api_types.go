@@ -24,6 +24,19 @@ type SystemSummaryResponse struct {
 	Version       string `json:"version"`
 }
 
+// SystemBackupDestinationsResponse reports available backup adapters on this node.
+type SystemBackupDestinationsResponse struct {
+	DefaultAdapter string                 `json:"default_adapter"`
+	PBS            SystemPBSBackupStatus  `json:"pbs"`
+}
+
+// SystemPBSBackupStatus is a sanitized PBS config summary (no secrets).
+type SystemPBSBackupStatus struct {
+	Enabled    bool   `json:"enabled"`
+	Namespace  string `json:"namespace"`
+	Configured bool   `json:"configured"`
+}
+
 // SelfUpdateRequest defines the payload for triggering a self-update through the API.
 type SelfUpdateRequest struct {
 	Source          string `json:"source,omitempty"`
@@ -73,6 +86,21 @@ type ServerPowerRequest struct {
 // ServerCommandsRequest contains commands to execute on a server.
 type ServerCommandsRequest struct {
 	Commands []string `json:"commands"`
+}
+
+// ServerExecRequest runs a shell command inside the server Docker container.
+type ServerExecRequest struct {
+	Command        string `json:"command"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
+// ServerExecResponse is the result of a container shell exec.
+type ServerExecResponse struct {
+	ExitCode   int    `json:"exit_code"`
+	Stdout     string `json:"stdout"`
+	Stderr     string `json:"stderr"`
+	DurationMs int64  `json:"duration_ms"`
+	TimedOut   bool   `json:"timed_out"`
 }
 
 // ServerRenameEntry represents a rename operation payload.
@@ -190,7 +218,7 @@ type ServerDenyTokenRequest struct {
 
 // ServerBackupRestoreRequest configures restore operations.
 type ServerBackupRestoreRequest struct {
-	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3"`
+	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
 	TruncateDirectory bool               `json:"truncate_directory"`
 	DownloadURL       string             `json:"download_url"`
 }
@@ -211,7 +239,7 @@ type ServerBackupListResponse struct {
 
 // ServerBackupCreateRequest defines the payload for creating a backup.
 type ServerBackupCreateRequest struct {
-	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3"`
+	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
 	UUID    string             `json:"uuid" binding:"required"`
 	Ignore  string             `json:"ignore"`
 }

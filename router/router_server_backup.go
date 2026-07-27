@@ -43,6 +43,8 @@ func postServerBackup(c *gin.Context) {
 		adapter = backup.NewLocal(client, data.UUID, s.ID(), data.Ignore)
 	case backup.S3BackupAdapter:
 		adapter = backup.NewS3(client, data.UUID, s.ID(), data.Ignore)
+	case backup.PBSBackupAdapter:
+		adapter = backup.NewPBS(client, data.UUID, s.ID(), data.Ignore)
 	default:
 		middleware.CaptureAndAbort(c, errors.New("router/backups: provided adapter is not valid: "+string(data.Adapter)))
 		return
@@ -132,6 +134,27 @@ func postServerRestoreBackup(c *gin.Context) {
 		return
 	}
 
+	if data.Adapter == backup.PBSBackupAdapter {
+		b, err := backup.LocatePBS(client, c.Param("backup"), s.ID())
+		if err != nil {
+			middleware.CaptureAndAbort(c, err)
+			return
+		}
+		go func(s *server.Server, b backup.BackupInterface, logger *log.Entry) {
+			logger.Info("starting restoration process for server backup using PBS driver")
+			if err := s.RestoreBackup(b, nil); err != nil {
+				logger.WithField("error", err).Error("failed to restore PBS backup to server")
+			}
+			s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from Proxmox Backup Server.")
+			s.Events().Publish(server.BackupRestoreCompletedEvent, "")
+			logger.Info("completed server restoration from PBS backup")
+			s.SetRestoring(false)
+		}(s, b, logger)
+		hasError = false
+		c.Status(http.StatusAccepted)
+		return
+	}
+
 	// Since this is not a local backup we need to stream the archive and then
 	// parse over the contents as we go in order to restore it to the server.
 	httpClient := http.Client{}
@@ -187,26 +210,45 @@ func postServerRestoreBackup(c *gin.Context) {
 // @Security NodeToken
 // @Router /api/servers/{server}/backup/{backup} [delete]
 func deleteServerBackup(c *gin.Context) {
-	b, _, err := backup.LocateLocal(middleware.ExtractApiClient(c), c.Param("backup"), middleware.ExtractServer(c).ID())
-	if err != nil {
-		// Just return from the function at this point if the backup was not located.
-		if errors.Is(err, os.ErrNotExist) {
-			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
-				"error": "The requested backup was not found on this server.",
-			})
+	client := middleware.ExtractApiClient(c)
+	serverID := middleware.ExtractServer(c).ID()
+	backupUUID := c.Param("backup")
+
+	// Prefer local archive when present (historical wings adapter).
+	b, _, err := backup.LocateLocal(client, backupUUID, serverID)
+	if err == nil {
+		if err := b.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
+			middleware.CaptureAndAbort(c, err)
 			return
 		}
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		middleware.CaptureAndAbort(c, err)
 		return
 	}
-	// I'm not entirely sure how likely this is to happen, however if we did manage to
-	// locate the backup previously and it is now missing when we go to delete, just
-	// treat it as having been successful, rather than returning a 404.
-	if err := b.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		middleware.CaptureAndAbort(c, err)
-		return
+
+	// Fall back to PBS when enabled and a matching snapshot exists.
+	if config.Get().System.Backups.PBS.Enabled {
+		pb, perr := backup.LocatePBS(client, backupUUID, serverID)
+		if perr == nil {
+			if err := pb.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
+				middleware.CaptureAndAbort(c, err)
+				return
+			}
+			c.Status(http.StatusNoContent)
+			return
+		}
+		if !errors.Is(perr, os.ErrNotExist) {
+			middleware.CaptureAndAbort(c, perr)
+			return
+		}
 	}
-	c.Status(http.StatusNoContent)
+
+	c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+		"error": "The requested backup was not found on this server.",
+	})
 }
 
 // getServerBackups lists local backups for the specified server.

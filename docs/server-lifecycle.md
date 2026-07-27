@@ -436,6 +436,7 @@ sequenceDiagram
 | `/api/servers/:id/reinstall` | POST | Reinstall server |
 | `/api/servers/:id/logs` | GET | Get console logs |
 | `/api/servers/:id/commands` | POST | Send console command |
+| `/api/servers/:id/exec` | POST | Run shell command via Docker exec |
 | `/api/servers/:id/ws` | GET | WebSocket connection |
 
 ---

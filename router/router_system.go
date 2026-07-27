@@ -63,6 +63,30 @@ func getSystemInformation(c *gin.Context) {
 	})
 }
 
+// getSystemBackupDestinations reports which backup adapters this node supports.
+// @Summary Get backup destinations
+// @Description Returns the default backup adapter and PBS configuration status for this Wings node.
+// @Tags System
+// @Produce json
+// @Success 200 {object} SystemBackupDestinationsResponse
+// @Security NodeToken
+// @Router /api/system/backups [get]
+func getSystemBackupDestinations(c *gin.Context) {
+	pbs := config.Get().System.Backups.PBS
+	adapter := "wings"
+	if pbs.Enabled {
+		adapter = "pbs"
+	}
+	c.JSON(http.StatusOK, SystemBackupDestinationsResponse{
+		DefaultAdapter: adapter,
+		PBS: SystemPBSBackupStatus{
+			Enabled:   pbs.Enabled,
+			Namespace: pbs.Namespace,
+			Configured: strings.TrimSpace(pbs.Repository) != "" || strings.TrimSpace(pbs.Datastore) != "",
+		},
+	})
+}
+
 // getDiagnostics returns diagnostic output to help debug the daemon.
 // @Summary Generate diagnostics bundle
 // @Description Returns plain-text diagnostics output by default. Use include_endpoints to append HTTP endpoint metadata and include_logs to attach recent logs. Provide format=url to upload the report and receive a shortened URL instead of the raw content.
@@ -120,7 +144,7 @@ func getDiagnostics(c *gin.Context) {
 	case "", "text", "raw":
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(report))
 	case "url":
-		uploadAPIURL := c.DefaultQuery("upload_api_url", diagnostics.DefaultMclogsAPIURL)
+		uploadAPIURL := c.DefaultQuery("upload_api_url", diagnostics.DefaultPasteAPIURL)
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
 
