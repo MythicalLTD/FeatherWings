@@ -285,11 +285,22 @@ func (s *Server) Sync() error {
 // can be called from scoped where the server may not be fully initialized,
 // therefore other things like the filesystem and environment may not exist yet.
 func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) error {
+	prevEnabled, prevDirectory := s.Config().GetFastDL()
+
 	c := Configuration{
 		CrashDetectionEnabled: config.Get().System.CrashDetection.CrashDetectionEnabled,
 	}
 	if err := json.Unmarshal(cfg.Settings, &c); err != nil {
 		return errors.WithStackIf(err)
+	}
+
+	// Older panels omit fastdl from settings; preserve in-memory FastDL across Sync/restart.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(cfg.Settings, &raw); err == nil {
+		if _, ok := raw["fastdl"]; !ok {
+			c.FastDL.Enabled = prevEnabled
+			c.FastDL.Directory = prevDirectory
+		}
 	}
 
 	s.cfg.mu.Lock()

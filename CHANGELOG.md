@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.7.6 
+
+### Fixed
+
+- PBS backups that reported **0 bytes** to the panel now fall back to parsing `proxmox-backup-client` upload stats (`had to backup … of <size>`) when snapshot-list size is missing.
+- PBS default archive name is now `root.pxar` (like PVE CT backups) so PBS UI shows `root.pxar.didx` for zip-download of the full archive; restore still tries `server.pxar` for legacy snapshots.
+- FastDL public URLs now use `system.fastdl.public_hostname` (node FQDN) and the FastDL bind port instead of the panel hostname / Wings API port.
+- FastDL per-server enabled/directory from the Panel is applied on Sync so FastDL survives server restart/power cycles; older panels that omit `fastdl` no longer wipe in-memory FastDL state.
+
 ## v1.3.7.5
 
 ### Added

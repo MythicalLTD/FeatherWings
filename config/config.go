@@ -88,6 +88,10 @@ type FastDLConfiguration struct {
 	// The bind port for the nginx FastDL server.
 	Port int `default:"80" json:"bind_port" yaml:"bind_port"`
 
+	// PublicHostname is the hostname clients use in sv_downloadurl (node FQDN).
+	// When empty, falls back to extracting a host from PanelLocation (legacy).
+	PublicHostname string `json:"public_hostname" yaml:"public_hostname"`
+
 	// NginxConfigPath is the path where nginx config files will be written.
 	// Defaults to /etc/nginx/sites-available/featherwings-fastdl
 	NginxConfigPath string `default:"/etc/nginx/sites-available/featherwings-fastdl" json:"nginx_config_path" yaml:"nginx_config_path"`
@@ -425,7 +429,8 @@ type PBSBackups struct {
 	Binary string `default:"proxmox-backup-client" json:"binary" yaml:"binary"`
 
 	// ArchiveName is the pxar archive name inside each snapshot (without path).
-	ArchiveName string `default:"server.pxar" json:"archive_name" yaml:"archive_name"`
+	// Defaults to root.pxar so PBS file browser matches PVE CT backups (root.pxar.didx).
+	ArchiveName string `default:"root.pxar" json:"archive_name" yaml:"archive_name"`
 
 	// ChangeDetectionMode is passed to proxmox-backup-client (--change-detection-mode).
 	// "metadata" is recommended so unchanged files are not re-read when possible.

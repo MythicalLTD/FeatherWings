@@ -52,19 +52,22 @@ func getServerFastDL(c *gin.Context) {
 	if cfg.FastDL.Enabled {
 		wingsCfg := config.Get()
 		fastdlCfg := wingsCfg.System.FastDL
-		
-		// FastDL uses HTTP only (no SSL) via nginx
-		baseURL := strings.TrimSuffix(wingsCfg.PanelLocation, "/api")
-		// Extract hostname from panel location
-		panelURL := strings.TrimPrefix(baseURL, "http://")
-		panelURL = strings.TrimPrefix(panelURL, "https://")
-		if idx := strings.Index(panelURL, "/"); idx > 0 {
-			panelURL = panelURL[:idx]
+
+		hostname := strings.TrimSpace(fastdlCfg.PublicHostname)
+		if hostname == "" {
+			// Legacy fallback: extract hostname from panel location
+			baseURL := strings.TrimSuffix(wingsCfg.PanelLocation, "/api")
+			panelURL := strings.TrimPrefix(baseURL, "http://")
+			panelURL = strings.TrimPrefix(panelURL, "https://")
+			if idx := strings.Index(panelURL, "/"); idx > 0 {
+				panelURL = panelURL[:idx]
+			}
+			hostname = panelURL
 		}
-		
-		// Build URL: http://hostname:port/{server-uuid}/{directory}
-		response.URL = "http://" + panelURL
-		if fastdlCfg.Port != 80 {
+
+		// FastDL nginx serves HTTP; omit :80 from the public URL
+		response.URL = "http://" + hostname
+		if fastdlCfg.Port != 80 && fastdlCfg.Port > 0 {
 			response.URL += ":" + fmt.Sprintf("%d", fastdlCfg.Port)
 		}
 		response.URL += "/" + s.ID()
@@ -74,7 +77,7 @@ func getServerFastDL(c *gin.Context) {
 
 		// Build a helpful example command that can be shown in the Panel.
 		// This is intentionally generic and matches common Source-engine usage.
-		// Example: sv_downloadurl "http://example.com:80/uuid/csgo"
+		// Example: sv_downloadurl "http://node.example.com/uuid/csgo"
 		response.Command = fmt.Sprintf(`sv_downloadurl "%s"`, response.URL)
 	}
 

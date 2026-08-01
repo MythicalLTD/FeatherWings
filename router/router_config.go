@@ -638,8 +638,8 @@ func generateConfigSchema() []ConfigSchemaField {
 								{
 									Key:         "archive_name",
 									Type:        "string",
-									Description: "pxar archive name inside each snapshot",
-									Default:     "server.pxar",
+									Description: "pxar archive name inside each snapshot (root.pxar matches PVE CT backups)",
+									Default:     "root.pxar",
 								},
 								{
 									Key:         "change_detection_mode",

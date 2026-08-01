@@ -102,9 +102,11 @@ type serverConfig struct {
 func buildNginxConfig(cfg *config.Configuration, servers []serverConfig) string {
 	fastdlCfg := cfg.System.FastDL
 
-	// Determine server name - use panel location hostname or default
-	serverName := "example.website.ro" // Default from user's example
-	if panelURL := cfg.PanelLocation; panelURL != "" {
+	// Determine server name - prefer FastDL public hostname (node FQDN), else panel host
+	serverName := "localhost"
+	if hostname := strings.TrimSpace(fastdlCfg.PublicHostname); hostname != "" {
+		serverName = hostname
+	} else if panelURL := cfg.PanelLocation; panelURL != "" {
 		// Extract hostname from panel URL
 		panelURL = strings.TrimPrefix(panelURL, "http://")
 		panelURL = strings.TrimPrefix(panelURL, "https://")

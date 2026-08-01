@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +35,11 @@ const (
 	pbsBackupType = "ct"
 
 	// pbsArchiveDefault is used when config does not set archive_name.
-	pbsArchiveDefault = "server.pxar"
+	// Named root.pxar so PBS UI matches PVE CT backups (root.pxar.didx selectable for zip download).
+	pbsArchiveDefault = "root.pxar"
+
+	// pbsArchiveLegacy is the previous default; still accepted on restore.
+	pbsArchiveLegacy = "server.pxar"
 )
 
 // PBSBackup streams server files to Proxmox Backup Server via proxmox-backup-client.
@@ -203,7 +210,8 @@ func (b *PBSBackup) Generate(ctx context.Context, fsys *filesystem.Filesystem, i
 	}
 	b.log().WithField("output", string(out)).Debug("pbs backup command finished")
 
-	snap := parseSnapshotFromBackupOutput(string(out), b.ServerId())
+	outStr := string(out)
+	snap := parseSnapshotFromBackupOutput(outStr, b.ServerId())
 	var size int64
 	if snap == "" {
 		snap, size, err = b.newestSnapshot(ctx)
@@ -211,14 +219,14 @@ func (b *PBSBackup) Generate(ctx context.Context, fsys *filesystem.Filesystem, i
 			return nil, errors.Wrap(err, "backup: failed to resolve created PBS snapshot")
 		}
 	} else {
-		// Refresh size from snapshot list when possible.
-		if snaps, lerr := b.listSnapshots(ctx); lerr == nil {
-			for _, s := range snaps {
-				if s.fullPath(b.ServerId()) == snap {
-					size = s.Size
-					break
-				}
-			}
+		size = b.sizeFromSnapshotList(ctx, snap)
+	}
+	// Snapshot-list size is often missing/zero; parse client upload stats as fallback.
+	// Prefer logical size ("of X"), fall back to compressed when logical is absent.
+	if size <= 0 {
+		if parsed, ok := parseSizeFromBackupOutput(outStr); ok {
+			size = parsed
+			b.log().WithField("size", size).Debug("pbs backup size taken from client output")
 		}
 	}
 	b.snapshot = snap
@@ -296,37 +304,39 @@ func (b *PBSBackup) RestoreDirect(ctx context.Context, dest string) error {
 		b.snapshot = snap
 		b.size = size
 	}
-	archiveName := cfg.ArchiveName
-	if archiveName == "" {
-		archiveName = pbsArchiveDefault
-	}
-	if !strings.HasSuffix(archiveName, ".pxar") {
-		archiveName += ".pxar"
-	}
-
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return errors.Wrap(err, "backup: failed to prepare PBS restore destination")
 	}
 
-	args := []string{"restore", snap, archiveName, dest}
-	args = append(args, b.repoArgs(cfg)...)
-	if ns := strings.TrimSpace(cfg.Namespace); ns != "" {
-		args = append(args, "--ns", ns)
-	}
-	if kf := strings.TrimSpace(cfg.KeyFile); kf != "" {
-		args = append(args, "--keyfile", kf)
-	}
+	var lastOut []byte
+	var lastErr error
+	for _, archiveName := range pbsArchiveCandidates(cfg.ArchiveName) {
+		args := []string{"restore", snap, archiveName, dest}
+		args = append(args, b.repoArgs(cfg)...)
+		if ns := strings.TrimSpace(cfg.Namespace); ns != "" {
+			args = append(args, "--ns", ns)
+		}
+		if kf := strings.TrimSpace(cfg.KeyFile); kf != "" {
+			args = append(args, "--keyfile", kf)
+		}
 
-	b.log().WithFields(log.Fields{
-		"snapshot": snap,
-		"dest":     dest,
-	}).Info("restoring PBS backup to server directory")
+		b.log().WithFields(log.Fields{
+			"snapshot": snap,
+			"archive":  archiveName,
+			"dest":     dest,
+		}).Info("restoring PBS backup to server directory")
 
-	out, err := b.runClient(ctx, cfg, args...)
-	if err != nil {
-		return errors.Wrap(err, "backup: proxmox-backup-client restore failed: "+string(out))
+		out, err := b.runClient(ctx, cfg, args...)
+		if err == nil {
+			return nil
+		}
+		lastOut, lastErr = out, err
+		b.log().WithFields(log.Fields{
+			"archive": archiveName,
+			"error":   err.Error(),
+		}).Debug("pbs restore attempt failed; trying next archive name")
 	}
-	return nil
+	return errors.Wrap(lastErr, "backup: proxmox-backup-client restore failed: "+string(lastOut))
 }
 
 // ForgetServerSnapshots removes every PBS snapshot in this server's backup group.
@@ -617,6 +627,122 @@ func parseIgnorePatterns(ignore string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// pbsArchiveCandidates returns archive names to try for backup/restore.
+// Configured name first, then root.pxar / server.pxar for PVE parity and legacy snapshots.
+func pbsArchiveCandidates(configured string) []string {
+	name := strings.TrimSpace(configured)
+	if name == "" {
+		name = pbsArchiveDefault
+	}
+	if !strings.HasSuffix(name, ".pxar") {
+		name += ".pxar"
+	}
+	seen := map[string]struct{}{name: {}}
+	out := []string{name}
+	for _, alt := range []string{pbsArchiveDefault, pbsArchiveLegacy} {
+		if _, ok := seen[alt]; ok {
+			continue
+		}
+		seen[alt] = struct{}{}
+		out = append(out, alt)
+	}
+	return out
+}
+
+func (b *PBSBackup) sizeFromSnapshotList(ctx context.Context, snap string) int64 {
+	snaps, err := b.listSnapshots(ctx)
+	if err != nil {
+		return 0
+	}
+	for _, s := range snaps {
+		path := s.fullPath(b.ServerId())
+		if path == snap || strings.HasSuffix(snap, path) || strings.HasSuffix(path, snap) {
+			if s.Size > 0 {
+				return s.Size
+			}
+		}
+		// Match on timestamp suffix when path formatting differs slightly.
+		if i := strings.LastIndex(snap, "/"); i >= 0 {
+			ts := snap[i+1:]
+			if strings.HasSuffix(path, "/"+ts) && s.Size > 0 {
+				return s.Size
+			}
+		}
+	}
+	return 0
+}
+
+// Matches:
+//
+//	name.pxar: had to backup 4 MiB of 10.943 GiB (159 B compressed) in 49.30 s ...
+//	name.pxar: had to backup 78.847 MiB of 78.847 MiB (compressed 6.68 MiB) in 0.66s
+var (
+	pbsHadToBackupRe = regexp.MustCompile(`(?i)had to backup\s+([0-9.]+\s*[KMGTPE]?i?B)\s+of\s+([0-9.]+\s*[KMGTPE]?i?B)(?:\s*\((?:compressed\s+)?([0-9.]+\s*[KMGTPE]?i?B)\s*(?:compressed)?\))?`)
+	pbsHumanByteRe   = regexp.MustCompile(`(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPE]?i?B)\s*$`)
+)
+
+// parseSizeFromBackupOutput extracts the logical archive size from client stats.
+// Prefers the "of <size>" (total) value; falls back to compressed size when present.
+func parseSizeFromBackupOutput(output string) (int64, bool) {
+	var bestLogical, bestCompressed int64
+	sc := bufio.NewScanner(strings.NewReader(output))
+	for sc.Scan() {
+		m := pbsHadToBackupRe.FindStringSubmatch(sc.Text())
+		if m == nil {
+			continue
+		}
+		// m[2] = logical "of X"; m[3] = compressed (optional)
+		if n, ok := parseHumanBytes(m[2]); ok && n > bestLogical {
+			bestLogical = n
+		}
+		if len(m) > 3 && m[3] != "" {
+			if n, ok := parseHumanBytes(m[3]); ok && n > bestCompressed {
+				bestCompressed = n
+			}
+		}
+	}
+	if bestLogical > 0 {
+		return bestLogical, true
+	}
+	if bestCompressed > 0 {
+		return bestCompressed, true
+	}
+	return 0, false
+}
+
+// parseHumanBytes parses PBS HumanByte strings such as "78.847 MiB", "10.943 GiB", "159 B".
+func parseHumanBytes(s string) (int64, bool) {
+	m := pbsHumanByteRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return 0, false
+	}
+	val, err := strconv.ParseFloat(m[1], 64)
+	if err != nil || val < 0 {
+		return 0, false
+	}
+	unit := strings.ToLower(m[2])
+	mult := float64(1)
+	switch unit {
+	case "b":
+		mult = 1
+	case "kib", "kb":
+		mult = 1024
+	case "mib", "mb":
+		mult = 1024 * 1024
+	case "gib", "gb":
+		mult = 1024 * 1024 * 1024
+	case "tib", "tb":
+		mult = 1024 * 1024 * 1024 * 1024
+	case "pib", "pb":
+		mult = 1024 * 1024 * 1024 * 1024 * 1024
+	case "eib", "eb":
+		mult = 1024 * 1024 * 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, false
+	}
+	return int64(math.Round(val * mult)), true
 }
 
 // parseSnapshotFromBackupOutput extracts "ct/<id>/<timestamp>" from client logs.
