@@ -242,7 +242,7 @@ func (s *Server) onConsoleOutput(data []byte) {
 		stop := processConfiguration.Stop
 
 		if stop.Type == remote.ProcessStopCommand && bytes.Equal(v, []byte(stop.Value)) {
-			s.Environment.SetState(environment.ProcessOfflineState)
+			s.Environment.SetState(environment.ProcessStoppingState)
 		}
 	}
 }

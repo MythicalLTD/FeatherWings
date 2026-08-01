@@ -13,6 +13,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/apex/log"
 	"github.com/buger/jsonparser"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	dockerImage "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
@@ -59,22 +60,54 @@ func (e *Environment) Attach(ctx context.Context) error {
 	}
 
 	// Set the stream again with the container.
-	if st, err := e.client.ContainerAttach(ctx, e.Id, opts); err != nil {
+	st, err := e.client.ContainerAttach(ctx, e.Id, opts)
+	if err != nil {
 		return errors.WrapIf(err, "environment/docker: error while attaching to container")
-	} else {
-		e.SetStream(&st)
 	}
+	// Keep a local pointer so cleanup only affects THIS attach session. An older
+	// attach goroutine must not clear a newer stream or force offline after a restart.
+	stream := &st
+	e.SetStream(stream)
 
-	go func() {
+	go func(stream *types.HijackedResponse) {
 		// Don't use the context provided to the function, that'll cause the polling to
 		// exit unexpectedly. We want a custom context for this, the one passed to the
 		// function is to avoid a hang situation when trying to attach to a container.
 		pollCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		defer e.stream.Close()
+		defer stream.Close()
 		defer func() {
+			e.mu.Lock()
+			ownsStream := e.stream == stream
+			if ownsStream {
+				e.stream = nil
+			}
+			e.mu.Unlock()
+
+			// A superseded attach must not flip state to offline — the new session owns that.
+			if !ownsStream {
+				return
+			}
+
+			// Stream ended; only mark offline if Docker agrees the container is gone/stopped.
+			// If it is still running (unexpected detach / race), try to re-attach instead of
+			// leaving the panel stuck on offline while console may still briefly stream.
+			running, rerr := e.IsRunning(context.Background())
+			if rerr == nil && running {
+				e.log().Warn("attach stream closed while container is still running; attempting re-attach")
+				rctx, rcancel := context.WithTimeout(context.Background(), time.Second*15)
+				defer rcancel()
+				if aerr := e.Attach(rctx); aerr != nil {
+					e.log().WithField("error", aerr).Error("failed to re-attach after unexpected stream close")
+					stillRunning, serr := e.IsRunning(context.Background())
+					if serr != nil || !stillRunning {
+						e.SetState(environment.ProcessOfflineState)
+					}
+				}
+				return
+			}
+
 			e.SetState(environment.ProcessOfflineState)
-			e.SetStream(nil)
 		}()
 
 		go func() {
@@ -87,7 +120,7 @@ func (e *Environment) Attach(ctx context.Context) error {
 			}
 		}()
 
-		if err := system.ScanReader(e.stream.Reader, func(v []byte) {
+		if err := system.ScanReader(stream.Reader, func(v []byte) {
 			e.logCallbackMx.Lock()
 			defer e.logCallbackMx.Unlock()
 			e.logCallback(v)
@@ -95,7 +128,7 @@ func (e *Environment) Attach(ctx context.Context) error {
 			log.WithField("error", err).WithField("container_id", e.Id).Warn("error processing scanner line in console output")
 			return
 		}
-	}()
+	}(stream)
 
 	return nil
 }
