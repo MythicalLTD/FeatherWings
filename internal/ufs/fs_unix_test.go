@@ -35,11 +35,14 @@ func newTestUnixFS() (*testUnixFS, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve symlinks in tmpDir so tests work on macOS where /var -> /private/var.
+	if resolved, err := filepath.EvalSymlinks(tmpDir); err == nil {
+		tmpDir = resolved
+	}
 	root := filepath.Join(tmpDir, "root")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		return nil, err
 	}
-	// fmt.Println(tmpDir)
 	fs, err := ufs.NewUnixFS(root, true)
 	if err != nil {
 		return nil, err
@@ -374,46 +377,56 @@ func TestUnixFS_Lchown(t *testing.T) {
 }
 
 func TestUnixFS_Chtimes(t *testing.T) {
-	t.Parallel()
-	fs, err := newTestUnixFS()
-	if err != nil {
+	tmpDir := t.TempDir()
+	root := filepath.Join(tmpDir, "root")
+	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
-		return
 	}
-	defer fs.Cleanup()
-
-	// Create a test file
-	f, err := fs.Create("test_file")
+	fs, err := ufs.NewUnixFS(root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = f.Close()
+	defer fs.Close()
 
-	// Get the current time
-	now := time.Now()
-
-	// Set specific access and modification times
-	accessTime := now.Add(-2 * time.Hour)
-	modTime := now.Add(-1 * time.Hour)
-
-	// Test changing the times
-	if err := fs.Chtimes("test_file", accessTime, modTime); err != nil {
-		t.Errorf("Chtimes failed: %v", err)
+	regular := filepath.Join(root, "regular")
+	if err := os.WriteFile(regular, []byte("regular"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	// Verify the times were changed
-	info, err := fs.Stat("test_file")
+	regularTime := time.Unix(1_700_100_000, 0)
+	if err := fs.Chtimes("regular", regularTime, regularTime); err != nil {
+		t.Fatal(err)
+	}
+	regularStat, err := os.Lstat(regular)
 	if err != nil {
-		t.Errorf("Stat failed: %v", err)
+		t.Fatal(err)
+	}
+	if !regularStat.ModTime().Equal(regularTime) {
+		t.Fatalf("expected regular file mtime to be %s, got %s", regularTime, regularStat.ModTime())
 	}
 
-	// Check modification time (access time is harder to verify on some systems)
-	if !info.ModTime().Equal(modTime) {
-		// Allow for some precision loss
-		diff := info.ModTime().Sub(modTime)
-		if diff < -time.Second || diff > time.Second {
-			t.Errorf("Expected mod time %v, got %v (diff: %v)", modTime, info.ModTime(), diff)
-		}
+	target := filepath.Join(tmpDir, "target")
+	if err := os.WriteFile(target, []byte("target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(target, original, original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	changed := original.Add(-24 * time.Hour)
+	if err := fs.Chtimes("link", changed, changed); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.ModTime().Equal(original) {
+		t.Fatalf("expected target mtime to remain %s, got %s", original, st.ModTime())
 	}
 }
 

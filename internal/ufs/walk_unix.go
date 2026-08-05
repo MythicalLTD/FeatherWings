@@ -7,7 +7,6 @@
 package ufs
 
 import (
-	"bytes"
 	"fmt"
 	iofs "io/fs"
 	"os"
@@ -109,44 +108,14 @@ func ReadDirMap[T any](fs *UnixFS, path string, fn func(DirEntry) (T, error)) ([
 
 	out := make([]T, len(entries))
 	for i, e := range entries {
-		idx := i
-		e := e
 		v, err := fn(e)
 		if err != nil {
 			return nil, err
 		}
-		out[idx] = v
+		out[i] = v
 	}
 
 	return out, nil
-}
-
-// nameOffset is a compile time constant
-const nameOffset = int(unsafe.Offsetof(unix.Dirent{}.Name))
-
-func nameFromDirent(de *unix.Dirent) (name []byte) {
-	// Because this GOOS' syscall.Dirent does not provide a field that specifies
-	// the name length, this function must first calculate the max possible name
-	// length, and then search for the NULL byte.
-	ml := int(de.Reclen) - nameOffset
-
-	// Convert syscall.Dirent.Name, which is array of int8, to []byte, by
-	// using unsafe.Slice to create a byte slice from the dirent name array.
-	// This replaces the deprecated reflect.SliceHeader approach.
-	nameBytes := unsafe.Slice((*byte)(unsafe.Pointer(&de.Name[0])), ml)
-
-	if index := bytes.IndexByte(nameBytes, 0); index >= 0 {
-		// Found NULL byte; truncate slice to the actual name length.
-		nameBytes = nameBytes[:index]
-		name = nameBytes
-		return
-	}
-
-	// NOTE: This branch is not expected, but included for defensive
-	// programming, and provides a hard stop on the name based on the structure
-	// field array size.
-	name = nameBytes[:len(de.Name)]
-	return
 }
 
 // modeTypeFromDirent converts a syscall defined constant, which is in purview
@@ -212,7 +181,7 @@ func (fs *UnixFS) readDir(fd int, name, relative string, b []byte) ([]DirEntry, 
 	var sde unix.Dirent
 	for {
 		if len(workBuffer) == 0 {
-			n, err := unix.Getdents(fd, scratchBuffer)
+			n, err := getdents(fd, scratchBuffer)
 			if err != nil {
 				if err == unix.EINTR {
 					continue
@@ -248,7 +217,7 @@ func (fs *UnixFS) readDir(fd int, name, relative string, b []byte) ([]DirEntry, 
 		}
 		var rel string
 		if relative == "." {
-			rel = name
+			rel = childName
 		} else {
 			rel = path.Join(relative, childName)
 		}
@@ -283,16 +252,14 @@ func (de dirent) Info() (FileInfo, error) {
 	if de.fs == nil {
 		return nil, nil
 	}
-	return de.fs.Lstatat(de.dirfd, de.name)
-	// return de.fs.Lstat(de.path)
+	return de.info()
 }
 
 func (de dirent) Open() (File, error) {
 	if de.fs == nil {
 		return nil, nil
 	}
-	return de.fs.OpenFileat(de.dirfd, de.name, O_RDONLY, 0)
-	// return de.fs.OpenFile(de.path, O_RDONLY, 0)
+	return de.open()
 }
 
 // reset releases memory held by entry err and name, and resets mode type to 0.

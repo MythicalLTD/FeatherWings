@@ -18,7 +18,7 @@ import (
 
 var checksumPattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
-const DefaultBinaryTemplate = "wings_linux_{arch}"
+const DefaultBinaryTemplate = "wings_{os}_{arch}"
 
 var (
 	// ErrUnsupportedArch indicates that the current runtime architecture is not supported.
@@ -57,9 +57,8 @@ func (e *HTTPError) Error() string {
 }
 
 // DetermineBinaryName resolves the binary asset name using the provided template.
-// The template may include the placeholder "{arch}", which will be replaced with
-// the runtime architecture (amd64 or arm64). When template is empty, a default
-// value is used.
+// The template may include placeholders "{arch}" (amd64/arm64) and "{os}" (runtime GOOS).
+// When template is empty, a default value is used.
 func DetermineBinaryName(template string) (string, error) {
 	if template == "" {
 		template = DefaultBinaryTemplate
@@ -75,7 +74,9 @@ func DetermineBinaryName(template string) (string, error) {
 		return "", ErrUnsupportedArch
 	}
 
-	return strings.ReplaceAll(template, "{arch}", archToken), nil
+	name := strings.ReplaceAll(template, "{arch}", archToken)
+	name = strings.ReplaceAll(name, "{os}", runtime.GOOS)
+	return name, nil
 }
 
 func FetchLatestReleaseInfo(ctx context.Context, owner string, repo string) (ReleaseInfo, error) {
