@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.7.7
+
+### Fixed
+
+- Safer backup restore handling.
+- Token denylist/UserUUid, qouta aware.
+
+### Added
+
+- Support for darwin/macOS.
+
 ## v1.3.7.6 
 
 ### Fixed
