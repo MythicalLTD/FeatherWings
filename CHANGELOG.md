@@ -7,6 +7,8 @@
 - Safer backup restore handling.
 - Token denylist/UserUUid, qouta aware.
 - Docker API hangs no longer leave servers stuck in `starting`/`stopping` forever: inspect/kill/destroy/create paths use deadlines, and `Terminate` polls with per-call timeouts (FeatherPanel#199).
+- FastDL nginx `server_name` no longer falls back to the panel URL; it uses `system.fastdl.public_hostname` (node FQDN), then the SSL cert directory name, then `_`.
+- FastDL now adds `www-data`/`nginx` to the `featherpanel` group and `chmod 755` on the root/data directories so nginx can read server volumes.
 
 ### Added
 

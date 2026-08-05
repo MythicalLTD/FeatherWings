@@ -34,6 +34,12 @@ func GenerateNginxConfig(manager *server.Manager) error {
 		return errors.Errorf("fastdl: configured port (%d) conflicts with Wings API port — please use a different port", fastdlCfg.Port)
 	}
 
+	// nginx (www-data) must traverse featherpanel-owned volume parents.
+	membershipChanged, err := EnsureNginxAccess()
+	if err != nil {
+		log.WithError(err).Warn("fastdl: failed to ensure nginx filesystem access")
+	}
+
 	// Get all servers with FastDL enabled
 	var enabledServers []serverConfig
 	for _, srv := range manager.All() {
@@ -48,6 +54,12 @@ func GenerateNginxConfig(manager *server.Manager) error {
 
 	if len(enabledServers) == 0 {
 		log.Debug("fastdl: no servers with FastDL enabled, skipping nginx config generation")
+		// Still restart nginx if group membership changed so future FastDL works.
+		if membershipChanged {
+			if err := RestartNginx(); err != nil {
+				log.WithError(err).Warn("fastdl: nginx group updated but restart failed — restart nginx so www-data picks up the featherpanel group")
+			}
+		}
 		return nil
 	}
 
@@ -83,8 +95,12 @@ func GenerateNginxConfig(manager *server.Manager) error {
 		}
 	}
 
-	// Reload nginx so the new configuration takes effect.
-	if err := ReloadNginx(); err != nil {
+	// New group membership requires a full restart; otherwise a reload is enough.
+	if membershipChanged {
+		if err := RestartNginx(); err != nil {
+			log.WithError(err).Warn("fastdl: nginx config written but restart failed — restart nginx so www-data picks up the featherpanel group")
+		}
+	} else if err := ReloadNginx(); err != nil {
 		log.WithError(err).Warn("fastdl: nginx config written but reload failed — please reload nginx manually")
 	}
 
@@ -101,21 +117,7 @@ type serverConfig struct {
 // Uses default blocked directories: addons, cfg, logs
 func buildNginxConfig(cfg *config.Configuration, servers []serverConfig) string {
 	fastdlCfg := cfg.System.FastDL
-
-	// Determine server name - prefer FastDL public hostname (node FQDN), else panel host
-	serverName := "localhost"
-	if hostname := strings.TrimSpace(fastdlCfg.PublicHostname); hostname != "" {
-		serverName = hostname
-	} else if panelURL := cfg.PanelLocation; panelURL != "" {
-		// Extract hostname from panel URL
-		panelURL = strings.TrimPrefix(panelURL, "http://")
-		panelURL = strings.TrimPrefix(panelURL, "https://")
-		if idx := strings.Index(panelURL, "/"); idx > 0 {
-			serverName = panelURL[:idx]
-		} else {
-			serverName = panelURL
-		}
-	}
+	serverName := resolveNginxServerName(cfg)
 
 	// Build the config exactly as the user's template - no SSL, simple structure
 	// Uses default blocked extensions and directories from the nginx config
@@ -150,6 +152,31 @@ func buildNginxConfig(cfg *config.Configuration, servers []serverConfig) string 
 	return config
 }
 
+// resolveNginxServerName returns the node hostname for nginx server_name.
+// FastDL must use the node FQDN (system.fastdl.public_hostname), never the panel URL.
+func resolveNginxServerName(cfg *config.Configuration) string {
+	hostname := strings.TrimSpace(cfg.System.FastDL.PublicHostname)
+	hostname = strings.Trim(hostname, `"'`)
+	if hostname != "" {
+		return hostname
+	}
+
+	// Fallback: Let's Encrypt live/<fqdn>/ path uses the node FQDN.
+	cert := strings.TrimSpace(cfg.Api.Ssl.CertificateFile)
+	if cert != "" {
+		parts := strings.Split(filepath.ToSlash(filepath.Clean(cert)), "/")
+		for i, p := range parts {
+			if p == "live" && i+1 < len(parts) && parts[i+1] != "" {
+				log.WithField("hostname", parts[i+1]).Warn("fastdl: public_hostname is empty; using SSL cert directory name as server_name — set system.fastdl.public_hostname to your node FQDN")
+				return parts[i+1]
+			}
+		}
+	}
+
+	log.Warn("fastdl: public_hostname is empty; using catch-all server_name — set system.fastdl.public_hostname to your node FQDN")
+	return "_"
+}
+
 // ReloadNginx attempts to reload nginx configuration.
 func ReloadNginx() error {
 	// Try systemctl reload first (preferred on systemd systems).
@@ -162,5 +189,15 @@ func ReloadNginx() error {
 		}
 	}
 	log.Info("fastdl: nginx reloaded successfully")
+	return nil
+}
+
+// RestartNginx fully restarts nginx so new supplementary group memberships apply.
+func RestartNginx() error {
+	cmd := exec.Command("systemctl", "restart", "nginx")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "fastdl: failed to restart nginx: %s", strings.TrimSpace(string(out)))
+	}
+	log.Info("fastdl: nginx restarted successfully")
 	return nil
 }

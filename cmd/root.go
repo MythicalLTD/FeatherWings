@@ -381,13 +381,13 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 
 	// FastDL - only uses nginx, no built-in server
 	fastdlCfg := config.Get().System.FastDL
-	
+
 	if fastdlCfg.Enabled {
 		// Check if nginx is installed
 		if !fastdl.IsNginxInstalled() {
 			log.Warn("fastdl: enabled but nginx is not installed - FastDL will not be available. Install nginx or disable FastDL.")
 		} else {
-			// Generate nginx configuration
+			// Generates nginx vhost and ensures www-data can traverse volume parents.
 			if err := fastdl.GenerateNginxConfig(manager); err != nil {
 				log.WithError(err).Warn("failed to generate nginx config for fastdl")
 			} else {
