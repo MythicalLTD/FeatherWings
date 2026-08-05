@@ -92,14 +92,18 @@ func (e *Environment) Attach(ctx context.Context) error {
 			// Stream ended; only mark offline if Docker agrees the container is gone/stopped.
 			// If it is still running (unexpected detach / race), try to re-attach instead of
 			// leaving the panel stuck on offline while console may still briefly stream.
-			running, rerr := e.IsRunning(context.Background())
+			rctx, rcancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+			running, rerr := e.IsRunning(rctx)
+			rcancel()
 			if rerr == nil && running {
 				e.log().Warn("attach stream closed while container is still running; attempting re-attach")
 				rctx, rcancel := context.WithTimeout(context.Background(), time.Second*15)
 				defer rcancel()
 				if aerr := e.Attach(rctx); aerr != nil {
 					e.log().WithField("error", aerr).Error("failed to re-attach after unexpected stream close")
-					stillRunning, serr := e.IsRunning(context.Background())
+					sctx, scancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+					stillRunning, serr := e.IsRunning(sctx)
+					scancel()
 					if serr != nil || !stillRunning {
 						e.SetState(environment.ProcessOfflineState)
 					}
@@ -170,12 +174,14 @@ func (e *Environment) InSituUpdate() error {
 // currently available for it. If the container already exists it will be
 // returned.
 func (e *Environment) Create() error {
-	ctx := context.Background()
-
-	// If the container already exists don't hit the user with an error, just return
-	// the current information about it which is what we would do when creating the
-	// container anyways.
-	if _, err := e.ContainerInspect(ctx); err == nil {
+	// Bound inspect only — image pulls use their own timeout in ensureImageExists.
+	inspectCtx, inspectCancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+	_, err := e.ContainerInspect(inspectCtx)
+	inspectCancel()
+	if err == nil {
+		// If the container already exists don't hit the user with an error, just return
+		// the current information about it which is what we would do when creating the
+		// container anyways.
 		return nil
 	} else if !client.IsErrNotFound(err) {
 		return errors.WrapIf(err, "environment/docker: failed to inspect container")
@@ -231,6 +237,9 @@ func (e *Environment) Create() error {
 	} else {
 		conf.User = strconv.Itoa(cfg.System.User.Uid) + ":" + strconv.Itoa(cfg.System.User.Gid)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+	defer cancel()
 
 	networkMode := container.NetworkMode(cfg.Docker.Network.Mode)
 	if a.ForceOutgoingIP {
@@ -342,7 +351,9 @@ func (e *Environment) Destroy() error {
 	// We set it to stopping than offline to prevent crash detection from being triggered.
 	e.SetState(environment.ProcessStoppingState)
 
-	err := e.client.ContainerRemove(context.Background(), e.Id, container.RemoveOptions{
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+	defer cancel()
+	err := e.client.ContainerRemove(ctx, e.Id, container.RemoveOptions{
 		RemoveVolumes: true,
 		RemoveLinks:   false,
 		Force:         true,

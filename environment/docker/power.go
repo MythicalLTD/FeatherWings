@@ -137,10 +137,16 @@ func (e *Environment) Start(ctx context.Context) error {
 	// end of this chain.
 	sawError = true
 
+	// Pre-boot can recreate the container (remove + create + image pull). Bound it so a
+	// hung Docker/containerd cannot leave the server stuck in "starting" forever.
+	// Image pulls are handled inside Create with their own longer timeout.
+	bctx, bcancel := context.WithTimeout(ctx, time.Minute*2)
+	defer bcancel()
+
 	// Run the before start function and wait for it to finish. This will validate that the container
 	// exists on the system, and rebuild the container if that is required for server booting to
 	// occur.
-	if err := e.OnBeforeStart(ctx); err != nil {
+	if err := e.OnBeforeStart(bctx); err != nil {
 		return errors.WrapIf(err, "environment/docker: failed to run pre-boot process")
 	}
 
@@ -313,7 +319,11 @@ func (e *Environment) WaitForStop(ctx context.Context, duration time.Duration, t
 
 // Terminate forcefully terminates the container using the signal provided.
 func (e *Environment) Terminate(ctx context.Context, signal string) error {
-	c, err := e.ContainerInspect(ctx)
+	// Always use a bounded inspect so a hung Docker daemon cannot block terminate
+	// before we even send a signal (FeatherPanel#199).
+	inspectCtx, inspectCancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+	c, err := e.ContainerInspect(inspectCtx)
+	inspectCancel()
 	if err != nil {
 		// Treat missing containers as an okay error state, means it is obviously
 		// already terminated at this point.
@@ -339,29 +349,41 @@ func (e *Environment) Terminate(ctx context.Context, signal string) error {
 	e.SetState(environment.ProcessStoppingState)
 
 	// Send the initial signal to the container.
-	if err := e.client.ContainerKill(ctx, e.Id, signal); err != nil && !client.IsErrNotFound(err) {
+	killCtx, killCancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+	err = e.client.ContainerKill(killCtx, e.Id, signal)
+	killCancel()
+	if err != nil && !client.IsErrNotFound(err) {
 		return errors.WithStack(err)
 	}
 
 	// Wait for up to 10 seconds, polling every 500ms, to check if the container has stopped.
+	// Each poll uses its own timeout so a single hung inspect cannot starve the wall clock.
 	const checkInterval = 500 * time.Millisecond
 	const timeout = 10 * time.Second
 
+	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
-	timeLimit := time.After(timeout)
-
 	for {
 		select {
+		case <-ctx.Done():
+			return errors.WithStack(ctx.Err())
 		case <-ticker.C:
-			// Re-inspect the container to check its state.
-			c, err := e.ContainerInspect(ctx)
+			pollCtx, pollCancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+			c, err := e.ContainerInspect(pollCtx)
+			pollCancel()
 			if err != nil {
 				if client.IsErrNotFound(err) {
 					// Container is gone, consider it stopped.
 					e.SetState(environment.ProcessOfflineState)
 					return nil
+				}
+				// Inspect timed out / failed — treat as unresponsive runtime and force offline.
+				if errors.Is(err, context.DeadlineExceeded) || time.Now().After(deadline) {
+					e.log().WithField("error", err).Warn("container inspect failed during terminate; forcing offline")
+					e.SetState(environment.ProcessOfflineState)
+					return errors.WithStack(err)
 				}
 				return errors.WithStack(err)
 			}
@@ -372,18 +394,23 @@ func (e *Environment) Terminate(ctx context.Context, signal string) error {
 				return nil
 			}
 
-		case <-timeLimit:
-			// Timeout reached, send SIGKILL as a last resort.
-			if err := e.client.ContainerKill(ctx, e.Id, "SIGKILL"); err != nil && !client.IsErrNotFound(err) {
-				return errors.WithStack(err)
-			}
-			e.log().WithFields(log.Fields{
-				"id": e.Id,
-			}).Debug("Sent SIGKILL to container: graceful shutdown timed out")
+			if time.Now().After(deadline) {
+				// Timeout reached, send SIGKILL as a last resort.
+				finalCtx, finalCancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+				if err := e.client.ContainerKill(finalCtx, e.Id, "SIGKILL"); err != nil && !client.IsErrNotFound(err) {
+					finalCancel()
+					e.SetState(environment.ProcessOfflineState)
+					return errors.WithStack(err)
+				}
+				finalCancel()
+				e.log().WithFields(log.Fields{
+					"id": e.Id,
+				}).Debug("Sent SIGKILL to container: graceful shutdown timed out")
 
-			// Update state to offline after SIGKILL.
-			e.SetState(environment.ProcessOfflineState)
-			return nil
+				// Update state to offline after SIGKILL.
+				e.SetState(environment.ProcessOfflineState)
+				return nil
+			}
 		}
 	}
 }

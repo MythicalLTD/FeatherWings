@@ -6,10 +6,14 @@
 
 - Safer backup restore handling.
 - Token denylist/UserUUid, qouta aware.
+- Docker API hangs no longer leave servers stuck in `starting`/`stopping` forever: inspect/kill/destroy/create paths use deadlines, and `Terminate` polls with per-call timeouts (FeatherPanel#199).
 
 ### Added
 
 - Support for darwin/macOS.
+- Runtime reconciliation for Docker/containerd desync: periodic cron compares Wings state to Docker, detects unresponsive inspects and ghost containers (`Running` with pid 0), surfaces `error` state + `runtime` health on the server API, and recovers safely without crash-loop restarts (FeatherPanel#199).
+- `POST /api/servers/{server}/reconcile` force-reconcile action for administrators.
+- Config: `docker.runtime_reconciliation` (`enabled`, `interval_seconds`, `inspect_timeout_seconds`, `stuck_stopping_seconds`, `stuck_starting_seconds`, `unresponsive_threshold`).
 
 ## v1.3.7.6 
 

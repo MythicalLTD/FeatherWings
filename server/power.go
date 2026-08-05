@@ -128,7 +128,8 @@ func (s *Server) handlePowerAction(action PowerAction, fromCrashDetection bool, 
 
 	switch action {
 	case PowerActionStart:
-		if s.Environment.State() != environment.ProcessOfflineState {
+		st := s.Environment.State()
+		if st != environment.ProcessOfflineState && st != environment.ProcessErrorState {
 			return ErrIsRunning
 		}
 
@@ -141,6 +142,7 @@ func (s *Server) handlePowerAction(action PowerAction, fromCrashDetection bool, 
 			return err
 		}
 
+		s.setRuntimeStatus(RuntimeStatusOK, "")
 		return s.Environment.Start(s.Context())
 	case PowerActionStop:
 		fallthrough
@@ -172,6 +174,7 @@ func (s *Server) handlePowerAction(action PowerAction, fromCrashDetection bool, 
 			return err
 		}
 
+		s.setRuntimeStatus(RuntimeStatusOK, "")
 		return s.Environment.Start(s.Context())
 	case PowerActionTerminate:
 		return s.Environment.Terminate(s.Context(), "SIGKILL")

@@ -67,6 +67,11 @@ stateDiagram-v2
 | **starting** | Server is booting up | `ProcessStartingState` |
 | **running** | Server is active | `ProcessRunningState` |
 | **stopping** | Server is shutting down | `ProcessStoppingState` |
+| **error** | Docker runtime is unresponsive or desynchronized | `ProcessErrorState` |
+
+### Runtime reconciliation
+
+Wings periodically verifies Docker against tracked process state (`docker.runtime_reconciliation`). When inspect times out, a container is `Running` with pid `0`, or a server stays in `stopping` past the configured threshold, Wings marks runtime health, transitions through `stopping`/`error` (avoiding crash auto-restart), clears a wedged power lock, and pushes state to the Panel. Administrators can also call `POST /api/servers/{server}/reconcile` to force recovery to `offline`.
 
 ### Special States (Locks)
 

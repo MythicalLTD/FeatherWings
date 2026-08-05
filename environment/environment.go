@@ -20,6 +20,10 @@ const (
 	ProcessStartingState = "starting"
 	ProcessRunningState  = "running"
 	ProcessStoppingState = "stopping"
+	// ProcessErrorState indicates the Docker runtime is unresponsive or
+	// desynchronized (e.g. Docker reports Running but the containerd task is
+	// gone). Servers leave this state after a successful force-reconcile or start.
+	ProcessErrorState = "error"
 )
 
 // Defines the basic interface that all environments need to implement so that

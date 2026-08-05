@@ -49,6 +49,11 @@ func Scheduler(ctx context.Context, m *server.Manager) (gocron.Scheduler, error)
 		max:     config.Get().System.ActivitySendCount,
 	}
 
+	runtime := runtimeCron{
+		mu:      system.NewAtomicBool(false),
+		manager: m,
+	}
+
 	l := log.WithField("subsystem", "cron")
 
 	interval := time.Duration(config.Get().System.ActivitySendInterval) * time.Second
@@ -88,6 +93,32 @@ func Scheduler(ctx context.Context, m *server.Manager) (gocron.Scheduler, error)
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "cron: failed to create sftp job")
+	}
+
+	// Runtime reconciliation job (Docker/containerd desync detection).
+	runtimeCfg := config.Get().Docker.RuntimeReconciliation
+	if runtimeCfg.Enabled {
+		runtimeInterval := time.Duration(runtimeCfg.IntervalSeconds) * time.Second
+		if runtimeInterval <= 0 {
+			runtimeInterval = 30 * time.Second
+		}
+		l.WithField("interval", runtimeInterval).Info("configuring docker runtime reconciliation cron")
+		_, err = s.NewJob(
+			gocron.DurationJob(runtimeInterval),
+			gocron.NewTask(func() {
+				l.WithField("cron", "runtime").Debug("reconciling docker runtime state")
+				if err := runtime.Run(ctx); err != nil {
+					if errors.Is(err, ErrCronRunning) {
+						l.WithField("cron", "runtime").Warn("runtime reconciliation already running, skipping...")
+					} else {
+						l.WithField("cron", "runtime").WithField("error", err).Error("runtime reconciliation failed")
+					}
+				}
+			}),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "cron: failed to create runtime reconciliation job")
+		}
 	}
 
 	return s, nil

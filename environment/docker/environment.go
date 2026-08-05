@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
@@ -16,6 +17,10 @@ import (
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/system"
 )
+
+// DefaultDockerOpTimeout bounds non-streaming Docker API calls that previously
+// used context.Background() and could hang indefinitely under Docker/containerd desync.
+const DefaultDockerOpTimeout = 15 * time.Second
 
 type Metadata struct {
 	Image string
@@ -115,7 +120,9 @@ func (e *Environment) Events() *events.Bus {
 // name as the lookup parameter in addition to the longer ID auto-assigned when
 // the container is created.
 func (e *Environment) Exists() (bool, error) {
-	_, err := e.ContainerInspect(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+	defer cancel()
+	_, err := e.ContainerInspect(ctx)
 	if err != nil {
 		// If this error is because the container instance wasn't found via Docker we
 		// can safely ignore the error and just return false.
@@ -147,7 +154,9 @@ func (e *Environment) IsRunning(ctx context.Context) (bool, error) {
 // ExitState returns the container exit state, the exit code and whether or not
 // the container was killed by the OOM killer.
 func (e *Environment) ExitState() (uint32, bool, error) {
-	c, err := e.ContainerInspect(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+	defer cancel()
+	c, err := e.ContainerInspect(ctx)
 	if err != nil {
 		// I'm not entirely sure how this can happen to be honest. I tried deleting a
 		// container _while_ a server was running and wings gracefully saw the crash and
@@ -200,7 +209,8 @@ func (e *Environment) SetState(state string) {
 	if state != environment.ProcessOfflineState &&
 		state != environment.ProcessStartingState &&
 		state != environment.ProcessRunningState &&
-		state != environment.ProcessStoppingState {
+		state != environment.ProcessStoppingState &&
+		state != environment.ProcessErrorState {
 		panic(errors.New(fmt.Sprintf("invalid server state received: %s", state)))
 	}
 

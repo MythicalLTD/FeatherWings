@@ -83,6 +83,10 @@ type Server struct {
 
 	logSink     *system.SinkPool
 	installSink *system.SinkPool
+
+	// Tracks Docker runtime health for reconciliation (FeatherPanel#199).
+	runtimeOnce sync.Once
+	runtime     *runtimeTracker
 }
 
 // New returns a new server instance with a context and all of the default
@@ -399,11 +403,12 @@ func (s *Server) OnStateChange() {
 	if prevState != s.Environment.State() {
 		s.Log().WithField("status", st).Debug("saw server status change event")
 		s.Events().Publish(StatusEvent, st)
+		s.noteStateEntered()
 	}
 
 	// Reset the resource usage to 0 when the process fully stops so that all the UI
 	// views in the Panel correctly display 0.
-	if st == environment.ProcessOfflineState {
+	if st == environment.ProcessOfflineState || st == environment.ProcessErrorState {
 		s.resources.Reset()
 		s.Events().Publish(StatsEvent, s.Proc())
 	}
@@ -416,6 +421,9 @@ func (s *Server) OnStateChange() {
 	// automatically attempt to start the process back up for the user. This is done in a
 	// separate thread as to not block any actions currently taking place in the flow
 	// that called this function.
+	//
+	// Transitioning to ProcessErrorState must NOT trigger crash restarts — the runtime
+	// is unhealthy and auto-start would loop into the same failure.
 	if (prevState == environment.ProcessStartingState || prevState == environment.ProcessRunningState) && s.Environment.State() == environment.ProcessOfflineState {
 		s.Log().Info("detected server as entering a crashed state; running crash handler")
 
@@ -459,6 +467,7 @@ type APIResponse struct {
 	IsSuspended   bool          `json:"is_suspended"`
 	Utilization   ResourceUsage `json:"utilization"`
 	Configuration Configuration `json:"configuration"`
+	Runtime       RuntimeInfo   `json:"runtime"`
 }
 
 // ToAPIResponse returns the server struct as an API object that can be consumed
@@ -469,6 +478,7 @@ func (s *Server) ToAPIResponse() APIResponse {
 		IsSuspended:   s.IsSuspended(),
 		Utilization:   s.Proc(),
 		Configuration: *s.Config(),
+		Runtime:       s.Runtime(),
 	}
 }
 

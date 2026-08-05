@@ -331,6 +331,43 @@ func postServerSync(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// postServerReconcile forces Docker runtime reconciliation for a server that is
+// stuck in starting/stopping or otherwise desynchronized from containerd.
+// @Summary Force runtime reconcile
+// @Tags Servers
+// @Param server path string true "Server identifier"
+// @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/reconcile [post]
+func postServerReconcile(c *gin.Context) {
+	s := ExtractServer(c)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+	defer cancel()
+
+	result, err := s.ForceReconcile(ctx)
+	if err != nil {
+		if errors.Is(err, server.ErrServerIsInstalling) ||
+			errors.Is(err, server.ErrServerIsTransferring) ||
+			errors.Is(err, server.ErrServerIsRestoring) {
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		middleware.CaptureAndAbort(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"action":  result.Action,
+		"status":  result.Status,
+		"message": result.Message,
+		"state":   s.Environment.State(),
+		"runtime": s.Runtime(),
+	})
+}
+
 // postServerImport imports server files from a remote SFTP or FTP server.
 // @Summary Import server files
 // @Tags Servers

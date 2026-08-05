@@ -91,6 +91,11 @@ type DockerConfiguration struct {
 
 	UsePerformantInspect bool `default:"true" json:"use_performant_inspect" yaml:"use_performant_inspect"`
 
+	// RuntimeReconciliation periodically verifies Docker runtime state against the
+	// process state Wings tracks, recovering servers stuck in starting/stopping when
+	// Docker and containerd become desynchronized or Docker API calls hang.
+	RuntimeReconciliation RuntimeReconciliationConfiguration `json:"runtime_reconciliation" yaml:"runtime_reconciliation"`
+
 	// Sets the user namespace mode for the container when user namespace remapping option is
 	// enabled.
 	//
@@ -111,6 +116,33 @@ type DockerConfiguration struct {
 		Type   string            `default:"local" json:"type" yaml:"type"`
 		Config map[string]string `default:"{\"max-size\":\"5m\",\"max-file\":\"1\",\"compress\":\"false\",\"mode\":\"non-blocking\"}" json:"config" yaml:"config"`
 	} `json:"log_config" yaml:"log_config"`
+}
+
+// RuntimeReconciliationConfiguration controls detection and recovery of Docker
+// runtime desynchronization (FeatherPanel#199).
+type RuntimeReconciliationConfiguration struct {
+	// Enabled turns on the periodic runtime reconciliation cron. Defaults to true.
+	Enabled bool `default:"true" json:"enabled" yaml:"enabled"`
+
+	// IntervalSeconds is how often each server is checked. Defaults to 30s.
+	IntervalSeconds int `default:"30" json:"interval_seconds" yaml:"interval_seconds"`
+
+	// InspectTimeoutSeconds bounds ContainerInspect / IsRunning probes used by
+	// reconciliation. If Docker hangs past this, the runtime is treated as unresponsive.
+	InspectTimeoutSeconds int `default:"5" json:"inspect_timeout_seconds" yaml:"inspect_timeout_seconds"`
+
+	// StuckStoppingSeconds is how long a server may remain in "stopping" before
+	// Wings forces recovery. Should exceed the normal power stop wait (10m).
+	StuckStoppingSeconds int `default:"720" json:"stuck_stopping_seconds" yaml:"stuck_stopping_seconds"`
+
+	// StuckStartingSeconds is how long a server may remain in "starting" while
+	// Docker is unresponsive before Wings marks it as a runtime error. Responsive
+	// Docker with a long boot is ignored — slow games are normal.
+	StuckStartingSeconds int `default:"300" json:"stuck_starting_seconds" yaml:"stuck_starting_seconds"`
+
+	// UnresponsiveThreshold is consecutive inspect failures required before a
+	// server is marked as a runtime error and recovered.
+	UnresponsiveThreshold int `default:"2" json:"unresponsive_threshold" yaml:"unresponsive_threshold"`
 }
 
 func (c DockerConfiguration) ContainerLogConfig() container.LogConfig {
