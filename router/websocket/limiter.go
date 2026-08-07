@@ -78,12 +78,20 @@ func limitValuesFor(e Event) (rate.Limit, int) {
 		return rate.Every(time.Second), 10
 	}
 
+	// Collaborative editing streams frequent CRDT/awareness updates.
+	if e == FileCollabUpdateEvent || e == FileCollabAwarenessEvent {
+		return rate.Every(time.Millisecond * 20), 50
+	}
+
 	// 4 per second.
 	return rate.Every(time.Second), 4
 }
 
 func limiterName(e Event) Event {
 	if e == AuthenticationEvent || e == SendServerLogsEvent || e == SendCommandEvent {
+		return e
+	}
+	if e == FileCollabUpdateEvent || e == FileCollabAwarenessEvent {
 		return e
 	}
 

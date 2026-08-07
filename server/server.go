@@ -24,6 +24,7 @@ import (
 	"github.com/mythicalltd/featherwings/events"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/server/backup"
+	"github.com/mythicalltd/featherwings/server/collab"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 	"github.com/mythicalltd/featherwings/system"
@@ -78,6 +79,10 @@ type Server struct {
 	// Tracks open websocket connections for the server.
 	wsBag       *WebsocketBag
 	wsBagLocker sync.Mutex
+
+	// Collaborative file editing sessions for this server.
+	collabOnce sync.Once
+	collab     *collab.Manager
 
 	sinks map[system.SinkName]*system.SinkPool
 

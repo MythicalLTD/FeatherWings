@@ -327,6 +327,10 @@ type SystemConfiguration struct {
 	// The number of lines to send when a server connects to the websocket.
 	WebsocketLogCount int `default:"150" yaml:"websocket_log_count"`
 
+	// FileCollaboration controls real-time collaborative file editing over the
+	// server websocket (Yjs CRDT), compatible with Calagopus-style clients.
+	FileCollaboration FileCollaboration `yaml:"file_collaboration"`
+
 	Sftp SftpConfiguration `yaml:"sftp"`
 
 	FastDL FastDLConfiguration `yaml:"fastdl"`
@@ -444,6 +448,31 @@ type PBSBackups struct {
 
 	// EncryptionPassword unlocks KeyFile when set (PBS_ENCRYPTION_PASSWORD).
 	EncryptionPassword string `json:"encryption_password" yaml:"encryption_password"`
+}
+
+// FileCollaboration configures Yjs-based collaborative file editing over
+// the server websocket (Calagopus-compatible event names).
+type FileCollaboration struct {
+	// Enabled turns collaborative editing on or off for this node.
+	Enabled bool `default:"true" json:"enabled" yaml:"enabled"`
+
+	// FileSizeCap is the maximum file size in bytes that can be collaboratively edited.
+	FileSizeCap uint64 `default:"1048576" json:"file_size_cap" yaml:"file_size_cap"`
+
+	// MaxSessionsPerServer limits concurrent collab sessions (files) per server.
+	MaxSessionsPerServer uint64 `default:"16" json:"max_sessions_per_server" yaml:"max_sessions_per_server"`
+
+	// MaxSessionsPerConnection limits how many files one websocket may edit at once.
+	MaxSessionsPerConnection uint64 `default:"8" json:"max_sessions_per_connection" yaml:"max_sessions_per_connection"`
+
+	// MaxEditorsPerSession limits editor tabs for the same file on one connection.
+	MaxEditorsPerSession uint64 `default:"32" json:"max_editors_per_session" yaml:"max_editors_per_session"`
+
+	// MaxCursorsPerConnection limits awareness cursors tracked per connection.
+	MaxCursorsPerConnection uint64 `default:"64" json:"max_cursors_per_connection" yaml:"max_cursors_per_connection"`
+
+	// SessionGracePeriod is how long (seconds) an empty session is kept before teardown.
+	SessionGracePeriod uint64 `default:"30" json:"session_grace_period" yaml:"session_grace_period"`
 }
 
 type Transfers struct {

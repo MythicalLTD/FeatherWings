@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/mythicalltd/featherwings/router/downloader"
+	"github.com/mythicalltd/featherwings/router/sharer"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/filesystem"
@@ -26,8 +27,8 @@ type SystemSummaryResponse struct {
 
 // SystemBackupDestinationsResponse reports available backup adapters on this node.
 type SystemBackupDestinationsResponse struct {
-	DefaultAdapter string                 `json:"default_adapter"`
-	PBS            SystemPBSBackupStatus  `json:"pbs"`
+	DefaultAdapter string                `json:"default_adapter"`
+	PBS            SystemPBSBackupStatus `json:"pbs"`
 }
 
 // SystemPBSBackupStatus is a sanitized PBS config summary (no secrets).
@@ -163,6 +164,27 @@ type ServerPullRemoteRequest struct {
 
 // RemoteDownloadAcceptedResponse returns the identifier for background downloads.
 type RemoteDownloadAcceptedResponse struct {
+	Identifier string `json:"identifier"`
+}
+
+// ServerShareFileRequest shares a server file via temp uploads.
+type ServerShareFileRequest struct {
+	File       string `json:"file" binding:"required"`
+	TTLDays    int    `json:"ttl_days" binding:"required"`
+	Password   string `json:"password,omitempty"`
+	DeleteKey  string `json:"delete_key,omitempty"`
+	Token      string `json:"token,omitempty"`
+	Foreground bool   `json:"foreground,omitempty"`
+	Background bool   `json:"background,omitempty"`
+}
+
+// ServerShareStatusResponse returns active temp upload share jobs.
+type ServerShareStatusResponse struct {
+	Shares []*sharer.Job `json:"shares"`
+}
+
+// RemoteShareAcceptedResponse returns the identifier for background shares.
+type RemoteShareAcceptedResponse struct {
 	Identifier string `json:"identifier"`
 }
 

@@ -106,7 +106,8 @@ func GetHandler(s *server.Server, w http.ResponseWriter, r *http.Request, c *gin
 		return nil, err
 	}
 
-	conn.SetReadLimit(4096)
+	// Collaborative editing sends base64 Yjs chunks (~16KiB) plus JSON framing.
+	conn.SetReadLimit(65_536)
 	_ = conn.SetCompressionLevel(5)
 
 	u, err := uuid.NewRandom()
@@ -457,6 +458,9 @@ func (h *Handler) HandleInbound(ctx context.Context, m Message) error {
 			})
 			return nil
 		}
+	case FileCollabSubscribeEvent, FileCollabUnsubscribeEvent, FileCollabUpdateEvent,
+		FileCollabAwarenessEvent, FileCollabSaveEvent, FileCollabReloadEvent:
+		return h.handleCollab(m)
 	}
 
 	return nil

@@ -12,10 +12,12 @@
 
 ### Added
 
+- Temp uploads share: `POST/GET/DELETE /api/servers/{server}/files/share` uploads a server file via multipart (init → PUT parts → complete) and returns a public URL + delete key. Large files (≥256 MiB) run as background jobs.
 - Support for darwin/macOS.
 - Runtime reconciliation for Docker/containerd desync: periodic cron compares Wings state to Docker, detects unresponsive inspects and ghost containers (`Running` with pid 0), surfaces `error` state + `runtime` health on the server API, and recovers safely without crash-loop restarts (FeatherPanel#199).
 - `POST /api/servers/{server}/reconcile` force-reconcile action for administrators.
 - Config: `docker.runtime_reconciliation` (`enabled`, `interval_seconds`, `inspect_timeout_seconds`, `stuck_stopping_seconds`, `stuck_starting_seconds`, `unresponsive_threshold`).
+- Live file collaboration over the server websocket (Calagopus-compatible Yjs protocol): `file collab subscribe|unsubscribe|update|awareness|save|reload` with sync/participants/saved/conflict/error events, on-disk conflict detection, and `system.file_collaboration` config.
 
 ## v1.3.7.6 
 

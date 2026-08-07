@@ -4,8 +4,19 @@ import (
 	"context"
 	"sync"
 
+	"github.com/apex/log"
 	"github.com/google/uuid"
+
+	"github.com/mythicalltd/featherwings/server/collab"
 )
+
+// Collab returns the collaborative editing manager for this server.
+func (s *Server) Collab() *collab.Manager {
+	s.collabOnce.Do(func() {
+		s.collab = collab.NewManager(s.ID(), s.Filesystem(), s.Context(), log.WithField("server", s.ID()).WithField("subsystem", "collab"))
+	})
+	return s.collab
+}
 
 type WebsocketBag struct {
 	mu    sync.Mutex

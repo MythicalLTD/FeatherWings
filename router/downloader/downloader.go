@@ -209,7 +209,11 @@ func (dl *Download) Execute() error {
 			return errors.WrapIf(err, "downloader: failed to create request")
 		}
 
-		req.Header.Set("User-Agent", "FeatherPanel Panel (https://featherpanel.com)")
+		// Mythic /f/{id} (and similar) only redirect to the binary for curl/wget-style agents.
+		// A "browser" UA gets the HTML file page (no Content-Length) and pull fails.
+		// Prefer a curl-compatible UA so hosts that only special-case curl/wget
+		// (e.g. Mythic /f/{id}) return the binary instead of an HTML file page.
+		req.Header.Set("User-Agent", "curl/8.5.0 FeatherWings (+https://featherpanel.com)")
 		res, err = client.Do(req)
 		if err != nil {
 			return errors.WrapIf(err, "downloader: failed to perform request")
@@ -250,6 +254,11 @@ func (dl *Download) Execute() error {
 
 	if res.StatusCode != http.StatusOK {
 		return errors.New("downloader: got bad response status from endpoint: " + res.Status)
+	}
+
+	contentType := strings.ToLower(res.Header.Get("Content-Type"))
+	if strings.HasPrefix(contentType, "text/html") {
+		return errors.New("downloader: remote URL returned an HTML page instead of a file (try a direct download link)")
 	}
 
 	if res.ContentLength < 1 {

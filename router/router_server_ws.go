@@ -15,6 +15,7 @@ import (
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/websocket"
 	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/collab"
 )
 
 var expectedCloseCodes = []int{
@@ -76,11 +77,16 @@ func getServerWebsocket(c *gin.Context) {
 	// Track this open connection on the server so that we can close them all programmatically
 	// if the server is deleted.
 	s.Websockets().Push(handler.Uuid(), &cancel)
+	s.Collab().Register(handler.Uuid(), func(msg collab.Message) {
+		_ = handler.SendJson(websocket.Message{Event: websocket.Event(msg.Event), Args: msg.Args})
+	})
 	handler.Logger().Debug("opening connection to server websocket")
 	defer s.Websockets().Remove(handler.Uuid())
+	defer s.Collab().Disconnect(handler.Uuid())
 
 	defer func() {
 		s.Websockets().Remove(handler.Uuid())
+		s.Collab().Disconnect(handler.Uuid())
 		handler.Logger().Debug("closing connection to server websocket")
 	}()
 
@@ -158,7 +164,7 @@ func getServerWebsocket(c *gin.Context) {
 		// than we'd ever expect, drop it. The websocket upgrader logic does enforce a maximum
 		// _compressed_ message size of 4Kb but that could decompress to a much larger amount
 		// of data.
-		if t != ws.TextMessage || len(p) > 32_768 {
+		if t != ws.TextMessage || len(p) > 65_536 {
 			continue
 		}
 
