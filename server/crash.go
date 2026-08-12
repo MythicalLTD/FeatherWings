@@ -126,6 +126,15 @@ func (s *Server) handleServerCrash() error {
 		return &crashMaxRestartsReached{limit: maxRestarts}
 	}
 
+	// A concurrent stop/restart already owns the power lock. Starting here would only
+	// fail with "failed to acquire exclusive lock" and flood the logs — the in-flight
+	// action is responsible for bringing the process back if needed.
+	if s.ExecutingPowerAction() {
+		s.PublishConsoleOutputFromDaemon("Aborting automatic restart, another power action is already in progress.")
+		s.Log().Info("skipping crash auto-restart; power action already in progress")
+		return nil
+	}
+
 	// Log that the server has crashed
 	s.SaveActivity(s.NewRequestActivity("", "127.0.0.1"), ActivityServerCrashed, models.ActivityMeta{
 		"exit_code": exitCode,

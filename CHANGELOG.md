@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.7.9
+
+### Fixed
+
+- Per server backup directory now uses the server UUID instead of the backup UUID. by @nayskutzu
+- Disk I/O statistics are now reported correctly in the Docker container interface. by @nayskutzu
+- Diagnostics / uploaded Wings logs now show newest lines first so recent errors are visible at the top. by @nayskutzu
+- Crash auto-restart no longer races a concurrent stop/restart for the power lock (skips when a power action is already in progress).
+- Runtime reconciliation no longer storm-recovers hung Docker: recovery cooldown (`docker.runtime_reconciliation.recovery_cooldown_seconds`, default 300s), skip re-recover while already in `error`, and do not reset fail count after a failed terminate.
+- Directory size / recursive chown walks ignore files that vanish mid-walk (ENOENT) instead of failing the whole operation.
+- Resource polling no longer Error-logs when attach races leave the server offline/error.
+
 ## v1.3.7.7
 
 ### Fixed
@@ -16,7 +28,7 @@
 - Support for darwin/macOS.
 - Runtime reconciliation for Docker/containerd desync: periodic cron compares Wings state to Docker, detects unresponsive inspects and ghost containers (`Running` with pid 0), surfaces `error` state + `runtime` health on the server API, and recovers safely without crash-loop restarts (FeatherPanel#199).
 - `POST /api/servers/{server}/reconcile` force-reconcile action for administrators.
-- Config: `docker.runtime_reconciliation` (`enabled`, `interval_seconds`, `inspect_timeout_seconds`, `stuck_stopping_seconds`, `stuck_starting_seconds`, `unresponsive_threshold`).
+- Config: `docker.runtime_reconciliation` (`enabled`, `interval_seconds`, `inspect_timeout_seconds`, `stuck_stopping_seconds`, `stuck_starting_seconds`, `unresponsive_threshold`, `recovery_cooldown_seconds`).
 - Live file collaboration over the server websocket (Calagopus-compatible Yjs protocol): `file collab subscribe|unsubscribe|update|awareness|save|reload` with sync/participants/saved/conflict/error events, on-disk conflict detection, and `system.file_collaboration` config.
 
 ## v1.3.7.6 

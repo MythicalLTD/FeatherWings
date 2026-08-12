@@ -62,9 +62,9 @@ func postServerBackup(c *gin.Context) {
 	var adapter backup.BackupInterface
 	switch data.Adapter {
 	case backup.LocalBackupAdapter:
-		adapter = backup.NewLocal(client, backupUuid, data.Ignore)
+		adapter = backup.NewLocal(client, backupUuid, s.ID(), data.Ignore)
 	case backup.S3BackupAdapter:
-		adapter = backup.NewS3(client, backupUuid, data.Ignore)
+		adapter = backup.NewS3(client, backupUuid, s.ID(), data.Ignore)
 	case backup.PBSBackupAdapter:
 		adapter = backup.NewPBS(client, backupUuid, s.ID(), data.Ignore)
 	default:
@@ -146,7 +146,7 @@ func postServerRestoreBackup(c *gin.Context) {
 	// Now that we've cleaned up the data directory if necessary, grab the backup file
 	// and attempt to restore it into the server directory.
 	if data.Adapter == backup.LocalBackupAdapter {
-		b, _, err := backup.LocateLocal(client, backupUuid)
+		b, _, err := backup.LocateLocal(client, backupUuid, s.ID())
 		if err != nil {
 			middleware.CaptureAndAbort(c, err)
 			return
@@ -228,7 +228,7 @@ func postServerRestoreBackup(c *gin.Context) {
 
 	go func(s *server.Server, uuid string, logger *log.Entry) {
 		logger.Info("starting restoration process for server backup using S3 driver")
-		if err := s.RestoreBackup(backup.NewS3(client, uuid, ""), res.Body); err != nil {
+		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body); err != nil {
 			logger.WithField("error", errors.WithStack(err)).Error("failed to restore remote S3 backup to server")
 		}
 		s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from S3 backup.")
@@ -260,7 +260,7 @@ func deleteServerBackup(c *gin.Context) {
 	}
 
 	// Prefer local archive when present (historical wings adapter).
-	b, _, err := backup.LocateLocal(client, backupUUID)
+	b, _, err := backup.LocateLocal(client, backupUUID, serverID)
 	if err == nil {
 		if err := b.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
 			middleware.CaptureAndAbort(c, err)

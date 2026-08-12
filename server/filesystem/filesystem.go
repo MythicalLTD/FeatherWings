@@ -269,17 +269,27 @@ func (fs *Filesystem) Chown(p string) error {
 	// doesn't traverse symlinks, is immune to symlink timing attacks, and
 	// gives us a dirfd and file name to make a direct syscall with.
 	if err := fs.unixFS.WalkDirat(dirfd, name, func(dirfd int, name, _ string, _ ufs.DirEntry, err error) error {
+		// Skip files removed while walking (common during installs / server activity).
 		if err != nil {
+			if errors.Is(err, ufs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		nst, err := fs.unixFS.Lstatat(dirfd, name)
 		if err != nil {
+			if errors.Is(err, ufs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if !needsChown(nst, uid, gid) {
 			return nil
 		}
 		if err := fs.unixFS.Lchownat(dirfd, name, uid, gid); err != nil {
+			if errors.Is(err, ufs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		return nil

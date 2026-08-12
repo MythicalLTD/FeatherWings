@@ -102,7 +102,13 @@ func GenerateDiagnosticsReport(includeEndpoints bool, includeLogs bool, logLines
 	if includeLogs {
 		p := path.Join(cfg.System.LogDirectory, "wings.log")
 		if c, err := exec.Command("tail", "-n", strconv.Itoa(logLines), p).Output(); err == nil {
-			fmt.Fprintf(output, "%s\n", string(c))
+			// Tail returns chronological order (oldest→newest). Reverse so
+			// paste viewers see the most recent lines first without scrolling.
+			lines := strings.Split(strings.TrimRight(string(c), "\n"), "\n")
+			for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+				lines[i], lines[j] = lines[j], lines[i]
+			}
+			fmt.Fprintf(output, "%s\n", strings.Join(lines, "\n"))
 		} else {
 			fmt.Fprintln(output, "No logs found or an error occurred.")
 		}

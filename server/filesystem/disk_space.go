@@ -172,7 +172,12 @@ func (fs *Filesystem) DirectorySize(root string) (int64, error) {
 	var size atomic.Int64
 
 	err = fs.unixFS.WalkDirat(dirfd, name, func(dirfd int, name, _ string, d ufs.DirEntry, err error) error {
+		// Files vanishing mid-walk (deletes, restarts) are expected; skip them
+		// instead of failing the whole directory size calculation.
 		if err != nil {
+			if errors.Is(err, ufs.ErrNotExist) {
+				return nil
+			}
 			return errors.Wrap(err, "walkdirat err")
 		}
 
@@ -183,6 +188,9 @@ func (fs *Filesystem) DirectorySize(root string) (int64, error) {
 
 		info, err := fs.unixFS.Lstatat(dirfd, name)
 		if err != nil {
+			if errors.Is(err, ufs.ErrNotExist) {
+				return nil
+			}
 			return errors.Wrap(err, "lstatat err")
 		}
 

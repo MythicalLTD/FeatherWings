@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"net/url"
 	"sort"
-	"strings"		
+	"strings"
 
 	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
@@ -143,6 +143,11 @@ type RuntimeReconciliationConfiguration struct {
 	// UnresponsiveThreshold is consecutive inspect failures required before a
 	// server is marked as a runtime error and recovered.
 	UnresponsiveThreshold int `default:"2" json:"unresponsive_threshold" yaml:"unresponsive_threshold"`
+
+	// RecoveryCooldownSeconds is the minimum time between automatic recoverRuntime
+	// attempts for a server. Prevents terminate/destroy storms when Docker stays hung.
+	// Force-reconcile ignores this. Defaults to 300s (5 minutes).
+	RecoveryCooldownSeconds int `default:"300" json:"recovery_cooldown_seconds" yaml:"recovery_cooldown_seconds"`
 }
 
 func (c DockerConfiguration) ContainerLogConfig() container.LogConfig {

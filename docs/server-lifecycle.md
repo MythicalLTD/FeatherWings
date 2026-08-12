@@ -71,7 +71,7 @@ stateDiagram-v2
 
 ### Runtime reconciliation
 
-Wings periodically verifies Docker against tracked process state (`docker.runtime_reconciliation`). When inspect times out, a container is `Running` with pid `0`, or a server stays in `stopping` past the configured threshold, Wings marks runtime health, transitions through `stopping`/`error` (avoiding crash auto-restart), clears a wedged power lock, and pushes state to the Panel. Administrators can also call `POST /api/servers/{server}/reconcile` to force recovery to `offline`.
+Wings periodically verifies Docker against tracked process state (`docker.runtime_reconciliation`). When inspect times out, a container is `Running` with pid `0`, or a server stays in `stopping` past the configured threshold, Wings marks runtime health, transitions through `stopping`/`error` (avoiding crash auto-restart), clears a wedged power lock, and pushes state to the Panel. Automatic recoveries respect `recovery_cooldown_seconds` (default 300) and will not re-enter terminate/destroy while the server is already in `error`; administrators can still call `POST /api/servers/{server}/reconcile` to force recovery to `offline`.
 
 ### Special States (Locks)
 

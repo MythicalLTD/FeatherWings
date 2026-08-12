@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math"
+	"strings"
 	"time"
 
 	"emperror.dev/errors"
@@ -33,8 +34,10 @@ func (e *Environment) Uptime(ctx context.Context) (int64, error) {
 // Attach to the instance and then automatically emit an event whenever the resource usage for the
 // server process changes.
 func (e *Environment) pollResources(ctx context.Context) error {
-	if e.st.Load() == environment.ProcessOfflineState {
-		return errors.New("cannot enable resource polling on a stopped server")
+	// Offline/error during attach races is expected; treat as a no-op so callers
+	// do not Error-log a benign condition after crash/stop transitions.
+	if e.st.Load() == environment.ProcessOfflineState || e.st.Load() == environment.ProcessErrorState {
+		return nil
 	}
 
 	e.log().Info("starting resource polling for container")
@@ -88,6 +91,17 @@ func (e *Environment) pollResources(ctx context.Context) error {
 			for _, nw := range v.Networks {
 				st.Network.RxBytes += nw.RxBytes
 				st.Network.TxBytes += nw.TxBytes
+			}
+
+			// Docker surfaces cgroup block I/O counters through the blkio
+			// recursive list on both cgroup v1 ("Read"/"Write") and v2
+			// ("read"/"write" from io.stat), so match the op case-insensitively.
+			for _, bio := range v.BlkioStats.IoServiceBytesRecursive {
+				if strings.EqualFold(bio.Op, "read") {
+					st.DiskIo.ReadBytes += bio.Value
+				} else if strings.EqualFold(bio.Op, "write") {
+					st.DiskIo.WriteBytes += bio.Value
+				}
 			}
 
 			e.Events().Publish(environment.ResourceEvent, st)

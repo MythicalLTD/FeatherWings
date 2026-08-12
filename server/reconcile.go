@@ -108,6 +108,47 @@ func (s *Server) resetRuntimeFailures() {
 	s.runtime.mu.Unlock()
 }
 
+func (s *Server) lastRecoveredAt() time.Time {
+	s.initRuntimeTracker()
+	s.runtime.mu.RLock()
+	defer s.runtime.mu.RUnlock()
+	return s.runtime.lastRecoveredAt
+}
+
+// inRecoveryCooldown reports whether an automatic recoverRuntime ran recently enough
+// that another attempt would only amplify Docker API pressure.
+func (s *Server) inRecoveryCooldown(cooldown time.Duration) bool {
+	if cooldown <= 0 {
+		return false
+	}
+	last := s.lastRecoveredAt()
+	return !last.IsZero() && time.Since(last) < cooldown
+}
+
+// tryRecoverRuntime runs recoverRuntime unless a recovery cooldown is active.
+// When cooling down, returns a cooldown result and no error so the cron stays quiet.
+func (s *Server) tryRecoverRuntime(ctx context.Context, finalState, reason string, cooldown time.Duration, status string) (ReconcileResult, error) {
+	if s.inRecoveryCooldown(cooldown) {
+		msg := reason + " (recovery cooldown active)"
+		s.setRuntimeStatus(status, msg)
+		s.Log().WithField("reason", reason).Debug("runtime reconcile: skipping recovery during cooldown")
+		return ReconcileResult{Action: "cooldown", Status: status, Message: msg}, nil
+	}
+
+	// Already in error after a prior recovery: keep watching until Docker recovers
+	// or an admin force-reconciles. Re-running terminate/destroy every interval
+	// produced the prod-2 storm when inspect stayed hung.
+	if s.Environment.State() == environment.ProcessErrorState {
+		s.setRuntimeStatus(status, reason)
+		return ReconcileResult{Action: "watch", Status: status, Message: reason}, nil
+	}
+
+	if rerr := s.recoverRuntime(ctx, finalState, reason); rerr != nil {
+		return ReconcileResult{Action: "recover_failed", Status: status, Message: rerr.Error()}, rerr
+	}
+	return ReconcileResult{Action: "recovered", Status: status, Message: reason}, nil
+}
+
 // ReconcileResult describes what a reconciliation pass decided for a server.
 type ReconcileResult struct {
 	Action  string `json:"action"`
@@ -141,6 +182,10 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 	if stuckStarting <= 0 {
 		stuckStarting = 5 * time.Minute
 	}
+	cooldown := time.Duration(cfg.RecoveryCooldownSeconds) * time.Second
+	if cooldown <= 0 {
+		cooldown = 5 * time.Minute
+	}
 
 	state := s.Environment.State()
 	inspectCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -149,8 +194,13 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 
 	if err != nil && !client.IsErrNotFound(err) {
 		fails := s.bumpRuntimeFailure()
-		s.Log().WithField("error", err).WithField("failures", fails).
-			Warn("runtime reconcile: docker inspect failed or timed out")
+		cooling := s.inRecoveryCooldown(cooldown) || state == environment.ProcessErrorState
+		entry := s.Log().WithField("error", err).WithField("failures", fails)
+		if cooling {
+			entry.Debug("runtime reconcile: docker inspect failed or timed out")
+		} else {
+			entry.Warn("runtime reconcile: docker inspect failed or timed out")
+		}
 
 		if fails < threshold {
 			s.setRuntimeStatus(RuntimeStatusUnresponsive, err.Error())
@@ -159,10 +209,7 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 
 		msg := "docker runtime unresponsive; forcing recovery"
 		s.setRuntimeStatus(RuntimeStatusUnresponsive, msg)
-		if rerr := s.recoverRuntime(ctx, environment.ProcessErrorState, msg); rerr != nil {
-			return ReconcileResult{Action: "recover_failed", Status: RuntimeStatusUnresponsive, Message: rerr.Error()}, rerr
-		}
-		return ReconcileResult{Action: "recovered", Status: RuntimeStatusUnresponsive, Message: msg}, nil
+		return s.tryRecoverRuntime(ctx, environment.ProcessErrorState, msg, cooldown, RuntimeStatusUnresponsive)
 	}
 
 	s.resetRuntimeFailures()
@@ -195,10 +242,7 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 	// Docker reports running — check for containerd desync markers when possible.
 	if desynced, dmsg := s.detectContainerDesync(ctx, timeout); desynced {
 		s.setRuntimeStatus(RuntimeStatusDesynced, dmsg)
-		if rerr := s.recoverRuntime(ctx, environment.ProcessErrorState, dmsg); rerr != nil {
-			return ReconcileResult{Action: "recover_failed", Status: RuntimeStatusDesynced, Message: rerr.Error()}, rerr
-		}
-		return ReconcileResult{Action: "recovered", Status: RuntimeStatusDesynced, Message: dmsg}, nil
+		return s.tryRecoverRuntime(ctx, environment.ProcessErrorState, dmsg, cooldown, RuntimeStatusDesynced)
 	}
 
 	entered := s.stateEnteredAt()
@@ -207,20 +251,14 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 		if time.Since(entered) >= stuckStopping {
 			msg := "stuck in stopping longer than threshold; terminating"
 			s.setRuntimeStatus(RuntimeStatusUnresponsive, msg)
-			if rerr := s.recoverRuntime(ctx, environment.ProcessErrorState, msg); rerr != nil {
-				return ReconcileResult{Action: "recover_failed", Status: RuntimeStatusUnresponsive, Message: rerr.Error()}, rerr
-			}
-			return ReconcileResult{Action: "recovered", Status: RuntimeStatusUnresponsive, Message: msg}, nil
+			return s.tryRecoverRuntime(ctx, environment.ProcessErrorState, msg, cooldown, RuntimeStatusUnresponsive)
 		}
 	case environment.ProcessStartingState:
 		// Only escalate long starts when a power action is also wedged (lock held past threshold).
 		if s.ExecutingPowerAction() && time.Since(entered) >= stuckStarting {
 			msg := "stuck in starting with held power lock; docker still reports running"
 			s.setRuntimeStatus(RuntimeStatusUnresponsive, msg)
-			if rerr := s.recoverRuntime(ctx, environment.ProcessErrorState, msg); rerr != nil {
-				return ReconcileResult{Action: "recover_failed", Status: RuntimeStatusUnresponsive, Message: rerr.Error()}, rerr
-			}
-			return ReconcileResult{Action: "recovered", Status: RuntimeStatusUnresponsive, Message: msg}, nil
+			return s.tryRecoverRuntime(ctx, environment.ProcessErrorState, msg, cooldown, RuntimeStatusUnresponsive)
 		}
 	case environment.ProcessOfflineState, environment.ProcessErrorState:
 		// Orphan container while Wings says offline — re-attach only when not in error.
@@ -310,7 +348,12 @@ func (s *Server) recoverRuntime(ctx context.Context, finalState, reason string) 
 	s.initRuntimeTracker()
 	s.runtime.mu.Lock()
 	s.runtime.lastRecoveredAt = time.Now()
-	s.runtime.failCount = 0
+	// Only clear the failure streak when terminate succeeded. A failed recover
+	// that resets failCount caused the cron to immediately re-threshold and
+	// re-enter recover on the next hung inspect.
+	if terr == nil {
+		s.runtime.failCount = 0
+	}
 	s.runtime.mu.Unlock()
 
 	return errors.WithStackIf(terr)

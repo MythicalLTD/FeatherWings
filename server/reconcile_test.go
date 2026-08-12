@@ -38,6 +38,24 @@ func TestRuntimeReconciliationHelpers(t *testing.T) {
 			g.Assert(s.bumpRuntimeFailure()).Equal(1)
 		})
 
+		g.It("tracks recovery cooldown from lastRecoveredAt", func() {
+			s := &Server{}
+			g.Assert(s.inRecoveryCooldown(5 * time.Minute)).IsFalse()
+
+			s.initRuntimeTracker()
+			s.runtime.mu.Lock()
+			s.runtime.lastRecoveredAt = time.Now()
+			s.runtime.mu.Unlock()
+
+			g.Assert(s.inRecoveryCooldown(5 * time.Minute)).IsTrue()
+			g.Assert(s.inRecoveryCooldown(0)).IsFalse()
+
+			s.runtime.mu.Lock()
+			s.runtime.lastRecoveredAt = time.Now().Add(-10 * time.Minute)
+			s.runtime.mu.Unlock()
+			g.Assert(s.inRecoveryCooldown(5 * time.Minute)).IsFalse()
+		})
+
 		g.It("records state entered timestamps", func() {
 			s := &Server{}
 			before := time.Now().Add(-time.Second)
