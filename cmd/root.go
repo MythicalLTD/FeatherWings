@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NYTimes/logrotate"
 	"github.com/apex/log"
@@ -528,25 +529,101 @@ func initLogging() {
 	log.WithField("path", p).Info("writing log files to disk")
 }
 
-// Prints the wings logo, nothing special here!
+// bannerColor is how much color stdout can render for the startup banner.
+type bannerColor int
+
+const (
+	bannerPlain bannerColor = iota // not a TTY: emit no escape codes at all
+	banner256                      // TTY without truecolor: 256-color codes
+	bannerTrue                     // TTY with truecolor: 24-bit color
+)
+
+// detectBannerColor picks the richest color mode stdout supports: plain when
+// output is not a terminal, truecolor when COLORTERM advertises it, otherwise
+// 256-color.
+func detectBannerColor() bannerColor {
+	fi, err := os.Stdout.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return bannerPlain
+	}
+	switch os.Getenv("COLORTERM") {
+	case "truecolor", "24bit":
+		return bannerTrue
+	}
+	return banner256
+}
+
+// hue is a single semantic banner color: a 24-bit value plus a 256-color
+// fallback, resolved to an SGR foreground escape for the active color mode.
+type hue struct {
+	r, g, b, c256 int
+}
+
+func (h hue) fg(m bannerColor) string {
+	switch m {
+	case bannerTrue:
+		return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", h.r, h.g, h.b)
+	case banner256:
+		return fmt.Sprintf("\x1b[38;5;%dm", h.c256)
+	default:
+		return ""
+	}
+}
+
+// Soft plume palette — cool silver → seafoam, matching FeatherPanel's dark UI.
+var (
+	hueTip   = hue{226, 232, 240, 255} // #E2E8F0 tip
+	hueVane  = hue{148, 163, 184, 249} // #94A3B8 outer vanes
+	hueShaft = hue{94, 234, 212, 86}   // #5EEAD4 rachis
+	hueQuill = hue{45, 212, 191, 80}   // #2DD4BF lower plume
+	hueInk   = hue{244, 244, 245, 255} // #F4F4F5 brand title
+	hueMute  = hue{113, 113, 122, 243} // #71717A secondary
+	hueSoft  = hue{161, 161, 170, 247} // #A1A1AA tagline
+)
+
+func padRunes(s string, width int) string {
+	n := utf8.RuneCountInString(s)
+	if n >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-n)
+}
+
+// printLogo renders a FeatherWings startup banner: a feather glyph beside
+// clean brand typography. Nothing like a figlet wordmark wall — just the
+// mark and the name. Color depth adapts to the terminal.
 func printLogo() {
-	fmt.Printf(colorstring.Color(`
-                      ____
-__ [blue][bold]FeatherPanel[reset] _____/___/_______ _______ ______
-\_____\    \/\/    /   /       /  __   /   ___/
-   \___\          /   /   /   /  /_/  /___   /
-        \___/\___/___/___/___/___    /______/
-                            /_______/ [bold]%s[reset]
+	m := detectBannerColor()
+	bold, dim, reset := "", "", ""
+	if m != bannerPlain {
+		bold, dim, reset = "\x1b[1m", "\x1b[2m", "\x1b[0m"
+	}
 
-Copyright © 2018 - %d Dane Everitt & Contributors
+	const glyphWidth = 15
 
-Website:  https://featherpanel.com
- Source:  https://github.com/mythicalltd/featherwings
-License:  https://github.com/mythicalltd/featherwings/blob/main/LICENSE
+	var b strings.Builder
+	row := func(glyph string, gh hue, text string) {
+		b.WriteString(gh.fg(m))
+		b.WriteString(padRunes(glyph, glyphWidth))
+		b.WriteString(reset)
+		b.WriteString(text)
+		b.WriteString(reset)
+		b.WriteByte('\n')
+	}
 
-This software is made available under the terms of the MIT license.
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.%s`), system.Version, time.Now().Year(), "\n\n")
+	b.WriteByte('\n')
+
+	// Feather on the left, brand on the right.
+	row(`       ·`, hueTip, hueMute.fg(m)+"  FeatherPanel")
+	row(`      ╱│╲`, hueVane, "  "+hueInk.fg(m)+bold+"FeatherWings"+reset+"  "+hueMute.fg(m)+dim+"v"+system.Version)
+	row(`     ╱╱│╲╲`, hueShaft, "")
+	row(`    ╱╱ │ ╲╲`, hueShaft, hueSoft.fg(m)+"  Light as a feather. Built for flight.")
+	row(`   ╱─╱──│──╲`, hueQuill, "")
+	row(`      ╱│╲`, hueQuill, hueMute.fg(m)+"  featherpanel.com  ·  docs.featherpanel.com")
+	row(`       │`, hueQuill, hueMute.fg(m)+"  github.com/mythicalltd/featherwings")
+
+	b.WriteByte('\n')
+	fmt.Print(b.String())
 }
 
 func exitWithConfigurationNotice() {
