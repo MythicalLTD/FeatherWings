@@ -151,13 +151,14 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		// Server import routes
 		server.POST("/import", postServerImport)
 
-
 		// Deletes all backups for a server
 		server.DELETE("deleteAllBackups", deleteAllServerBackups)
 
 		files := server.Group("/files")
 		{
 			files.GET("/contents", getServerFileContents)
+			files.GET("/revisions", getServerFileRevisions)
+			files.GET("/revisions/:revision", getServerFileRevisionContents)
 			files.GET("/list-directory", getServerListDirectory)
 			files.GET("/archive/list", getServerArchiveList)
 			files.POST("/archive/extract", postServerArchiveExtract)
@@ -172,6 +173,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 			files.DELETE("/trash", deleteServerTrash)
 			files.POST("/compress", postServerCompressFiles)
 			files.POST("/decompress", postServerDecompressFiles)
+			files.DELETE("/operations/:operation", deleteServerFileOperation)
 			files.POST("/chmod", postServerChmodFile)
 			files.GET("/search", getFilesBySearch)
 

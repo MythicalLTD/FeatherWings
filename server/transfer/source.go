@@ -127,8 +127,15 @@ func (t *Transfer) PushArchiveToTarget(url, token string, backups []string) ([]b
 			return
 		}
 
-		// Write main archive checksum
-		if err := mp.WriteField("checksum_archive", hex.EncodeToString(mainHasher.Sum(nil))); err != nil {
+		// Write main archive checksum.
+		// Calagopus wings-rs expects "checksum"; FeatherWings receivers historically used
+		// "checksum_archive". Send both so FW→Calagopus and FW→FW transfers work.
+		checksumHex := hex.EncodeToString(mainHasher.Sum(nil))
+		if err := mp.WriteField("checksum", checksumHex); err != nil {
+			errChan <- errors.New("failed to stream main archive checksum")
+			return
+		}
+		if err := mp.WriteField("checksum_archive", checksumHex); err != nil {
 			errChan <- errors.New("failed to stream main archive checksum")
 			return
 		}

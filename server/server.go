@@ -25,8 +25,10 @@ import (
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/collab"
+	"github.com/mythicalltd/featherwings/server/diff"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
+	"github.com/mythicalltd/featherwings/server/operations"
 	"github.com/mythicalltd/featherwings/system"
 )
 
@@ -84,6 +86,14 @@ type Server struct {
 	collabOnce sync.Once
 	collab     *collab.Manager
 
+	// File revision history for this server.
+	diffOnce sync.Once
+	diff     *diff.Manager
+
+	// Asynchronous filesystem operations for this server.
+	operationsOnce sync.Once
+	operations     *operations.Manager
+
 	sinks map[system.SinkName]*system.SinkPool
 
 	logSink     *system.SinkPool
@@ -129,6 +139,7 @@ func (s *Server) CleanupForDestroy() {
 	s.Events().Destroy()
 	s.DestroyAllSinks()
 	s.Websockets().CancelAll()
+	_ = s.Diff().Close()
 	s.powerLock.Destroy()
 }
 

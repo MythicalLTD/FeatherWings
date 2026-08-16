@@ -196,10 +196,12 @@ type ServerCreateDirectoryRequest struct {
 
 // ServerArchiveRequest holds compression options.
 type ServerArchiveRequest struct {
-	RootPath  string   `json:"root"`
-	Files     []string `json:"files"`
-	Name      string   `json:"name"`
-	Extension string   `json:"extension"`
+	RootPath   string   `json:"root"`
+	Files      []string `json:"files"`
+	Name       string   `json:"name"`
+	Extension  string   `json:"extension"`
+	Format     string   `json:"format"`
+	Foreground *bool    `json:"foreground"`
 }
 
 // ServerArchiveResponse returns metadata for generated archives.
@@ -207,10 +209,16 @@ type ServerArchiveResponse struct {
 	filesystem.Stat
 }
 
+// FileOperationAcceptedResponse identifies an asynchronous filesystem operation.
+type FileOperationAcceptedResponse struct {
+	Identifier string `json:"identifier"`
+}
+
 // ServerDecompressRequest carries decompression data.
 type ServerDecompressRequest struct {
-	RootPath string `json:"root"`
-	File     string `json:"file"`
+	RootPath   string `json:"root"`
+	File       string `json:"file"`
+	Foreground *bool  `json:"foreground"`
 }
 
 // ServerArchiveExtractRequest selects files/directories inside an archive to extract without unpacking the whole archive.

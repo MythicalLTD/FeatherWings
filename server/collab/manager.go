@@ -21,12 +21,20 @@ import (
 
 const reconcileInterval = time.Second
 
+// HistoryRecorder receives successful collaborative file saves.
+type HistoryRecorder interface {
+	RecordEdit(path string, before, after []byte, userUUID string) (int64, error)
+	Enabled() bool
+	FileSizeCap() uint64
+}
+
 // Manager hosts collaborative editing sessions for one game server.
 type Manager struct {
 	serverUUID string
 	fs         *filesystem.Filesystem
 	ctx        context.Context
 	log        *log.Entry
+	history    HistoryRecorder
 
 	mu       sync.Mutex
 	senders  map[uuid.UUID]Sender
@@ -55,12 +63,13 @@ type connectionState struct {
 	keys map[string]string
 }
 
-func NewManager(serverUUID string, fs *filesystem.Filesystem, ctx context.Context, logger *log.Entry) *Manager {
+func NewManager(serverUUID string, fs *filesystem.Filesystem, ctx context.Context, logger *log.Entry, history HistoryRecorder) *Manager {
 	return &Manager{
 		serverUUID:     serverUUID,
 		fs:             fs,
 		ctx:            ctx,
 		log:            logger,
+		history:        history,
 		senders:        make(map[uuid.UUID]Sender),
 		sessions:       make(map[string]*session),
 		connections:    make(map[uuid.UUID]*connectionState),
@@ -615,6 +624,14 @@ func (m *Manager) Save(connectionID uuid.UUID, userUUID, rawPath string, force b
 	sess.setConflict(nil)
 
 	saved := Saved{User: userUUID}
+	if m.history != nil && m.history.Enabled() && uint64(len(content)) <= m.history.FileSizeCap() &&
+		(!fileExists || uint64(oldContentSize) <= m.history.FileSizeCap()) {
+		if revisionID, historyErr := m.history.RecordEdit(sess.key, oldBytes, []byte(content), userUUID); historyErr != nil {
+			m.log.WithError(historyErr).WithField("path", sess.key).Warn("collab: failed to record file revision")
+		} else if revisionID != 0 {
+			saved.RevisionID = &revisionID
+		}
+	}
 	m.broadcast(sess, nil, Message{
 		Event: EventSaved,
 		Args:  []string{sess.key, mustJSON(saved)},

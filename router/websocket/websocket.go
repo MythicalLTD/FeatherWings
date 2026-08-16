@@ -3,7 +3,9 @@ package websocket
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +39,7 @@ const (
 	PermissionReceiveInstall   = "admin.websocket.install"
 	PermissionReceiveTransfer  = "admin.websocket.transfer"
 	PermissionReceiveBackups   = "backup.read"
+	PermissionFileArchive      = "file.archive"
 )
 
 type Handler struct {
@@ -85,20 +88,11 @@ func NewTokenPayload(token []byte) (*tokens.WebsocketPayload, error) {
 // GetHandler returns a new websocket handler using the context provided.
 func GetHandler(s *server.Server, w http.ResponseWriter, r *http.Request, c *gin.Context) (*Handler, error) {
 	upgrader := websocket.Upgrader{
-		// Ensure that the websocket request is originating from the Panel itself,
-		// and not some other location.
-		CheckOrigin: func(r *http.Request) bool {
-			o := r.Header.Get("Origin")
-			if o == config.Get().PanelLocation {
-				return true
-			}
-			for _, origin := range config.Get().AllowedOrigins {
-				if origin == "*" || origin == o {
-					return true
-				}
-			}
-			return false
-		},
+		// Browser CSRF protection: prefer Panel / configured origins.
+		// Calagopus (VS Code) sets Origin to the websocket URL origin (daemon host),
+		// not the Panel — allow same-host and common vscode:// schemes. Auth is
+		// still enforced via JWT after the upgrade handshake.
+		CheckOrigin: websocketOriginAllowed,
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -123,6 +117,58 @@ func GetHandler(s *server.Server, w http.ResponseWriter, r *http.Request, c *gin
 		uuid:       u,
 		limiter:    NewLimiter(),
 	}, nil
+}
+
+// websocketOriginAllowed decides whether a websocket Upgrade Origin is acceptable.
+func websocketOriginAllowed(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		// Non-browser clients often omit Origin entirely.
+		return true
+	}
+
+	cfg := config.Get()
+	if o == cfg.PanelLocation {
+		return true
+	}
+	for _, origin := range cfg.AllowedOrigins {
+		if origin == "*" || origin == o {
+			return true
+		}
+	}
+
+	// VS Code desktop / webview origins (Calagopus and similar extensions).
+	if strings.HasPrefix(o, "vscode-file://") ||
+		strings.HasPrefix(o, "vscode-webview://") ||
+		strings.HasPrefix(o, "vscode-app://") {
+		return true
+	}
+
+	// Calagopus sets Origin to new URL(credentials.url).origin — i.e. the daemon
+	// host — so same-host Origins are legitimate Node/ws clients.
+	parsed, err := url.Parse(o)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return hostsMatch(parsed.Host, r.Host)
+}
+
+func hostsMatch(a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	return strings.EqualFold(stripDefaultHTTPPort(a), stripDefaultHTTPPort(b))
+}
+
+func stripDefaultHTTPPort(hostport string) string {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return hostport
+	}
+	if port == "80" || port == "443" {
+		return host
+	}
+	return hostport
 }
 
 func (h *Handler) Uuid() uuid.UUID {
@@ -165,6 +211,12 @@ func (h *Handler) SendJson(v Message) error {
 		// If we are sending transfer output, only send it to the user if they have the required permissions.
 		if v.Event == server.TransferLogsEvent {
 			if !j.HasPermission(PermissionReceiveTransfer) {
+				return nil
+			}
+		}
+
+		if v.Event == server.OperationProgressEvent || v.Event == server.OperationCompletedEvent || v.Event == server.OperationErrorEvent {
+			if !j.HasPermission(PermissionFileArchive) {
 				return nil
 			}
 		}

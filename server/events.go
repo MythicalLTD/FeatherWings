@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/mythicalltd/featherwings/events"
+	"github.com/mythicalltd/featherwings/server/operations"
 	"github.com/mythicalltd/featherwings/system"
 )
 
@@ -22,6 +23,9 @@ const (
 	FeatureMatchEvent           = "feature match"
 	ImportStartedEvent          = "import started"
 	ImportCompletedEvent        = "import completed"
+	OperationProgressEvent      = operations.ProgressEvent
+	OperationCompletedEvent     = operations.CompletedEvent
+	OperationErrorEvent         = operations.ErrorEvent
 )
 
 // Events returns the server's emitter instance.
@@ -34,6 +38,16 @@ func (s *Server) Events() *events.Bus {
 	}
 
 	return s.emitter
+}
+
+// Operations returns the asynchronous filesystem operation manager for this server.
+func (s *Server) Operations() *operations.Manager {
+	s.operationsOnce.Do(func() {
+		s.operations = operations.NewManager(s.Context(), func(event string, args ...string) {
+			s.Events().Publish(event, args)
+		})
+	})
+	return s.operations
 }
 
 // Sink returns the instantiated and named sink for a server. If the sink has

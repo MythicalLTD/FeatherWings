@@ -2,8 +2,14 @@
 
 ## v1.3.7.9
 
+### Added
+
+- Calagopus-compatible file revision history for VS Code, including revisions APIs and history tracking for HTTP and collaborative file saves.
+- Calagopus-compatible asynchronous compression and decompression with websocket progress events and operation cancellation.
+
 ### Fixed
 
+- Calagopus / VS Code websocket connections no longer get 403 from `CheckOrigin` when the client sets Origin to the daemon host (or a vscode:// scheme). by @nayskutzu
 - Per server backup directory now uses the server UUID instead of the backup UUID. by @nayskutzu
 - Disk I/O statistics are now reported correctly in the Docker container interface. by @nayskutzu
 - Diagnostics / uploaded Wings logs now show newest lines first so recent errors are visible at the top. by @nayskutzu

@@ -132,6 +132,16 @@ func (h *Handler) listenForServerEvents(ctx context.Context) error {
 			message := Message{Event: Event(e.Topic)}
 			if str, ok := e.Data.(string); ok {
 				message.Args = []string{str}
+			} else if args, ok := e.Data.([]interface{}); ok {
+				message.Args = make([]string, 0, len(args))
+				for _, arg := range args {
+					str, valid := arg.(string)
+					if !valid {
+						message.Args = nil
+						break
+					}
+					message.Args = append(message.Args, str)
+				}
 			} else if b, ok := e.Data.([]byte); ok {
 				message.Args = []string{string(b)}
 			} else {

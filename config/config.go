@@ -230,6 +230,9 @@ type SystemConfiguration struct {
 	// Directory where local backups will be stored on the machine.
 	BackupDirectory string `default:"/var/lib/featherpanel/backups" json:"-" yaml:"backup_directory"`
 
+	// Directory where per-server file revision databases are stored.
+	DiffsDirectory string `default:"/var/lib/featherpanel/diffs" json:"-" yaml:"diffs_directory"`
+
 	// TmpDirectory specifies where temporary files for featherpanel installation processes
 	// should be created. This supports environments running docker-in-docker.
 	TmpDirectory string `default:"/tmp/featherpanel" json:"-" yaml:"tmp_directory"`
@@ -330,6 +333,9 @@ type SystemConfiguration struct {
 	// FileCollaboration controls real-time collaborative file editing over the
 	// server websocket (Yjs CRDT), compatible with Calagopus-style clients.
 	FileCollaboration FileCollaboration `yaml:"file_collaboration"`
+
+	// FileHistory controls Calagopus-compatible file revision snapshots.
+	FileHistory FileHistory `yaml:"file_history"`
 
 	Sftp SftpConfiguration `yaml:"sftp"`
 
@@ -473,6 +479,18 @@ type FileCollaboration struct {
 
 	// SessionGracePeriod is how long (seconds) an empty session is kept before teardown.
 	SessionGracePeriod uint64 `default:"30" json:"session_grace_period" yaml:"session_grace_period"`
+}
+
+// FileHistory configures compressed, per-server file revision storage.
+type FileHistory struct {
+	Enabled             bool   `default:"true" yaml:"enabled"`
+	ZstdLevel           int    `default:"3" yaml:"zstd_level"`
+	AnchorInterval      uint64 `default:"4" yaml:"anchor_interval"`
+	KeepChains          uint64 `default:"5" yaml:"keep_chains"`
+	FileSizeCap         uint64 `default:"1048576" yaml:"file_size_cap"`
+	PerFileDiskBudget   uint64 `default:"5242880" yaml:"per_file_disk_budget"`
+	PerServerDiskBudget uint64 `default:"209715200" yaml:"per_server_disk_budget"`
+	MaintenanceInterval uint64 `default:"3600" yaml:"maintenance_interval"`
 }
 
 type Transfers struct {
@@ -907,6 +925,11 @@ func ConfigureDirectories() error {
 
 	log.WithField("path", _config.System.BackupDirectory).Debug("ensuring backup data directory exists")
 	if err := os.MkdirAll(_config.System.BackupDirectory, 0o700); err != nil {
+		return err
+	}
+
+	log.WithField("path", _config.System.DiffsDirectory).Debug("ensuring file history data directory exists")
+	if err := os.MkdirAll(_config.System.DiffsDirectory, 0o700); err != nil {
 		return err
 	}
 

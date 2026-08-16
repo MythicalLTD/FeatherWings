@@ -21,7 +21,10 @@ func (h *Handler) handleCollab(m Message) error {
 	}
 
 	userUUID := jwt.UserUUID
-	userName := userUUID
+	userName := jwt.UserName
+	if userName == "" {
+		userName = userUUID
+	}
 	manager := h.server.Collab()
 
 	needUpdate := m.Event == FileCollabUpdateEvent || m.Event == FileCollabSaveEvent || m.Event == FileCollabReloadEvent

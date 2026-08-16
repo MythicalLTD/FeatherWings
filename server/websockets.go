@@ -8,12 +8,21 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/server/collab"
+	"github.com/mythicalltd/featherwings/server/diff"
 )
+
+// Diff returns the file revision history manager for this server.
+func (s *Server) Diff() *diff.Manager {
+	s.diffOnce.Do(func() {
+		s.diff = diff.NewManager(s.ID(), log.WithField("server", s.ID()).WithField("subsystem", "diff"))
+	})
+	return s.diff
+}
 
 // Collab returns the collaborative editing manager for this server.
 func (s *Server) Collab() *collab.Manager {
 	s.collabOnce.Do(func() {
-		s.collab = collab.NewManager(s.ID(), s.Filesystem(), s.Context(), log.WithField("server", s.ID()).WithField("subsystem", "collab"))
+		s.collab = collab.NewManager(s.ID(), s.Filesystem(), s.Context(), log.WithField("server", s.ID()).WithField("subsystem", "collab"), s.Diff())
 	})
 	return s.collab
 }

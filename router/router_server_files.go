@@ -2,6 +2,7 @@ package router
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"mime/multipart"
@@ -12,10 +13,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/mythicalltd/featherwings/config"
@@ -26,6 +30,7 @@ import (
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/filesystem"
+	"github.com/mythicalltd/featherwings/server/operations"
 )
 
 // getServerFileContents returns the contents of a file on the server.
@@ -190,7 +195,7 @@ func getServerArchiveList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"contents":   entries,
+		"contents":  entries,
 		"truncated": truncated,
 	})
 }
@@ -310,6 +315,10 @@ func putServerRenameFiles(c *gin.Context) {
 						}
 						return err
 					}
+					if err := s.Diff().RenameFile(pf, pt); err != nil {
+						s.Log().WithError(err).WithField("from_path", pf).WithField("to_path", pt).
+							Warn("failed to rename file revision history")
+					}
 					return nil
 				}
 			}
@@ -404,6 +413,12 @@ func postServerDeleteFiles(c *gin.Context) {
 			middleware.CaptureAndAbort(c, err)
 			return
 		}
+		for _, p := range data.Files {
+			if err := s.Diff().ForgetFile(path.Join(data.Root, p)); err != nil {
+				s.Log().WithError(err).WithField("path", path.Join(data.Root, p)).
+					Warn("failed to forget file revision history")
+			}
+		}
 		c.Status(http.StatusNoContent)
 		return
 	}
@@ -430,6 +445,13 @@ func postServerDeleteFiles(c *gin.Context) {
 	if err := g.Wait(); err != nil {
 		middleware.CaptureAndAbort(c, err)
 		return
+	}
+
+	for _, p := range data.Files {
+		if err := s.Diff().ForgetFile(path.Join(data.Root, p)); err != nil {
+			s.Log().WithError(err).WithField("path", path.Join(data.Root, p)).
+				Warn("failed to forget file revision history")
+		}
 	}
 
 	c.Status(http.StatusNoContent)
@@ -556,7 +578,44 @@ func postServerWriteFile(c *gin.Context) {
 		return
 	}
 
-	if err := s.Filesystem().Write(f, c.Request.Body, c.Request.ContentLength, 0o644); err != nil {
+	var (
+		before        []byte
+		after         []byte
+		historyRecord bool
+		body          io.Reader = c.Request.Body
+	)
+	history := s.Diff()
+	if history.Enabled() && c.Request.ContentLength >= 0 && uint64(c.Request.ContentLength) <= history.FileSizeCap() {
+		historyRecord = true
+		if st, statErr := s.Filesystem().Stat(f); statErr == nil {
+			if st.IsDir() || st.Size() > int64(history.FileSizeCap()) {
+				historyRecord = false
+			} else {
+				existing, _, openErr := s.Filesystem().File(f)
+				if openErr != nil {
+					historyRecord = false
+				} else {
+					before = make([]byte, st.Size())
+					if _, readErr := io.ReadFull(existing, before); readErr != nil {
+						historyRecord = false
+					}
+					_ = existing.Close()
+				}
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) && !strings.Contains(statErr.Error(), "not exist") {
+			historyRecord = false
+		}
+		if historyRecord {
+			var readErr error
+			after, readErr = io.ReadAll(io.LimitReader(c.Request.Body, int64(history.FileSizeCap())+1))
+			if readErr != nil || int64(len(after)) != c.Request.ContentLength {
+				historyRecord = false
+			}
+			body = bytes.NewReader(after)
+		}
+	}
+
+	if err := s.Filesystem().Write(f, body, c.Request.ContentLength, 0o644); err != nil {
 		if filesystem.IsErrorCode(err, filesystem.ErrCodeIsDirectory) {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "Cannot write file, name conflicts with an existing directory by the same name.",
@@ -566,6 +625,12 @@ func postServerWriteFile(c *gin.Context) {
 
 		middleware.CaptureAndAbort(c, err)
 		return
+	}
+
+	if historyRecord {
+		if _, err := history.RecordEdit(f, before, after, ""); err != nil {
+			s.Log().WithError(err).WithField("path", f).Warn("failed to record file revision")
+		}
 	}
 
 	c.Status(http.StatusNoContent)
@@ -744,6 +809,7 @@ func postServerCreateDirectory(c *gin.Context) {
 // @Param server path string true "Server identifier"
 // @Param payload body ServerArchiveRequest true "Archive request"
 // @Success 200 {object} filesystem.Stat
+// @Success 202 {object} FileOperationAcceptedResponse "Background operation"
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -772,6 +838,44 @@ func postServerCompressFiles(c *gin.Context) {
 		return
 	}
 
+	if data.Extension == "" && data.Format != "" {
+		data.Extension = archiveFormatExtension(data.Format)
+	}
+	if data.Extension == "" {
+		data.Extension = "tar.gz"
+	}
+
+	if !fileOperationForeground(c, data.Foreground) {
+		bytesTotal, filesTotal := estimateOperationPaths(s.Filesystem().Path(), data.RootPath, data.Files)
+		processed := &atomic.Uint64{}
+		total := &atomic.Uint64{}
+		filesProcessed := &atomic.Uint64{}
+		total.Store(bytesTotal)
+		op := operations.Operation{
+			Type:            "compress",
+			Path:            cleanOperationPath(data.RootPath),
+			DestinationPath: compressionDestination(data),
+			StartTime:       time.Now().UTC(),
+			BytesProcessed:  processed,
+			BytesTotal:      total,
+			FilesProcessed:  filesProcessed,
+		}
+		id, _ := s.Operations().Add(op)
+		opCtx, _ := s.Operations().Context(id)
+		go func() {
+			_, _, err := s.Filesystem().CompressFiles(opCtx, data.RootPath, data.Name, data.Files, data.Extension)
+			if err != nil {
+				s.Operations().Fail(id, operationErrorMessage(err))
+				return
+			}
+			processed.Store(total.Load())
+			filesProcessed.Store(filesTotal)
+			s.Operations().Complete(id)
+		}()
+		c.JSON(http.StatusAccepted, FileOperationAcceptedResponse{Identifier: id.String()})
+		return
+	}
+
 	f, mimetype, err := s.Filesystem().CompressFiles(c.Request.Context(), data.RootPath, data.Name, data.Files, data.Extension)
 	if err != nil {
 		middleware.CaptureAndAbort(c, err)
@@ -791,6 +895,7 @@ func postServerCompressFiles(c *gin.Context) {
 // @Param server path string true "Server identifier"
 // @Param payload body ServerDecompressRequest true "Decompression request"
 // @Success 204 "No Content"
+// @Success 202 {object} FileOperationAcceptedResponse "Background operation"
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security NodeToken
@@ -803,8 +908,45 @@ func postServerDecompressFiles(c *gin.Context) {
 
 	s := middleware.ExtractServer(c)
 	lg := middleware.ExtractLogger(c).WithFields(log.Fields{"root_path": data.RootPath, "file": data.File})
+
+	if !fileOperationForeground(c, data.Foreground) {
+		totalBytes := uint64(0)
+		if st, statErr := s.Filesystem().Stat(path.Join(data.RootPath, data.File)); statErr == nil && st.Size() > 0 {
+			totalBytes = uint64(st.Size())
+		}
+		processed := &atomic.Uint64{}
+		total := &atomic.Uint64{}
+		total.Store(totalBytes)
+		filesProcessed := &atomic.Uint64{}
+		op := operations.Operation{
+			Type:            "decompress",
+			Path:            cleanOperationPath(path.Join(data.RootPath, data.File)),
+			DestinationPath: cleanOperationPath(data.RootPath),
+			StartTime:       time.Now().UTC(),
+			BytesProcessed:  processed,
+			BytesTotal:      total,
+			FilesProcessed:  filesProcessed,
+		}
+		id, _ := s.Operations().Add(op)
+		opCtx, _ := s.Operations().Context(id)
+		go func() {
+			if err := s.Filesystem().SpaceAvailableForDecompression(opCtx, data.RootPath, data.File); err != nil {
+				s.Operations().Fail(id, operationErrorMessage(err))
+				return
+			}
+			if err := s.Filesystem().DecompressFile(opCtx, data.RootPath, data.File); err != nil {
+				s.Operations().Fail(id, operationErrorMessage(err))
+				return
+			}
+			processed.Store(total.Load())
+			s.Operations().Complete(id)
+		}()
+		c.JSON(http.StatusAccepted, FileOperationAcceptedResponse{Identifier: id.String()})
+		return
+	}
+
 	lg.Debug("checking if space is available for file decompression")
-	err := s.Filesystem().SpaceAvailableForDecompression(context.Background(), data.RootPath, data.File)
+	err := s.Filesystem().SpaceAvailableForDecompression(c.Request.Context(), data.RootPath, data.File)
 	if err != nil {
 		if filesystem.IsErrorCode(err, filesystem.ErrCodeUnknownArchive) {
 			lg.WithField("error", err).Warn("failed to decompress file: unknown archive format")
@@ -816,7 +958,7 @@ func postServerDecompressFiles(c *gin.Context) {
 	}
 
 	lg.Info("starting file decompression")
-	if err := s.Filesystem().DecompressFile(context.Background(), data.RootPath, data.File); err != nil {
+	if err := s.Filesystem().DecompressFile(c.Request.Context(), data.RootPath, data.File); err != nil {
 		// If the file is busy for some reason just return a nicer error to the user since there is not
 		// much we specifically can do. They'll need to stop the running server process in order to overwrite
 		// a file like this.
@@ -830,6 +972,93 @@ func postServerDecompressFiles(c *gin.Context) {
 		middleware.CaptureAndAbort(c, err)
 		return
 	}
+	c.Status(http.StatusNoContent)
+}
+
+func fileOperationForeground(c *gin.Context, foreground *bool) bool {
+	if foreground != nil {
+		return *foreground
+	}
+	if raw := c.Query("foreground"); raw != "" {
+		return parseBoolWithDefault(raw, true)
+	}
+	if parseBoolWithDefault(c.Query("async"), false) || parseBoolWithDefault(c.Query("background"), false) {
+		return false
+	}
+	return true
+}
+
+func archiveFormatExtension(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "tar_gz":
+		return "tar.gz"
+	case "tar_bz2":
+		return "tar.bz2"
+	case "tar_xz":
+		return "tar.xz"
+	case "seven_zip":
+		return "7z"
+	default:
+		return strings.ReplaceAll(strings.TrimSpace(format), "_", ".")
+	}
+}
+
+func compressionDestination(data ServerArchiveRequest) string {
+	if data.Name == "" {
+		return cleanOperationPath(data.RootPath)
+	}
+	extension := strings.TrimPrefix(archiveFormatExtension(data.Extension), ".")
+	name := data.Name
+	if extension != "" && !strings.HasSuffix(strings.ToLower(name), "."+strings.ToLower(extension)) {
+		name += "." + extension
+	}
+	return cleanOperationPath(path.Join(data.RootPath, name))
+}
+
+func cleanOperationPath(p string) string {
+	cleaned := path.Clean("/" + strings.TrimLeft(p, "/"))
+	if cleaned == "." {
+		return "/"
+	}
+	return cleaned
+}
+
+func estimateOperationPaths(root, directory string, paths []string) (uint64, uint64) {
+	var bytesTotal uint64
+	for _, item := range paths {
+		fullPath := filepath.Join(root, filepath.FromSlash(strings.TrimLeft(path.Join(directory, item), "/")))
+		info, err := os.Stat(fullPath)
+		if err == nil && !info.IsDir() && info.Size() > 0 {
+			bytesTotal += uint64(info.Size())
+		}
+	}
+	return bytesTotal, uint64(len(paths))
+}
+
+func operationErrorMessage(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "operation canceled"
+	}
+	return err.Error()
+}
+
+// deleteServerFileOperation cancels an asynchronous filesystem operation.
+// @Summary Cancel file operation
+// @Tags Server Files
+// @Param server path string true "Server identifier"
+// @Param operation path string true "Operation identifier"
+// @Success 204 "No Content"
+// @Failure 400 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/files/operations/{operation} [delete]
+func deleteServerFileOperation(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("operation"))
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid operation identifier."})
+		return
+	}
+	s := middleware.ExtractServer(c)
+	s.Operations().Abort(id)
 	c.Status(http.StatusNoContent)
 }
 

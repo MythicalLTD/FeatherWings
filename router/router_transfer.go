@@ -244,9 +244,10 @@ out:
 					trnsfr.Log().Debug("archive extracted (checksum verification disabled)")
 				}
 
-			case strings.HasPrefix(name, "checksum_archive"):
+			case name == "checksum", strings.HasPrefix(name, "checksum_archive"):
 				trnsfr.Log().Debug("received archive checksum")
 				// Always consume the checksum part if present so the body is fully read.
+				// Calagopus sends "checksum"; FeatherWings historically sent "checksum_archive".
 				checksumData, err := io.ReadAll(p)
 				if err != nil {
 					middleware.CaptureAndAbort(c, err)
