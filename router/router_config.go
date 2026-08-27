@@ -621,7 +621,7 @@ func generateConfigSchema() []ConfigSchemaField {
 								{
 									Key:         "fingerprint",
 									Type:        "string",
-									Description: "Optional TLS certificate fingerprint",
+									Description: "Optional TLS cert pin — leave empty for Let's Encrypt/ACME (trusted CA); only needed for self-signed certs",
 								},
 								{
 									Key:         "namespace",

@@ -432,7 +432,10 @@ type PBSBackups struct {
 	// Password is the PBS user password or API token secret (PBS_PASSWORD).
 	Password string `json:"password" yaml:"password"`
 
-	// Fingerprint is the optional TLS fingerprint for the PBS server certificate.
+	// Fingerprint is an optional TLS certificate pin (PBS_FINGERPRINT). Leave empty
+	// when the PBS cert is issued by a trusted CA (e.g. Let's Encrypt / ACME) —
+	// proxmox-backup-client does not require it then, and pinning breaks on renewal.
+	// Set only for self-signed or otherwise untrusted certificates.
 	Fingerprint string `json:"fingerprint" yaml:"fingerprint"`
 
 	// Namespace is the PBS namespace for FeatherPanel backups (default "featherpanel").

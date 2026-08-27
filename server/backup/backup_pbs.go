@@ -579,7 +579,11 @@ func (b *PBSBackup) runClient(ctx context.Context, cfg config.PBSBackups, args .
 }
 
 func pbsEnv(cfg config.PBSBackups) []string {
-	env := os.Environ()
+	// Start from the process environment, then overlay PBS_* from Wings config.
+	// Empty fingerprint must clear any inherited PBS_FINGERPRINT so ACME/Let's Encrypt
+	// renewals are not pinned to a stale cert fingerprint (proxmox-backup-client does
+	// not require fingerprint when the CA is trusted).
+	env := filterEnvKeys(os.Environ(), "PBS_PASSWORD", "PBS_FINGERPRINT", "PBS_ENCRYPTION_PASSWORD", "PBS_REPOSITORY")
 	set := func(k, v string) {
 		if strings.TrimSpace(v) == "" {
 			return
@@ -593,6 +597,23 @@ func pbsEnv(cfg config.PBSBackups) []string {
 		set("PBS_REPOSITORY", repo)
 	}
 	return env
+}
+
+// filterEnvKeys returns env without entries whose key matches any of keys.
+func filterEnvKeys(env []string, keys ...string) []string {
+	drop := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		drop[k] = struct{}{}
+	}
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		key, _, _ := strings.Cut(e, "=")
+		if _, skip := drop[key]; skip {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func pbsConfig() (config.PBSBackups, error) {

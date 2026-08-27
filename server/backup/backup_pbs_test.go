@@ -2,7 +2,10 @@ package backup
 
 import (
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/mythicalltd/featherwings/config"
 )
 
 func TestParseHumanBytes(t *testing.T) {
@@ -87,5 +90,49 @@ func TestPbsArchiveCandidates(t *testing.T) {
 	got = pbsArchiveCandidates("server.pxar")
 	if got[0] != "server.pxar" {
 		t.Fatalf("configured name should be first, got %#v", got)
+	}
+}
+
+func TestPbsEnvClearsInheritedFingerprintWhenUnset(t *testing.T) {
+	t.Setenv("PBS_FINGERPRINT", "stale-acme-fingerprint")
+	t.Setenv("PBS_PASSWORD", "from-env")
+
+	env := pbsEnv(config.PBSBackups{
+		Password: "from-config",
+		// Fingerprint intentionally empty — must not pin TLS.
+	})
+
+	var fingerprint, password string
+	for _, e := range env {
+		key, val, ok := strings.Cut(e, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "PBS_FINGERPRINT":
+			fingerprint = val
+		case "PBS_PASSWORD":
+			password = val
+		}
+	}
+	if fingerprint != "" {
+		t.Fatalf("expected PBS_FINGERPRINT cleared when config fingerprint empty, got %q", fingerprint)
+	}
+	if password != "from-config" {
+		t.Fatalf("PBS_PASSWORD = %q, want from-config", password)
+	}
+}
+
+func TestPbsEnvSetsFingerprintWhenConfigured(t *testing.T) {
+	t.Setenv("PBS_FINGERPRINT", "old")
+	env := pbsEnv(config.PBSBackups{Fingerprint: "new-fp"})
+	found := ""
+	for _, e := range env {
+		if key, val, ok := strings.Cut(e, "="); ok && key == "PBS_FINGERPRINT" {
+			found = val
+		}
+	}
+	if found != "new-fp" {
+		t.Fatalf("PBS_FINGERPRINT = %q, want new-fp", found)
 	}
 }

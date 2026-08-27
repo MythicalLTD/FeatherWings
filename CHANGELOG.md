@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.0 
+
+### Fixed
+
+- PBS `fingerprint` is not required: leave it empty for Let's Encrypt/ACME (trusted CA); when unset, inherited `PBS_FINGERPRINT` is cleared so renewals are not pinned to a stale cert. by @nayskutzu
+
 ## v1.3.7.9
 
 ### Added
