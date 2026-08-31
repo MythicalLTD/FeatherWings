@@ -67,7 +67,9 @@ func (e *Environment) OnBeforeStart(ctx context.Context) error {
 	}
 
 	// Always destroy and re-create the server container to ensure that synced data from the Panel is used.
-	if err := e.client.ContainerRemove(ctx, e.Id, container.RemoveOptions{RemoveVolumes: true}); err != nil {
+	// Force is required so a still-running or stuck container cannot block recreate (Environment.Start
+	// otherwise may have already short-circuited, but crash recovery and other callers rely on this).
+	if err := e.client.ContainerRemove(ctx, e.Id, container.RemoveOptions{RemoveVolumes: true, Force: true}); err != nil {
 		if !client.IsErrNotFound(err) {
 			return errors.WrapIf(err, "environment/docker: failed to remove container during pre-boot")
 		}
@@ -407,9 +409,30 @@ func (e *Environment) Terminate(ctx context.Context, signal string) error {
 					"id": e.Id,
 				}).Debug("Sent SIGKILL to container: graceful shutdown timed out")
 
-				// Update state to offline after SIGKILL.
+				// Confirm the container actually left the running state. Returning success while
+				// Docker still reports Running lets restart attach to the old instance and skip
+				// container recreate (launch parameters never apply).
+				confirmDeadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(confirmDeadline) {
+					confirmCtx, confirmCancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
+					c, err := e.ContainerInspect(confirmCtx)
+					confirmCancel()
+					if err != nil {
+						if client.IsErrNotFound(err) {
+							e.SetState(environment.ProcessOfflineState)
+							return nil
+						}
+						break
+					}
+					if !c.State.Running {
+						e.SetState(environment.ProcessOfflineState)
+						return nil
+					}
+					time.Sleep(checkInterval)
+				}
+
 				e.SetState(environment.ProcessOfflineState)
-				return nil
+				return errors.New("environment/docker: container still running after SIGKILL")
 			}
 		}
 	}

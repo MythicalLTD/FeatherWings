@@ -150,6 +150,11 @@ type ProcessConfiguration struct {
 	} `json:"startup"`
 	Stop               ProcessStopConfiguration   `json:"stop"`
 	ConfigurationFiles []parser.ConfigurationFile `json:"configs"`
+	// Completion is an optional static console Tab-completion tree
+	// (server/completion.Tree JSON) for any egg/app. When set, Wings uses it
+	// for "suggest command" / POST .../completion. Eggs can also opt into a
+	// built-in profile via egg features key "console_completion" (e.g. ["minecraft"]).
+	Completion json.RawMessage `json:"completion,omitempty"`
 }
 
 type BackupRemoteUploadResponse struct {

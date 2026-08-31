@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
@@ -31,44 +32,145 @@ func (e *Environment) Uptime(ctx context.Context) (int64, error) {
 	return time.Since(started).Milliseconds(), nil
 }
 
-// Attach to the instance and then automatically emit an event whenever the resource usage for the
-// server process changes.
+// pollResources attaches to the Docker stats stream and emits resource events
+// whenever usage changes. While the container remains active, the stats stream
+// is automatically re-opened if Docker closes it (common after a Wings daemon
+// restart re-attaches to an already-running container). Without that retry the
+// console attach can stay healthy while CPU/memory stay stuck at 0.
 func (e *Environment) pollResources(ctx context.Context) error {
 	// Offline/error during attach races is expected; treat as a no-op so callers
 	// do not Error-log a benign condition after crash/stop transitions.
-	if e.st.Load() == environment.ProcessOfflineState || e.st.Load() == environment.ProcessErrorState {
+	if e.isStatsInactive() {
 		return nil
 	}
 
 	e.log().Info("starting resource polling for container")
 	defer e.log().Debug("stopped resource polling for container")
 
-	stats, err := e.client.ContainerStats(ctx, e.Id, true)
+	// Seed uptime once; subsequent samples advance it from PreRead/Read deltas.
+	// Bound the inspect so a hung Docker API cannot block stats forever.
+	var uptime int64
+	uctx, ucancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+	u, uerr := e.Uptime(uctx)
+	ucancel()
+	if uerr != nil {
+		e.log().WithField("error", uerr).Warn("failed to calculate container uptime")
+	} else {
+		uptime = u
+	}
+
+	backoff := time.Second
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if e.isStatsInactive() {
+			return nil
+		}
+
+		err := e.streamResources(ctx, &uptime)
+		// Only stop polling when the attach-owned parent context is done.
+		// Stream-local cancels (stall watchdog) and EOFs should reopen.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			e.log().WithField("error", err).Debug("resource stats stream ended; retrying while container is active")
+		} else {
+			e.log().Debug("resource stats stream closed; retrying while container is active")
+		}
+
+		if e.isStatsInactive() {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+}
+
+func (e *Environment) isStatsInactive() bool {
+	st := e.st.Load()
+	return st == environment.ProcessOfflineState || st == environment.ProcessErrorState
+}
+
+// streamResources opens a single Docker stats stream and publishes events until
+// the stream ends, the context is canceled, or the process goes offline.
+func (e *Environment) streamResources(ctx context.Context, uptime *int64) error {
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stats, err := e.client.ContainerStats(streamCtx, e.Id, true)
 	if err != nil {
 		return err
 	}
-	defer stats.Body.Close()
 
-	uptime, err := e.Uptime(ctx)
-	if err != nil {
-		e.log().WithField("error", err).Warn("failed to calculate container uptime")
+	e.mu.Lock()
+	if e.stats != nil {
+		_ = e.stats.Close()
 	}
+	e.stats = stats.Body
+	e.mu.Unlock()
+
+	defer func() {
+		e.mu.Lock()
+		if e.stats == stats.Body {
+			e.stats = nil
+		}
+		e.mu.Unlock()
+		_ = stats.Body.Close()
+	}()
+
+	e.log().Debug("resource stats stream established")
+
+	// Docker normally emits ~1 sample/sec. If the body stalls after a Wings
+	// re-attach (no frames, no EOF), cancel and let the caller reopen it.
+	var lastFrame atomic.Int64
+	lastFrame.Store(time.Now().UnixNano())
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-streamCtx.Done():
+				return
+			case <-t.C:
+				if time.Since(time.Unix(0, lastFrame.Load())) > 15*time.Second {
+					e.log().Warn("resource stats stream stalled; reopening")
+					e.mu.Lock()
+					if e.stats != nil {
+						_ = e.stats.Close()
+					}
+					e.mu.Unlock()
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 
 	dec := json.NewDecoder(stats.Body)
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-streamCtx.Done():
+			return streamCtx.Err()
 		default:
 			var v container.StatsResponse
 			if err := dec.Decode(&v); err != nil {
-				if err != io.EOF && !errors.Is(err, context.Canceled) {
+				if err != io.EOF && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 					e.log().WithField("error", err).Warn("error while processing Docker stats output for container")
-				} else {
-					e.log().Debug("io.EOF encountered during stats decode, stopping polling...")
+					return err
+				}
+				// EOF or cancel — caller retries while the process is still active.
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return err
 				}
 				return nil
 			}
+			lastFrame.Store(time.Now().UnixNano())
 
 			// Disable collection if the server is in an offline state and this process is still running.
 			if e.st.Load() == environment.ProcessOfflineState {
@@ -77,11 +179,11 @@ func (e *Environment) pollResources(ctx context.Context) error {
 			}
 
 			if !v.PreRead.IsZero() {
-				uptime = uptime + v.Read.Sub(v.PreRead).Milliseconds()
+				*uptime = *uptime + v.Read.Sub(v.PreRead).Milliseconds()
 			}
 
 			st := environment.Stats{
-				Uptime:      uptime,
+				Uptime:      *uptime,
 				Memory:      calculateDockerMemory(v.MemoryStats),
 				MemoryLimit: v.MemoryStats.Limit,
 				CpuAbsolute: calculateDockerAbsoluteCpu(v.PreCPUStats, v.CPUStats),

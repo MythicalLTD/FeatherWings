@@ -21,6 +21,7 @@ import (
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/completion"
 	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
 	"github.com/mythicalltd/featherwings/server/transfer"
 )
@@ -211,6 +212,28 @@ func postServerCommands(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// postServerCompletion returns console Tab-completion suggestions for a partial line.
+// @Summary Console Tab completion
+// @Tags Servers
+// @Accept json
+// @Produce json
+// @Param server path string true "Server identifier"
+// @Param payload body completion.Request true "Partial console line"
+// @Success 200 {object} completion.Response
+// @Failure 400 {object} ErrorResponse
+// @Security NodeToken
+// @Router /api/servers/{server}/completion [post]
+func postServerCompletion(c *gin.Context) {
+	s := ExtractServer(c)
+
+	var req completion.Request
+	if err := c.BindJSON(&req); err != nil {
+		return
+	}
+
+	c.JSON(http.StatusOK, s.ConsoleSuggest(req))
 }
 
 // postServerContainerExec runs a shell command inside the server Docker container via docker exec.

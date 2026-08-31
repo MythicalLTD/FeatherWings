@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
@@ -125,6 +126,12 @@ func (c *SFTPServer) AcceptInbound(conn net.Conn, config *ssh.ServerConfig) erro
 	defer sconn.Close()
 	go ssh.DiscardRequests(reqs)
 
+	// Tracks every session goroutine spawned for this connection so that we can
+	// wait for them to finish before this function returns. Without this, channels
+	// could still be in use after "sconn" is closed by the deferred call above.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	for ch := range chans {
 		// If not a session channel we just move on because it's not something we
 		// know how to handle at this point.
@@ -140,11 +147,20 @@ func (c *SFTPServer) AcceptInbound(conn net.Conn, config *ssh.ServerConfig) erro
 
 		srv, ok := c.manager.Get(sconn.Permissions.Extensions["uuid"])
 		if !ok {
-			channel.Close()
+			// No matching server instance for this connection's UUID: nothing will
+			// ever consume this channel, so close it immediately to avoid leaking it.
+			go ssh.DiscardRequests(requests)
+			_ = channel.Close()
 			continue
 		}
 
-		go c.dispatchSession(sconn, srv, channel, requests)
+		// Handle each channel concurrently so a slow or stuck client on one channel
+		// (e.g. gvfs holding a session open) can't block the rest of the connection.
+		wg.Add(1)
+		go func(channel ssh.Channel, requests <-chan *ssh.Request) {
+			defer wg.Done()
+			c.dispatchSession(sconn, srv, channel, requests)
+		}(channel, requests)
 	}
 
 	return nil
@@ -156,6 +172,11 @@ func (c *SFTPServer) dispatchSession(conn *ssh.ServerConn, srv *server.Server, c
 	userUUID := conn.Permissions.Extensions["user"]
 	ip := conn.RemoteAddr().String()
 	perms := splitPermissions(conn.Permissions.Extensions["permissions"])
+
+	// Wait for SFTP/console handlers started from this session so AcceptInbound's
+	// WaitGroup does not return (and close sconn) while they are still running.
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
 	subsysStarted := false
 	shellStarted := false
@@ -178,9 +199,14 @@ func (c *SFTPServer) dispatchSession(conn *ssh.ServerConn, srv *server.Server, c
 				}
 				_ = req.Reply(true, nil)
 				subsysStarted = true
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					if err := c.Handle(conn, srv, channel); err != nil {
-						log.WithField("error", err).WithField("subsystem", "sftp").Debug("sftp session ended")
+						_ = channel.Close()
+						log.WithField("error", err).
+							WithField("ip", ip).
+							Error("sftp: error handling channel")
 					}
 				}()
 				continue
@@ -197,7 +223,11 @@ func (c *SFTPServer) dispatchSession(conn *ssh.ServerConn, srv *server.Server, c
 			}
 			_ = req.Reply(true, nil)
 			shellStarted = true
-			go c.handleConsole(conn, srv, channel, userUUID, ip, perms)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c.handleConsole(conn, srv, channel, userUUID, ip, perms)
+			}()
 			continue
 		case "window-change":
 			_ = req.Reply(true, nil)
@@ -218,16 +248,25 @@ func (c *SFTPServer) Handle(conn *ssh.ServerConn, srv *server.Server, channel ss
 	ctx := srv.Sftp().Context(handler.User())
 	rs := sftp.NewRequestServer(channel, handler.Handlers())
 
+	// Signals the supervisor goroutine below to stop watching "ctx" once this
+	// function returns, so it doesn't linger until the server's protected-state
+	// context is eventually cancelled (which may be much later, or never).
+	done := make(chan struct{})
+	defer close(done)
+
 	go func() {
 		select {
 		case <-ctx.Done():
 			srv.Log().WithField("user", conn.User()).Warn("sftp: terminating active session")
 			_ = rs.Close()
+		case <-done:
 		}
 	}()
 
-	if err := rs.Serve(); err == io.EOF {
-		_ = rs.Close()
+	err = rs.Serve()
+	_ = rs.Close()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
 	}
 
 	return nil

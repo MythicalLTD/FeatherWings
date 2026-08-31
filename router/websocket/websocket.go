@@ -27,6 +27,7 @@ import (
 	"github.com/mythicalltd/featherwings/environment/docker"
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/completion"
 )
 
 const (
@@ -509,6 +510,33 @@ func (h *Handler) HandleInbound(ctx context.Context, m Message) error {
 				"command": strings.Join(m.Args, ""),
 			})
 			return nil
+		}
+	case SuggestCommandEvent:
+		{
+			if !h.GetJwt().HasPermission(PermissionSendCommand) {
+				return nil
+			}
+
+			var req completion.Request
+			if len(m.Args) > 0 && m.Args[0] != "" {
+				if err := json.Unmarshal([]byte(m.Args[0]), &req); err != nil {
+					_ = h.SendJson(Message{
+						Event: ErrorEvent,
+						Args:  []string{"invalid suggest command payload"},
+					})
+					return nil
+				}
+			}
+
+			resp := h.server.ConsoleSuggest(req)
+			b, err := json.Marshal(resp)
+			if err != nil {
+				return err
+			}
+			return h.SendJson(Message{
+				Event: CommandSuggestionsEvent,
+				Args:  []string{string(b)},
+			})
 		}
 	case FileCollabSubscribeEvent, FileCollabUnsubscribeEvent, FileCollabUpdateEvent,
 		FileCollabAwarenessEvent, FileCollabSaveEvent, FileCollabReloadEvent:

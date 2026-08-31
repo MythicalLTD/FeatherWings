@@ -320,7 +320,8 @@ stateDiagram-v2
     EnvStop --> Release2[Release Lock]
     
     Restart --> EnvStop2[Environment.WaitForStop]
-    EnvStop2 --> PreStart2[onBeforeStart]
+    EnvStop2 --> DestroyEnv[Environment.Destroy]
+    DestroyEnv --> PreStart2[onBeforeStart]
     PreStart2 --> EnvStart2[Environment.Start]
     EnvStart2 --> Release3[Release Lock]
     

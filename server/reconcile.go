@@ -264,13 +264,17 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 		// Orphan container while Wings says offline — re-attach only when not in error.
 		if state == environment.ProcessOfflineState && !s.ExecutingPowerAction() {
 			s.Log().Warn("runtime reconcile: docker reports running while wings state is offline; re-attaching")
+			// Mark running before Attach so pollResources does not no-op on the
+			// offline state (stats stay at 0 while console still works). Match the
+			// boot re-attach path: do not revert to offline on attach failure —
+			// that would look like a crash and trigger auto-restart.
+			s.Environment.SetState(environment.ProcessRunningState)
 			actx, acancel := context.WithTimeout(ctx, 15*time.Second)
 			aerr := s.Environment.Attach(actx)
 			acancel()
 			if aerr != nil {
-				s.Log().WithField("error", aerr).Warn("runtime reconcile: failed to re-attach orphan container; leaving offline")
+				s.Log().WithField("error", aerr).Warn("runtime reconcile: failed to re-attach orphan container")
 			} else {
-				s.Environment.SetState(environment.ProcessRunningState)
 				s.setRuntimeStatus(RuntimeStatusOK, "re-attached orphan container")
 				return ReconcileResult{Action: "reattached", Status: RuntimeStatusOK, Message: "re-attached orphan container"}, nil
 			}

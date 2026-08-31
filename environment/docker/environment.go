@@ -50,7 +50,8 @@ type Environment struct {
 	// the running container instance.
 	stream *types.HijackedResponse
 
-	// Holds the stats stream used by the polling commands so that we can easily close it out.
+	// Holds the active Docker stats body so a superseding stream can close the
+	// previous reader when pollResources reopens after EOF/stall.
 	stats io.ReadCloser
 
 	emitter *events.Bus

@@ -126,6 +126,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		server.GET("/install-logs", getServerInstallLogs)
 		server.POST("/power", postServerPower)
 		server.POST("/commands", postServerCommands)
+		server.POST("/completion", postServerCompletion)
 		server.POST("/exec", postServerContainerExec)
 		server.POST("/install", postServerInstall)
 		server.POST("/reinstall", postServerReinstall)
