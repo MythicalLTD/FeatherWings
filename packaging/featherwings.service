@@ -1,0 +1,22 @@
+[Unit]
+Description=FeatherWings Daemon
+Documentation=https://github.com/mythicalltd/featherwings
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+PartOf=docker.service
+ConditionPathExists=/etc/featherpanel/config.yml
+
+[Service]
+User=root
+WorkingDirectory=/etc/featherpanel
+ExecStart=/usr/local/bin/featherwings --config /etc/featherpanel/config.yml
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=180
+StartLimitBurst=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

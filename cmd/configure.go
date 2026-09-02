@@ -276,6 +276,11 @@ func runConfigureWithJoinData(ui *configureUI, joinData string) error {
 			ui.renderFinal(summary, completed)
 			return installErr
 		}
+	} else {
+		// Record skip reason for apt/--no-service so the summary does not imply
+		// configure should (or did) manage the packaged systemd unit.
+		serviceResult = featherwingsServiceSkipResult()
+		completed = append(completed, serviceStepResult(serviceResult, nil))
 	}
 
 	summary := loadConfigureSummary(configPath, bootstrap)

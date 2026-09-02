@@ -15,11 +15,17 @@ import (
 )
 
 const (
-	featherwingsServiceName    = "featherwings"
-	featherwingsUnitPath       = "/etc/systemd/system/featherwings.service"
-	featherwingsInstallBinPath = "/usr/local/bin/featherwings"
-	systemctlTimeout           = 45 * time.Second
+	featherwingsServiceName      = "featherwings"
+	featherwingsUnitPath         = "/etc/systemd/system/featherwings.service"
+	featherwingsPackageUnitPath  = "/lib/systemd/system/featherwings.service"
+	featherwingsInstallBinPath   = "/usr/local/bin/featherwings"
+	featherwingsDebPackageName   = "featherwings"
+	systemctlTimeout             = 45 * time.Second
 )
+
+// packageManagedFeatherwings reports whether FeatherWings was installed via the
+// Debian/apt package. Overridable in tests.
+var packageManagedFeatherwings = isPackageManagedFeatherwings
 
 type configureServiceResult struct {
 	Installed bool
@@ -32,7 +38,41 @@ type configureServiceResult struct {
 }
 
 func canInstallFeatherwingsService() bool {
-	return runtime.GOOS == "linux" && os.Geteuid() == 0
+	return runtime.GOOS == "linux" && os.Geteuid() == 0 && !packageManagedFeatherwings()
+}
+
+// isPackageManagedFeatherwings reports that apt/dpkg owns the systemd unit, so
+// configure must not write, enable, start, or restart the service.
+func isPackageManagedFeatherwings() bool {
+	if _, err := os.Stat(featherwingsPackageUnitPath); err == nil {
+		return true
+	}
+	return isFeatherwingsDebInstalled()
+}
+
+func isFeatherwingsDebInstalled() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Status}", featherwingsDebPackageName)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "install ok installed")
+}
+
+func featherwingsServiceSkipResult() configureServiceResult {
+	result := configureServiceResult{Skipped: true}
+	switch {
+	case configureFlags.NoService:
+		result.Message = "skipped by --no-service"
+	case packageManagedFeatherwings():
+		result.Message = "apt package manages featherwings.service — left untouched"
+	default:
+		result.Message = "systemd service install skipped"
+	}
+	return result
 }
 
 func installFeatherwingsService(configPath string, progress func(string)) (configureServiceResult, error) {
@@ -46,6 +86,12 @@ func installFeatherwingsService(configPath string, progress func(string)) (confi
 	if configureFlags.NoService {
 		result.Skipped = true
 		result.Message = "skipped by --no-service"
+		return result, nil
+	}
+
+	if packageManagedFeatherwings() {
+		result.Skipped = true
+		result.Message = "apt package manages featherwings.service — left untouched"
 		return result, nil
 	}
 
@@ -259,11 +305,16 @@ func runSystemctlQuiet(args ...string) error {
 }
 
 func promptConfigureServiceInstall() (bool, error) {
-	if configureFlags.InstallService {
-		return true, nil
-	}
 	if configureFlags.NoService {
 		return false, nil
+	}
+	// apt ships and owns /lib/systemd/system/featherwings.service — never overlay
+	// it under /etc, and never enable/start/restart from configure.
+	if packageManagedFeatherwings() {
+		return false, nil
+	}
+	if configureFlags.InstallService {
+		return true, nil
 	}
 	if !configureUIEnabled() {
 		return false, nil

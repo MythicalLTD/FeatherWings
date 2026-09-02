@@ -1,0 +1,58 @@
+name: featherwings
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${NFPM_VERSION}"
+section: admin
+priority: optional
+maintainer: MythicalSystems <support@mythicalsystems.org>
+vendor: MythicalSystems
+description: |-
+  FeatherWings server control plane for FeatherPanel.
+   FeatherWings manages game servers via Docker and exposes an HTTP API and
+   built-in SFTP server for FeatherPanel. Includes an interactive setup wizard
+   and systemd integration for production deployments.
+homepage: https://github.com/mythicalltd/featherwings
+license: MIT
+changelog: packaging/changelog.yaml
+depends:
+  - docker-ce
+  - systemd
+  - ca-certificates
+recommends:
+  - curl
+  - gnupg
+
+deb:
+  fields:
+    Bugs: https://github.com/mythicalltd/featherwings/issues
+    Vcs-Browser: https://github.com/mythicalltd/featherwings
+    Vcs-Git: https://github.com/mythicalltd/featherwings.git
+
+contents:
+  - src: dist/featherwings
+    dst: /usr/local/bin/featherwings
+    file_info:
+      mode: 0755
+  - src: packaging/featherwings.service
+    dst: /lib/systemd/system/featherwings.service
+    file_info:
+      mode: 0644
+  - src: packaging/featherwings.metainfo.xml
+    dst: /usr/share/metainfo/org.mythicalsystems.FeatherWings.metainfo.xml
+    file_info:
+      mode: 0644
+  - src: packaging/icons/hicolor/
+    dst: /usr/share/icons/hicolor
+    type: tree
+  - src: packaging/copyright
+    dst: /usr/share/doc/featherwings/copyright
+    file_info:
+      mode: 0644
+  - src: packaging/README.Debian
+    dst: /usr/share/doc/featherwings/README.Debian
+    file_info:
+      mode: 0644
+
+scripts:
+  preinstall: packaging/preinstall.sh
+  postinstall: packaging/postinstall.sh

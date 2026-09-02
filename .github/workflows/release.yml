@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+jobs:
+  build-and-release:
+    name: Build and Create Release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+
+      - name: Set deb version
+        id: deb_version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binaries and .deb packages
+        env:
+          CGO_ENABLED: 0
+          REF: ${{ github.ref }}
+          VERSION: ${{ github.ref_name }}
+          DEB_VERSION: ${{ steps.deb_version.outputs.version }}
+          SRC_PATH: github.com/mythicalltd/featherwings
+        run: |
+          VERSION="${DEB_VERSION#v}" ./scripts/generate-deb-metadata.sh
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOARCH="${arch}" go build -o dist/featherwings -v -trimpath \
+              -ldflags="-s -w -X ${SRC_PATH}/system.Version=${VERSION}" \
+              "${SRC_PATH}"
+            chmod 755 dist/featherwings
+            cp dist/featherwings "dist/wings_linux_${arch}"
+            chmod 755 "dist/wings_linux_${arch}"
+
+            NFPM_ARCH="${arch}" NFPM_VERSION="${DEB_VERSION}" nfpm pkg \
+              --packager deb \
+              --config nfpm.yaml \
+              --target dist/
+          done
+          ls -la dist/*.deb
+
+      - name: Extract changelog
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          sed -n "/^## ${REF:10}/,/^## /{/^## /b;p}" CHANGELOG.md > ./RELEASE_CHANGELOG
+
+      - name: Create checksum and add to changelog
+        run: |
+          SUM=`cd dist && sha256sum wings_linux_amd64`
+          SUM2=`cd dist && sha256sum wings_linux_arm64`
+          SUM3=`cd dist && sha256sum featherwings_${{ steps.deb_version.outputs.version }}_amd64.deb`
+          SUM4=`cd dist && sha256sum featherwings_${{ steps.deb_version.outputs.version }}_arm64.deb`
+          echo -e "\n#### SHA256 Checksum\n\`\`\`\n$SUM\n$SUM2\n$SUM3\n$SUM4\n\`\`\`\n" >> ./RELEASE_CHANGELOG
+          echo -e "$SUM\n$SUM2\n$SUM3\n$SUM4" > checksums.txt
+
+      - name: Create release branch
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          BRANCH=release/${REF:10}
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git checkout -b ${BRANCH}
+          git push -u origin ${BRANCH}
+          sed -i "s/var Version = \".*\"/var Version = \"${REF:11}\"/" system/const.go
+          git add system/const.go
+          git commit -m "bump version for release"
+          git push
+
+      - name: Create release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          draft: true
+          prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          body_path: ./RELEASE_CHANGELOG
+
+      - name: Upload amd64 binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/wings_linux_amd64
+          asset_name: wings_linux_amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload arm64 binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/wings_linux_arm64
+          asset_name: wings_linux_arm64
+          asset_content_type: application/octet-stream
+
+      - name: Upload amd64 .deb package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/featherwings_${{ steps.deb_version.outputs.version }}_amd64.deb
+          asset_name: featherwings_${{ steps.deb_version.outputs.version }}_amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload arm64 .deb package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/featherwings_${{ steps.deb_version.outputs.version }}_arm64.deb
+          asset_name: featherwings_${{ steps.deb_version.outputs.version }}_arm64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./checksums.txt
+          asset_name: checksums.txt
+          asset_content_type: text/plain
+
+  upload-to-nexus:
+    name: Upload to Nexus APT Repository
+    if: github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v4
+
+      - name: Download .deb release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          mapfile -t deb_assets < <(gh release view "${{ github.event.release.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            -q '.assets[] | select(.name | endswith(".deb")) | .name')
+
+          if [ "${#deb_assets[@]}" -eq 0 ]; then
+            echo "No .deb assets found on release ${{ github.event.release.tag_name }}"
+            exit 1
+          fi
+
+          for asset in "${deb_assets[@]}"; do
+            gh release download "${{ github.event.release.tag_name }}" \
+              --repo "${{ github.repository }}" \
+              --pattern "${asset}" \
+              --dir dist
+          done
+
+      - name: Upload .deb packages to Nexus
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_HOST: https://apt.mythicalsystems.org
+          NEXUS_REPOSITORY: MythicalSystems
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NEXUS_USERNAME}" ] || [ -z "${NEXUS_PASSWORD}" ]; then
+            echo "NEXUS_USERNAME and NEXUS_PASSWORD secrets must be configured"
+            exit 1
+          fi
+
+          shopt -s nullglob
+          deb_files=(dist/*.deb)
+
+          if [ "${#deb_files[@]}" -eq 0 ]; then
+            echo "No .deb files to upload"
+            exit 1
+          fi
+
+          for deb_file in "${deb_files[@]}"; do
+            set +e
+            ./scripts/nexus-upload-deb.sh "${deb_file}"
+            status=$?
+            set -e
+            if [ "${status}" -eq 1 ]; then
+              exit 1
+            fi
+          done

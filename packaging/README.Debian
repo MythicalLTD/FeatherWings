@@ -1,0 +1,38 @@
+FeatherWings for Debian
+=======================
+
+FeatherWings is the server control plane for FeatherPanel. It runs as a
+systemd service, manages game servers inside Docker, and exposes an HTTP API
+and built-in SFTP server for the panel.
+
+Quick start
+-----------
+
+1. Install Docker Engine from Docker's official apt repository (required):
+
+   https://docs.docker.com/engine/install/
+
+2. Configure FeatherWings:
+
+       sudo featherwings configure
+
+3. Enable and start the service:
+
+       sudo systemctl enable --now featherwings
+
+Configuration lives in `/etc/featherpanel/config.yml`. The binary is installed
+to `/usr/local/bin/featherwings`; a `wings` symlink is created for compatibility
+with older scripts.
+
+Upgrades
+--------
+
+Existing configuration is preserved on upgrade. After installing a new version:
+
+       sudo apt-get install --only-upgrade featherwings
+
+Support
+-------
+
+Homepage: https://github.com/mythicalltd/featherwings
+Issues:   https://github.com/mythicalltd/featherwings/issues

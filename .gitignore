@@ -59,3 +59,9 @@ tis/
 config.yml.old
 wings/
 pelican-wings/
+dist/
+package.sh
+
+# Generated at package build time
+packaging/changelog.yaml
+packaging/featherwings.metainfo.xml

@@ -34,9 +34,16 @@ cross-build: clean build build-darwin
 
 clean:
 	rm -rf build/wings_*
+	rm -rf dist/wings_linux_* dist/featherwings dist/*.deb dist/checksums.txt
+
+deb:
+	./scripts/build-deb.sh
+
+package: deb
+	@if [ -n "$$NEXUS_USERNAME" ] && [ -n "$$NEXUS_PASSWORD" ]; then ./scripts/upload-debs.sh; fi
 
 configure:
 	go build -ldflags="-X github.com/mythicalltd/featherwings/system.Version=$(GIT_HEAD)"
 	sudo ./featherwings configure
 
-.PHONY: build build-darwin cross-build clean test debug rmdebug
+.PHONY: build build-darwin cross-build clean test debug rmdebug deb package configure
