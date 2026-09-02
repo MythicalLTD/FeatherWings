@@ -14,6 +14,7 @@
 - Console Tab completion for any server console: websocket `suggest command` → `command suggestions`, and `POST /api/servers/{server}/completion`. Eggs ship a `process_configuration.completion` tree (works for every app), or opt into a built-in profile via egg feature `console_completion` (e.g. `["minecraft"]` — Minecraft is also auto-detected as a convenience). The panel owns the Tab key and applies the returned `start`/`end` replace range.
 - Console completion suggestions now offer exact matches the same way a trailing space would (e.g. `/gamemode` → `/gamemode`). by @nayskutzu
 
+
 ## v1.3.7.9
 
 ### Added

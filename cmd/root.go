@@ -91,6 +91,7 @@ func init() {
 	rootCommand.Flags().Bool("ignore-certificate-errors", false, "ignore certificate verification errors when executing API calls")
 
 	rootCommand.AddCommand(versionCommand)
+	rootCommand.AddCommand(newConfigureCommand())
 	rootCommand.AddCommand(newDiagnosticsCommand())
 	rootCommand.AddCommand(newSelfupdateCommand())
 }

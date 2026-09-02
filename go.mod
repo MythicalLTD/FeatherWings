@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	emperror.dev/errors v0.8.1
+	github.com/Deln0r/ygo v1.15.0
 	github.com/NYTimes/logrotate v1.0.0
 	github.com/acobaugh/osrelease v0.1.0
 	github.com/apex/log v1.9.0
@@ -11,6 +12,7 @@ require (
 	github.com/beevik/etree v1.6.0
 	github.com/buger/jsonparser v1.1.1
 	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/creasty/defaults v1.8.0
 	github.com/docker/docker v28.5.1+incompatible
@@ -36,6 +38,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14
 	github.com/mholt/archives v0.1.3
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	github.com/parkervcp/fsquota v0.0.0-20260601132657-d13427a22f09
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/sftp v1.13.9
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
@@ -49,6 +52,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/pretty v1.2.1
 	github.com/tidwall/sjson v1.2.5
+	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/crypto v0.45.0
 	golang.org/x/sync v0.18.0
 	golang.org/x/sys v0.38.0
@@ -60,7 +64,6 @@ require (
 )
 
 require (
-	github.com/Deln0r/ygo v1.15.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
@@ -69,7 +72,6 @@ require (
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/charmbracelet/bubbles v0.21.0 // indirect
-	github.com/charmbracelet/bubbletea v1.3.4 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
@@ -97,7 +99,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/parkervcp/fsquota v0.0.0-20260601132657-d13427a22f09 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6 // indirect
@@ -105,7 +106,6 @@ require (
 	github.com/urfave/cli/v2 v2.27.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	github.com/zeebo/blake3 v0.2.4 // indirect
 	golang.org/x/image v0.21.0 // indirect
 	golang.org/x/oauth2 v0.33.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
@@ -127,14 +127,14 @@ require (
 	github.com/containerd/errdefs v0.3.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
+	github.com/distribution/reference v0.6.0
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/glebarez/go-sqlite v1.22.0 // indirect
+	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

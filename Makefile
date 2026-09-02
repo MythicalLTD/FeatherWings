@@ -35,4 +35,8 @@ cross-build: clean build build-darwin
 clean:
 	rm -rf build/wings_*
 
+configure:
+	go build -ldflags="-X github.com/mythicalltd/featherwings/system.Version=$(GIT_HEAD)"
+	sudo ./featherwings configure
+
 .PHONY: build build-darwin cross-build clean test debug rmdebug
