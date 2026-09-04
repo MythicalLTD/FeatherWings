@@ -1,4 +1,4 @@
-name: featherwings
+name: "${NFPM_NAME}"
 arch: "${NFPM_ARCH}"
 platform: linux
 version: "${NFPM_VERSION}"
@@ -21,6 +21,12 @@ depends:
 recommends:
   - curl
   - gnupg
+conflicts:
+  - "${NFPM_CONFLICT}"
+replaces:
+  - "${NFPM_CONFLICT}"
+provides:
+  - featherwings-daemon
 
 deb:
   fields:

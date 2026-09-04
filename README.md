@@ -9,7 +9,14 @@ dependencies, and allowing users to authenticate with the same credentials they 
 
 ## Installation via APT (Debian/Ubuntu)
 
-FeatherWings is available from the MythicalSystems APT repository for Debian and Ubuntu systems.
+FeatherWings is available from the MythicalSystems APT repository in two channels:
+
+| Package | Channel | When |
+|---------|---------|------|
+| `featherwings` | **stable** | Published GitHub releases (`v*` tags) |
+| `featherwings-dev` | **nightly** | Every commit to `main` |
+
+These packages conflict and cannot be installed at the same time. Switching channels (`apt install featherwings` ↔ `featherwings-dev`) replaces the other package automatically.
 
 ### Step-by-step
 
@@ -65,11 +72,17 @@ echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/mythicalsystems.gpg] https:/
   | sudo tee /etc/apt/sources.list.d/mythicalsystems.list
 ```
 
-4. Install FeatherWings:
+4. Install FeatherWings (stable):
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y featherwings
+```
+
+Or the nightly build:
+
+```bash
+sudo apt-get install -y featherwings-dev
 ```
 
 5. Configure and start (if the install wizard did not run automatically):
@@ -79,7 +92,7 @@ sudo featherwings configure
 sudo systemctl enable --now featherwings
 ```
 
-### One-liner
+### One-liner (stable)
 
 Install Docker from Docker's official repository first (step 1 above), then:
 
@@ -91,6 +104,8 @@ To upgrade later:
 
 ```bash
 sudo apt-get update && sudo apt-get install --only-upgrade featherwings
+# or for nightly:
+sudo apt-get update && sudo apt-get install --only-upgrade featherwings-dev
 ```
 
 ### Migrating from a manual install

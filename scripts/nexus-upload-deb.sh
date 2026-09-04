@@ -37,10 +37,14 @@ for blocked in ${NEXUS_BLOCKED_VERSIONS//,/ }; do
   fi
 done
 
-if [[ "${NEXUS_BLOCK_DEV_VERSIONS:-1}" == "1" && "${filename}" =~ featherwings_.*-g[0-9a-f]+_ ]]; then
-  echo "Refusing to upload dev/git-describe version: ${filename}" >&2
-  echo "Use a clean release tag version instead (e.g. 1.3.7.10)." >&2
-  exit 3
+# Prod package must not use git-describe dirty versions (e.g. 1.3.7.10-5-gabcdef).
+# Dev channel (~dev+) is allowed for featherwings-dev only.
+if [[ "${filename}" == featherwings_* && "${filename}" != featherwings-dev_* ]]; then
+  if [[ "${NEXUS_BLOCK_DEV_VERSIONS:-1}" == "1" && "${filename}" =~ featherwings_.*-g[0-9a-f]+_ ]]; then
+    echo "Refusing to upload dirty git-describe version for prod package: ${filename}" >&2
+    echo "Use a clean release tag version instead (e.g. 1.3.7.10)." >&2
+    exit 3
+  fi
 fi
 
 curl_auth=(-u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}")

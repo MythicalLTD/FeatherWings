@@ -53,7 +53,11 @@ jobs:
             cp dist/featherwings "dist/wings_linux_${arch}"
             chmod 755 "dist/wings_linux_${arch}"
 
-            NFPM_ARCH="${arch}" NFPM_VERSION="${DEB_VERSION}" nfpm pkg \
+            NFPM_NAME=featherwings \
+            NFPM_CONFLICT=featherwings-dev \
+            NFPM_ARCH="${arch}" \
+            NFPM_VERSION="${DEB_VERSION}" \
+            nfpm pkg \
               --packager deb \
               --config nfpm.yaml \
               --target dist/
@@ -206,6 +210,12 @@ jobs:
           fi
 
           for deb_file in "${deb_files[@]}"; do
+            case "$(basename "${deb_file}")" in
+              featherwings-dev_*)
+                echo "Skipping unexpected -dev package on prod release: ${deb_file}"
+                continue
+                ;;
+            esac
             set +e
             ./scripts/nexus-upload-deb.sh "${deb_file}"
             status=$?

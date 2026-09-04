@@ -24,12 +24,23 @@ Configuration lives in `/etc/featherpanel/config.yml`. The binary is installed
 to `/usr/local/bin/featherwings`; a `wings` symlink is created for compatibility
 with older scripts.
 
+Channels
+--------
+
+- `featherwings` — stable releases (GitHub `v*` tags)
+- `featherwings-dev` — per-commit builds from `main`
+
+These packages conflict with each other and cannot be installed together.
+Switch channels with apt (the other package is replaced automatically).
+
 Upgrades
 --------
 
 Existing configuration is preserved on upgrade. After installing a new version:
 
        sudo apt-get install --only-upgrade featherwings
+       # or
+       sudo apt-get install --only-upgrade featherwings-dev
 
 Support
 -------

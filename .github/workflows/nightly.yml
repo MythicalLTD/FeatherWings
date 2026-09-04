@@ -1,0 +1,83 @@
+name: Dev / Nightly
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-and-publish:
+    name: Build featherwings-dev
+    runs-on: ubuntu-22.04
+    if: "!contains(github.event.head_commit.message, 'skip nightly') && !contains(github.event.head_commit.message, 'nightly skip')"
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+
+      - name: Build binaries and featherwings-dev packages
+        env:
+          PACKAGE_CHANNEL: dev
+          CGO_ENABLED: 0
+          SRC_PATH: github.com/mythicalltd/featherwings
+        run: ./scripts/build-deb.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: featherwings-dev-${{ github.sha }}
+          path: |
+            dist/wings_linux_*
+            dist/*.deb
+            dist/checksums.txt
+          if-no-files-found: error
+
+      - name: Upload .deb packages to Nexus
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_HOST: https://apt.mythicalsystems.org
+          NEXUS_REPOSITORY: MythicalSystems
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NEXUS_USERNAME}" ] || [ -z "${NEXUS_PASSWORD}" ]; then
+            echo "NEXUS_USERNAME and NEXUS_PASSWORD secrets must be configured"
+            exit 1
+          fi
+
+          shopt -s nullglob
+          deb_files=(dist/featherwings-dev_*.deb)
+
+          if [ "${#deb_files[@]}" -eq 0 ]; then
+            echo "No featherwings-dev .deb files to upload"
+            exit 1
+          fi
+
+          for deb_file in "${deb_files[@]}"; do
+            set +e
+            ./scripts/nexus-upload-deb.sh "${deb_file}"
+            status=$?
+            set -e
+            if [ "${status}" -eq 1 ]; then
+              exit 1
+            fi
+          done
