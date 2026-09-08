@@ -179,7 +179,19 @@ func (re *RequestError) asDownloaderError() (int, string) {
 	case strings.Contains(msg, "downloader: request is missing ContentLength"):
 		return http.StatusBadRequest, "Remote URL did not send Content-Length. Use a direct file URL, or the host blocked automated downloads."
 	case strings.Contains(msg, "downloader: failed to perform request"):
-		return http.StatusBadGateway, "Could not reach the remote URL (network/DNS/TLS failure). Verify the URL is reachable from the Wings node."
+		cause := strings.TrimSpace(msg)
+		switch {
+		case strings.Contains(msg, "no such host") || strings.Contains(msg, "Name or service not known") || strings.Contains(msg, "lookup "):
+			return http.StatusBadGateway, "DNS lookup failed for the remote hostname (no such host). The URL host is dead or unreachable from this Wings node — try a different direct CDN URL. Detail: " + cause
+		case strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") || strings.Contains(msg, "i/o timeout"):
+			return http.StatusBadGateway, "Timed out reaching the remote URL from this Wings node. Try another mirror/CDN. Detail: " + cause
+		case strings.Contains(msg, "tls:") || strings.Contains(msg, "x509:") || strings.Contains(msg, "certificate"):
+			return http.StatusBadGateway, "TLS/certificate failure reaching the remote URL. Use a valid public HTTPS URL. Detail: " + cause
+		case strings.Contains(msg, "connection refused"):
+			return http.StatusBadGateway, "Remote host refused the connection. Try another URL. Detail: " + cause
+		default:
+			return http.StatusBadGateway, "Could not reach the remote URL (network/DNS/TLS failure). This usually means a bad/dead download host, not a Wings outage. Detail: " + cause
+		}
 	case strings.Contains(msg, "downloader: detected redirect loop"):
 		return http.StatusBadRequest, "Remote URL redirect loop detected. Use a final direct download URL."
 	case strings.Contains(msg, "downloader: exceeded maximum redirect attempts"):
