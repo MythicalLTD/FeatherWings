@@ -160,3 +160,55 @@ func (re *RequestError) asFilesystemError() (int, string) {
 	}
 	return 0, ""
 }
+
+// asDownloaderError maps remote file pull (downloader) failures to clear client
+// messages so panel/MCP/AI clients can act on them instead of a generic 500.
+func (re *RequestError) asDownloaderError() (int, string) {
+	err := re.Cause()
+	if err == nil {
+		return 0, ""
+	}
+	msg := err.Error()
+
+	switch {
+	case strings.Contains(msg, "downloader: got bad response status from endpoint:"):
+		status := strings.TrimSpace(msg[strings.Index(msg, "endpoint:")+len("endpoint:"):])
+		return http.StatusBadGateway, "Remote URL returned an error status: " + status + ". Check the URL is a direct download link."
+	case strings.Contains(msg, "downloader: remote URL returned an HTML page"):
+		return http.StatusBadRequest, "Remote URL returned an HTML page instead of a file. Use a direct download link (not a browser download page)."
+	case strings.Contains(msg, "downloader: request is missing ContentLength"):
+		return http.StatusBadRequest, "Remote URL did not send Content-Length. Use a direct file URL, or the host blocked automated downloads."
+	case strings.Contains(msg, "downloader: failed to perform request"):
+		return http.StatusBadGateway, "Could not reach the remote URL (network/DNS/TLS failure). Verify the URL is reachable from the Wings node."
+	case strings.Contains(msg, "downloader: detected redirect loop"):
+		return http.StatusBadRequest, "Remote URL redirect loop detected. Use a final direct download URL."
+	case strings.Contains(msg, "downloader: exceeded maximum redirect attempts"):
+		return http.StatusBadRequest, "Remote URL redirected too many times. Use a final direct download URL."
+	case strings.Contains(msg, "downloader: redirect to unsupported scheme"):
+		return http.StatusBadRequest, "Remote URL redirected to an unsupported scheme."
+	case strings.Contains(msg, "downloader: redirect response missing location"):
+		return http.StatusBadGateway, "Remote URL returned a redirect without a Location header."
+	case strings.Contains(msg, "downloader: invalid redirect location"):
+		return http.StatusBadGateway, "Remote URL returned an invalid redirect Location."
+	case strings.Contains(msg, "downloader: failed to create request"):
+		return http.StatusBadRequest, "Invalid remote URL for download."
+	case strings.Contains(msg, "downloader: download request url is nil"):
+		return http.StatusBadRequest, "Missing remote URL for download."
+	case strings.Contains(msg, "downloader: invalid \"Content-Disposition\""):
+		return http.StatusBadGateway, "Remote URL sent an invalid Content-Disposition header. Pass fileName explicitly."
+	case strings.Contains(msg, "downloader: failed to write file"):
+		// Prefer filesystem mapping when present; otherwise give a clear write failure.
+		if status, fsMsg := re.asFilesystemError(); fsMsg != "" {
+			return status, fsMsg
+		}
+		return http.StatusBadRequest, "Failed to write the downloaded file to the server directory: " + msg
+	case strings.Contains(msg, "destination resolves to internal network location") || strings.Contains(msg, "ErrInternalResolution"):
+		return http.StatusForbidden, "That URL points to a blocked/internal address and cannot be pulled from this node."
+	}
+
+	if strings.HasPrefix(msg, "downloader:") {
+		return http.StatusBadRequest, "Remote file pull failed: " + strings.TrimPrefix(msg, "downloader: ")
+	}
+
+	return 0, ""
+}

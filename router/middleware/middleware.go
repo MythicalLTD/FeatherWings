@@ -87,6 +87,10 @@ func CaptureErrors() gin.HandlerFunc {
 			c.AbortWithStatusJSON(status, gin.H{"error": msg, "request_id": c.Writer.Header().Get("X-Request-Id")})
 			return
 		}
+		if status, msg := captured.asDownloaderError(); msg != "" {
+			c.AbortWithStatusJSON(status, gin.H{"error": msg, "request_id": c.Writer.Header().Get("X-Request-Id")})
+			return
+		}
 		captured.Abort(c, status)
 	}
 }
