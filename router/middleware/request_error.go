@@ -212,3 +212,23 @@ func (re *RequestError) asDownloaderError() (int, string) {
 
 	return 0, ""
 }
+
+// asDockerError maps common Docker daemon failures to clear API messages.
+func (re *RequestError) asDockerError() (int, string) {
+	err := re.Cause()
+	if err == nil {
+		return 0, ""
+	}
+	msg := err.Error()
+
+	switch {
+	case strings.Contains(msg, "No such container"):
+		return http.StatusConflict, "Docker container is not running (it may have crashed or not started yet). Check console/install logs for why it exited."
+	case strings.Contains(msg, "is not running"):
+		return http.StatusConflict, "Docker container is not running."
+	case strings.Contains(msg, "No such image"):
+		return http.StatusBadRequest, "Required Docker image is missing. Try starting the server again so Wings can pull it."
+	}
+
+	return 0, ""
+}
