@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,13 +92,59 @@ type PanelAPIClientInfo struct {
 	UserEmail  string `json:"-"`
 }
 
+// OAuth2DeviceStartResponse is returned by POST /api/user/api-clients/oauth2/device.
+type OAuth2DeviceStartResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+// OAuth2DeviceTokenResponse contains credentials returned after a device grant is approved.
+type OAuth2DeviceTokenResponse struct {
+	TokenType         string `json:"token_type"`
+	PublicKey         string `json:"public_key"`
+	PrivateKey        string `json:"private_key"`
+	AuthorizationCode string `json:"authorization_code"`
+	IssuedAt          string `json:"issued_at"`
+}
+
+// OAuth2DevicePollResult reports the state of a device token poll.
+type OAuth2DevicePollResult struct {
+	Status      string
+	Interval    int
+	Credentials *OAuth2DeviceTokenResponse
+}
+
 type panelEnvelope struct {
 	Success      bool            `json:"success"`
 	Message      string          `json:"message"`
 	Data         json.RawMessage `json:"data"`
 	Error        bool            `json:"error"`
 	ErrorMessage string          `json:"error_message"`
-	ErrorCode    string          `json:"error_code"`
+	ErrorCode    panelString     `json:"error_code"`
+}
+
+type panelString string
+
+func (s *panelString) UnmarshalJSON(raw []byte) error {
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		*s = panelString(str)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		*s = panelString(number.String())
+		return nil
+	}
+	if string(raw) == "null" {
+		*s = ""
+		return nil
+	}
+	return errors.Errorf("expected string, number, or null")
 }
 
 // NewPanelAPI creates a panel API client with a normalized base URL.
@@ -200,6 +247,69 @@ func ValidateAPIClient(ctx context.Context, baseURL, publicKey string, allowInse
 		Username:  data.User.Username,
 		UserEmail: data.User.Email,
 	}, nil
+}
+
+// StartOAuth2Device starts the callback-less OAuth2 device authorization flow.
+func StartOAuth2Device(ctx context.Context, baseURL string, payload map[string]string, allowInsecure bool) (*OAuth2DeviceStartResponse, error) {
+	var data OAuth2DeviceStartResponse
+	if err := requestPanelJSON(ctx, newPanelHTTPClient(allowInsecure), http.MethodPost, NormalizePanelURL(baseURL)+"/api/user/api-clients/oauth2/device", payload, "", &data); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(data.DeviceCode) == "" || strings.TrimSpace(data.UserCode) == "" {
+		return nil, errors.New("panel: OAuth2 device start response did not include a device code")
+	}
+	if data.Interval <= 0 {
+		data.Interval = 5
+	}
+	return &data, nil
+}
+
+// PollOAuth2Device polls the callback-less OAuth2 device flow until it is approved, denied, pending, or expired.
+func PollOAuth2Device(ctx context.Context, baseURL, deviceCode string, allowInsecure bool) (*OAuth2DevicePollResult, error) {
+	var data OAuth2DeviceTokenResponse
+	err := requestPanelJSON(
+		ctx,
+		newPanelHTTPClient(allowInsecure),
+		http.MethodPost,
+		NormalizePanelURL(baseURL)+"/api/user/api-clients/oauth2/device/token",
+		map[string]string{"device_code": deviceCode},
+		"",
+		&data,
+	)
+	if err == nil {
+		if strings.TrimSpace(data.PublicKey) == "" || strings.TrimSpace(data.PrivateKey) == "" {
+			return nil, errors.New("panel: OAuth2 device token response did not include API credentials")
+		}
+		return &OAuth2DevicePollResult{
+			Status:      "approved",
+			Credentials: &data,
+		}, nil
+	}
+
+	var apiErr *PanelAPIError
+	if stderrors.As(err, &apiErr) {
+		status := apiErr.Code
+		interval := 0
+		var extra struct {
+			Error    string `json:"error"`
+			Interval int    `json:"interval"`
+		}
+		if len(apiErr.Data) > 0 {
+			_ = json.Unmarshal(apiErr.Data, &extra)
+			if strings.TrimSpace(extra.Error) != "" {
+				status = strings.TrimSpace(extra.Error)
+			}
+			interval = extra.Interval
+		}
+
+		switch status {
+		case "authorization_pending", "slow_down":
+			return &OAuth2DevicePollResult{Status: status, Interval: interval}, nil
+		case "access_denied", "expired_token":
+			return &OAuth2DevicePollResult{Status: status}, nil
+		}
+	}
+	return nil, err
 }
 
 // PanelSystemInfo contains public panel metadata from GET /api/system/settings.
@@ -323,6 +433,10 @@ func (api *PanelAPI) putJSON(ctx context.Context, path string, payload any, dest
 }
 
 func (api *PanelAPI) requestJSON(ctx context.Context, method, path string, payload any, dest any) error {
+	return requestPanelJSON(ctx, api.HTTPClient, method, api.BaseURL+path, payload, api.APIKey, dest)
+}
+
+func requestPanelJSON(ctx context.Context, client *http.Client, method, target string, payload any, apiKey string, dest any) error {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -332,24 +446,25 @@ func (api *PanelAPI) requestJSON(ctx context.Context, method, path string, paylo
 		body = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, api.BaseURL+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+api.APIKey)
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	client := api.HTTPClient
 	if client == nil {
-		client = newPanelHTTPClient(api.AllowInsecure)
+		client = newPanelHTTPClient(false)
 	}
 
 	res, err := client.Do(req)
 	if err != nil {
-		return errors.Wrapf(err, "panel: %s %s failed", method, path)
+		return errors.Wrapf(err, "panel: %s %s failed", method, target)
 	}
 	defer res.Body.Close()
 
@@ -360,16 +475,16 @@ func (api *PanelAPI) requestJSON(ctx context.Context, method, path string, paylo
 
 	var envelope panelEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return errors.Wrapf(err, "panel: invalid JSON response from %s", path)
+		return errors.Wrapf(err, "panel: invalid JSON response from %s", target)
 	}
 	if !envelope.Success {
-		return panelAPIError(envelope, fmt.Sprintf("panel: %s %s failed", method, path))
+		return panelAPIError(envelope, fmt.Sprintf("panel: %s %s failed", method, target))
 	}
 	if dest == nil {
 		return nil
 	}
 	if err := json.Unmarshal(envelope.Data, dest); err != nil {
-		return errors.Wrapf(err, "panel: invalid data payload from %s", path)
+		return errors.Wrapf(err, "panel: invalid data payload from %s", target)
 	}
 	return nil
 }
@@ -398,6 +513,20 @@ func applyCreatePanelNodeDefaults(req *CreatePanelNodeRequest) {
 	}
 }
 
+// PanelAPIError is an API-level error returned by the panel envelope.
+type PanelAPIError struct {
+	Message string
+	Code    string
+	Data    json.RawMessage
+}
+
+func (e *PanelAPIError) Error() string {
+	if strings.TrimSpace(e.Code) != "" {
+		return fmt.Sprintf("%s (%s)", e.Message, e.Code)
+	}
+	return e.Message
+}
+
 func panelAPIError(envelope panelEnvelope, fallback string) error {
 	message := strings.TrimSpace(envelope.ErrorMessage)
 	if message == "" {
@@ -406,8 +535,9 @@ func panelAPIError(envelope panelEnvelope, fallback string) error {
 	if message == "" {
 		message = fallback
 	}
-	if code := strings.TrimSpace(envelope.ErrorCode); code != "" {
-		return errors.Errorf("%s (%s)", message, code)
+	return &PanelAPIError{
+		Message: message,
+		Code:    strings.TrimSpace(string(envelope.ErrorCode)),
+		Data:    envelope.Data,
 	}
-	return errors.New(message)
 }

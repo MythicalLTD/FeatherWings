@@ -13,6 +13,7 @@ import (
 	"github.com/mythicalltd/featherwings/environment"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/server/backup"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 // Notifies the panel of a backup's state and returns an error if one is encountered
@@ -56,8 +57,8 @@ func (s *Server) getServerwideIgnoredFiles() (string, error) {
 			}
 			continue
 		}
-		if st.Mode()&os.ModeSymlink != 0 || st.Size() > 32*1024 {
-			// Don't read a symlinked ignore file, or a file larger than 32KiB in size.
+		if st.Mode()&os.ModeSymlink != 0 || st.Size() > filesystem.MaxIgnoreLength {
+			// Don't read a symlinked ignore file, or a file larger than the maximum list size.
 			_ = f.Close()
 			continue
 		}
@@ -68,6 +69,9 @@ func (s *Server) getServerwideIgnoredFiles() (string, error) {
 				firstErr = err
 			}
 			continue
+		}
+		if err := filesystem.ValidateIgnore(string(b)); err != nil {
+			return "", errors.WrapIf(err, "backup: invalid server-wide ignore file")
 		}
 		return string(b), nil
 	}

@@ -2,16 +2,12 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -24,17 +20,6 @@ type configureOAuthCredentials struct {
 	PublicKey         string
 	PrivateKey        string
 	AuthorizationCode string
-}
-
-type configureOAuthCallbackPayload struct {
-	Success           bool   `json:"success"`
-	TokenType         string `json:"token_type"`
-	PublicKey         string `json:"public_key"`
-	PrivateKey        string `json:"private_key"`
-	AuthorizationCode string `json:"authorization_code"`
-	IssuedAt          string `json:"issued_at"`
-	Error             string `json:"error"`
-	ErrorDescription  string `json:"error_description"`
 }
 
 func resolveJoinDataViaOAuth() (string, error) {
@@ -98,47 +83,128 @@ func runConfigureOAuth(panelURL string) (configureOAuthCredentials, oauthCallbac
 	hostCtx, hostCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer hostCancel()
 
-	callbackSelection, err := resolveOAuthCallbackHost(hostCtx)
+	nodeIPSelection, err := resolveConfigureNodeIP(hostCtx)
 	if err != nil {
 		return configureOAuthCredentials{}, oauthCallbackHostSelection{}, err
 	}
 
-	resultCh, callbackURL, cleanup, err := startConfigureOAuthCallbackServer(callbackSelection.Host)
-	if err != nil {
-		return configureOAuthCredentials{}, oauthCallbackHostSelection{}, err
-	}
-	defer cleanup()
-
-	consentURL, err := buildConfigureOAuthConsentURL(panelURL, callbackURL)
+	startCtx, startCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	device, err := config.StartOAuth2Device(startCtx, panelURL, buildConfigureOAuthDevicePayload(), configureFlags.AllowInsecure)
+	startCancel()
 	if err != nil {
 		return configureOAuthCredentials{}, oauthCallbackHostSelection{}, err
 	}
 
-	fmt.Printf("%s Using node IP %s\n", lipConfigureOK().Render("✓"), lipConfigureInk().Render(callbackSelection.Host))
-	fmt.Println(lipConfigureMuted().Render("FeatherPanel will send credentials to:"))
-	fmt.Println(lipConfigureInk().Render(callbackURL))
-	fmt.Println(lipConfigureMuted().Render("Ensure this port is open in your firewall and reachable from the panel."))
+	if nodeIPSelection.Host != "" {
+		fmt.Printf("%s Using node IP %s\n", lipConfigureOK().Render("✓"), lipConfigureInk().Render(nodeIPSelection.Host))
+	} else {
+		fmt.Printf("%s Could not auto-detect a public node IP; you can enter the node FQDN during setup.\n", lipConfigureWarn().Render("!"))
+	}
 	fmt.Println()
 	fmt.Println(lipConfigureMuted().Render("Open this URL in your browser and approve the request:"))
 	fmt.Println()
-	fmt.Println(lipConfigureInk().Render(consentURL))
+	fmt.Println(lipConfigureInk().Render(device.VerificationURIComplete))
+	fmt.Println()
+	fmt.Printf("%s Code: %s\n", lipConfigureMuted().Render("Device authorization"), lipConfigureInk().Bold(true).Render(device.UserCode))
+	fmt.Println(lipConfigureMuted().Render("No inbound callback port is required; this CLI will poll FeatherPanel for approval."))
 	fmt.Println()
 
-	if err := openConfigureBrowser(consentURL); err == nil {
-		fmt.Println(lipConfigureMuted().Render("Opened your browser — waiting for panel delivery…"))
+	if err := openConfigureBrowser(device.VerificationURIComplete); err == nil {
+		fmt.Println(lipConfigureMuted().Render("Opened your browser — waiting for approval…"))
 	} else {
-		fmt.Println(lipConfigureMuted().Render("Waiting for panel delivery…"))
+		fmt.Println(lipConfigureMuted().Render("Waiting for approval…"))
 	}
 	fmt.Println()
 
-	select {
-	case result := <-resultCh:
-		if result.err != nil {
-			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, result.err
+	deadline := time.Now().Add(configureOAuthTimeout)
+	pollEvery := time.Duration(device.Interval) * time.Second
+	if pollEvery <= 0 {
+		pollEvery = 5 * time.Second
+	}
+
+	for {
+		if time.Now().After(deadline) {
+			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("timed out waiting for FeatherPanel authorization")
 		}
-		return result.credentials, callbackSelection, nil
-	case <-time.After(configureOAuthTimeout):
-		return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("timed out waiting for FeatherPanel authorization")
+
+		timer := time.NewTimer(pollEvery)
+		select {
+		case <-timer.C:
+		}
+
+		pollCtx, pollCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		result, err := config.PollOAuth2Device(pollCtx, panelURL, device.DeviceCode, configureFlags.AllowInsecure)
+		pollCancel()
+		if err != nil {
+			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, err
+		}
+
+		switch result.Status {
+		case "approved":
+			if result.Credentials == nil {
+				return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("OAuth device authorization did not include API credentials")
+			}
+			return configureOAuthCredentials{
+				PublicKey:         strings.TrimSpace(result.Credentials.PublicKey),
+				PrivateKey:        strings.TrimSpace(result.Credentials.PrivateKey),
+				AuthorizationCode: strings.TrimSpace(result.Credentials.AuthorizationCode),
+			}, nodeIPSelection, nil
+		case "authorization_pending":
+			// Keep polling.
+		case "slow_down":
+			if result.Interval > 0 {
+				pollEvery = time.Duration(result.Interval) * time.Second
+			} else {
+				pollEvery += 2 * time.Second
+			}
+		case "access_denied":
+			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("panel authorization denied")
+		case "expired_token":
+			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("OAuth device code expired")
+		default:
+			return configureOAuthCredentials{}, oauthCallbackHostSelection{}, fmt.Errorf("unexpected OAuth device authorization status: %s", result.Status)
+		}
+	}
+}
+
+func resolveConfigureNodeIP(ctx context.Context) (oauthCallbackHostSelection, error) {
+	if host := strings.TrimSpace(configureFlags.CallbackHost); host != "" {
+		normalized, err := normalizeOAuthCallbackHost(host)
+		if err != nil {
+			return oauthCallbackHostSelection{}, err
+		}
+		return oauthCallbackHostSelection{Host: normalized, Source: "manual"}, nil
+	}
+	if host := strings.TrimSpace(os.Getenv("FEATHERWINGS_CALLBACK_HOST")); host != "" {
+		normalized, err := normalizeOAuthCallbackHost(host)
+		if err != nil {
+			return oauthCallbackHostSelection{}, err
+		}
+		return oauthCallbackHostSelection{Host: normalized, Source: "environment"}, nil
+	}
+
+	candidates, err := discoverOAuthCallbackHosts(ctx)
+	if err != nil || len(candidates) == 0 {
+		return oauthCallbackHostSelection{}, nil
+	}
+	for _, candidate := range candidates {
+		if candidate.Source == "outbound" {
+			return oauthCallbackHostSelection{Host: candidate.Host, Source: candidate.Source}, nil
+		}
+	}
+	return oauthCallbackHostSelection{Host: candidates[0].Host, Source: candidates[0].Source}, nil
+}
+
+func buildConfigureOAuthDevicePayload() map[string]string {
+	hostname, err := os.Hostname()
+	if err != nil || strings.TrimSpace(hostname) == "" {
+		hostname = "node"
+	}
+
+	return map[string]string{
+		"name":        fmt.Sprintf("FeatherWings on %s", hostname),
+		"appName":     "FeatherWings",
+		"description": "Authorize FeatherWings CLI to register this machine as a game server node",
 	}
 }
 
@@ -157,101 +223,6 @@ func buildConfigureOAuthConsentURL(panelURL, callbackURL string) (string, error)
 
 	consentPath := "/dashboard/account/oauth2/api/new?" + values.Encode()
 	return config.NormalizePanelURL(panelURL) + consentPath, nil
-}
-
-type configureOAuthCallbackResult struct {
-	credentials configureOAuthCredentials
-	err         error
-}
-
-func startConfigureOAuthCallbackServer(callbackHost string) (<-chan configureOAuthCallbackResult, string, func(), error) {
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to start OAuth callback listener: %w", err)
-	}
-
-	resultCh := make(chan configureOAuthCallbackResult, 1)
-	var delivered sync.Once
-	deliver := func(result configureOAuthCallbackResult) {
-		delivered.Do(func() {
-			resultCh <- result
-		})
-	}
-
-	handlePayload := func(payload configureOAuthCallbackPayload) {
-		if !payload.Success {
-			message := strings.TrimSpace(payload.ErrorDescription)
-			if message == "" {
-				message = strings.TrimSpace(payload.Error)
-			}
-			if message == "" {
-				message = "authorization denied"
-			}
-			deliver(configureOAuthCallbackResult{err: fmt.Errorf("panel authorization denied: %s", message)})
-			return
-		}
-
-		if strings.TrimSpace(payload.PublicKey) == "" || strings.TrimSpace(payload.PrivateKey) == "" {
-			deliver(configureOAuthCallbackResult{err: fmt.Errorf("OAuth callback did not include API credentials")})
-			return
-		}
-
-		deliver(configureOAuthCallbackResult{
-			credentials: configureOAuthCredentials{
-				PublicKey:         strings.TrimSpace(payload.PublicKey),
-				PrivateKey:        strings.TrimSpace(payload.PrivateKey),
-				AuthorizationCode: strings.TrimSpace(payload.AuthorizationCode),
-			},
-		})
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var payload configureOAuthCallbackPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			deliver(configureOAuthCallbackResult{err: fmt.Errorf("invalid OAuth callback payload: %w", err)})
-			writeOAuthCallbackAck(w)
-			return
-		}
-		handlePayload(payload)
-		writeOAuthCallbackAck(w)
-	})
-
-	server := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	go func() {
-		_ = server.Serve(listener)
-	}()
-
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		_ = listener.Close()
-		return nil, "", nil, fmt.Errorf("failed to resolve OAuth callback port")
-	}
-
-	callbackURL := buildOAuthCallbackURL(callbackHost, addr.Port)
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
-		_ = listener.Close()
-	}
-
-	return resultCh, callbackURL, cleanup, nil
-}
-
-func writeOAuthCallbackAck(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"received":true}`))
 }
 
 func openConfigureBrowser(target string) error {

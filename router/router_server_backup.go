@@ -22,6 +22,7 @@ import (
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/backup"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 var blockedBackupRestorePrefixes = []netip.Prefix{
@@ -59,6 +60,12 @@ func postServerBackup(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	if err := filesystem.ValidateIgnore(data.Ignore); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	var adapter backup.BackupInterface
 	switch data.Adapter {
 	case backup.LocalBackupAdapter:
@@ -276,7 +283,25 @@ func deleteServerBackup(c *gin.Context) {
 
 	// Fall back to PBS when enabled and a matching snapshot exists.
 	if config.Get().System.Backups.PBS.Enabled {
-		pb, perr := backup.LocatePBS(client, backupUUID, serverID)
+		var pb *backup.PBSBackup
+		var perr error
+		if snapshot := strings.TrimSpace(c.Query("snapshot")); snapshot != "" {
+			pb, perr = backup.LocatePBSBySnapshot(client, backupUUID, serverID, snapshot)
+			if perr == nil {
+				if err := pb.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
+					middleware.CaptureAndAbort(c, err)
+					return
+				}
+				c.Status(http.StatusNoContent)
+				return
+			}
+			if !errors.Is(perr, os.ErrNotExist) {
+				middleware.CaptureAndAbort(c, perr)
+				return
+			}
+		}
+
+		pb, perr = backup.LocatePBS(client, backupUUID, serverID)
 		if perr == nil {
 			if err := pb.Remove(); err != nil && !errors.Is(err, os.ErrNotExist) {
 				middleware.CaptureAndAbort(c, err)

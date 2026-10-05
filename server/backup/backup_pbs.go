@@ -87,6 +87,19 @@ func LocatePBS(client remote.Client, uuid string, suuid string) (*PBSBackup, err
 	return b, nil
 }
 
+// LocatePBSBySnapshot finds an existing PBS snapshot by its full snapshot path.
+// The snapshot must belong to the requested server backup group.
+func LocatePBSBySnapshot(client remote.Client, uuid string, suuid string, snapshot string) (*PBSBackup, error) {
+	b := NewPBS(client, uuid, suuid, "")
+	snap, size, err := b.findSnapshotByPath(context.Background(), snapshot)
+	if err != nil {
+		return nil, err
+	}
+	b.snapshot = snap
+	b.size = size
+	return b, nil
+}
+
 // WithLogContext attaches additional context to the log output for this backup.
 func (b *PBSBackup) WithLogContext(c map[string]interface{}) {
 	b.logContext = c
@@ -409,6 +422,29 @@ func (b *PBSBackup) findSnapshotByNotes(ctx context.Context, panelUUID string) (
 			}
 		}
 		if note == panelUUID {
+			return path, s.Size, nil
+		}
+	}
+	return "", 0, errors.WithStack(os.ErrNotExist)
+}
+
+func (b *PBSBackup) findSnapshotByPath(ctx context.Context, snapshot string) (string, int64, error) {
+	snapshot = strings.TrimSpace(snapshot)
+	if snapshot == "" || strings.HasPrefix(snapshot, "/") || strings.Contains(snapshot, "\x00") || strings.Contains(snapshot, "..") {
+		return "", 0, errors.WithStack(os.ErrNotExist)
+	}
+	prefix := pbsBackupType + "/" + b.ServerId() + "/"
+	if !strings.HasPrefix(snapshot, prefix) || len(snapshot) <= len(prefix) {
+		return "", 0, errors.WithStack(os.ErrNotExist)
+	}
+
+	snaps, err := b.listSnapshots(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	for _, s := range snaps {
+		path := s.fullPath(b.ServerId())
+		if path == snapshot {
 			return path, s.Size, nil
 		}
 	}

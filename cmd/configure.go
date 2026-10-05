@@ -57,7 +57,7 @@ func newConfigureCommand() *cobra.Command {
 	cmd.Flags().StringVar(&configureFlags.NodeFQDN, "node-fqdn", "", "Node FQDN for non-interactive quick setup")
 	cmd.Flags().IntVar(&configureFlags.LocationID, "location-id", 0, "Game location ID for non-interactive quick setup")
 	cmd.Flags().BoolVar(&configureFlags.KeepOAuthKey, "keep-oauth-key", false, "Keep the temporary OAuth API key on the panel after setup")
-	cmd.Flags().StringVar(&configureFlags.CallbackHost, "callback-host", "", "Public IP of this node for OAuth setup")
+	cmd.Flags().StringVar(&configureFlags.CallbackHost, "callback-host", "", "Public IP of this node for quick setup defaults")
 
 	return cmd
 }

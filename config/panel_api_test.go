@@ -206,6 +206,76 @@ func TestPanelAPIGetSystemSettings(t *testing.T) {
 	}
 }
 
+func TestOAuth2DeviceStartAndPoll(t *testing.T) {
+	pollCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/user/api-clients/oauth2/device":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"device_code":               "fpdev_test",
+					"user_code":                 "ABCD-EFGH",
+					"verification_uri":          "https://panel.example.com/dashboard/account/oauth2/api/device",
+					"verification_uri_complete": "https://panel.example.com/dashboard/account/oauth2/api/device?user_code=ABCD-EFGH",
+					"expires_in":                600,
+					"interval":                  5,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/user/api-clients/oauth2/device/token":
+			pollCount++
+			if pollCount == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"success":       false,
+					"error_message": "Authorization pending",
+					"error_code":    400,
+					"data": map[string]any{
+						"error": "authorization_pending",
+					},
+				})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"token_type":         "featherpanel_api_key",
+					"public_key":         "fp_public",
+					"private_key":        "fp_private",
+					"authorization_code": "fpoauthcode_test",
+				},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	device, err := StartOAuth2Device(context.Background(), server.URL, map[string]string{"name": "FeatherWings"}, false)
+	if err != nil {
+		t.Fatalf("StartOAuth2Device() error = %v", err)
+	}
+	if device.DeviceCode != "fpdev_test" || device.UserCode != "ABCD-EFGH" || device.Interval != 5 {
+		t.Fatalf("unexpected device start: %+v", device)
+	}
+
+	pending, err := PollOAuth2Device(context.Background(), server.URL, device.DeviceCode, false)
+	if err != nil {
+		t.Fatalf("PollOAuth2Device() pending error = %v", err)
+	}
+	if pending.Status != "authorization_pending" {
+		t.Fatalf("expected authorization_pending, got %+v", pending)
+	}
+
+	approved, err := PollOAuth2Device(context.Background(), server.URL, device.DeviceCode, false)
+	if err != nil {
+		t.Fatalf("PollOAuth2Device() approved error = %v", err)
+	}
+	if approved.Status != "approved" || approved.Credentials == nil || approved.Credentials.PublicKey != "fp_public" {
+		t.Fatalf("unexpected approved result: %+v", approved)
+	}
+}
+
 func TestNormalizePanelURL(t *testing.T) {
 	tests := map[string]string{
 		"https://panel.example.com///":                                              "https://panel.example.com",
