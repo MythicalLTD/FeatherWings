@@ -8,12 +8,15 @@
 - Handle SSH channels concurrently to fix 40s freeze by `@xgabi86`(pelican/upstream)
 - Server `restart` now force-destroys the container before start so synced launch parameters take effect (previously `Start` could attach to a still-running instance and leave the old command line).
 - Resource stats no longer stick at `0` after Wings re-attaches to an already-running container (e.g. `systemctl restart featherwings` on Docker 29): the Docker stats stream is retried while the process stays active, and runtime reconcile now sets `running` before Attach so polling is not skipped.
+- Issues with podman reporting 0% CPU usage. by @nayskutzu
 
 ### Added
 
 - Console Tab completion for any server console: websocket `suggest command` → `command suggestions`, and `POST /api/servers/{server}/completion`. Eggs ship a `process_configuration.completion` tree (works for every app), or opt into a built-in profile via egg feature `console_completion` (e.g. `["minecraft"]` — Minecraft is also auto-detected as a convenience). The panel owns the Tab key and applies the returned `start`/`end` replace range.
 - Console completion suggestions now offer exact matches the same way a trailing space would (e.g. `/gamemode` → `/gamemode`). by @nayskutzu
 - Wings Backup Manager: create, list, restore, and manage Wings backups by @nayskutzu
+- Now the wings agent is also able to send the server status to the panel so the panel can be a source of truth for the server status. by @nayskutzu
+- Fix some issues with the downloader. by @nayskutzu
 
 
 ## v1.3.7.9
