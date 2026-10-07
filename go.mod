@@ -22,6 +22,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/gammazero/workerpool v1.2.1
 	github.com/gbrlsnchs/jwt/v3 v3.0.1
+	github.com/getsentry/sentry-go v0.49.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-acme/lego/v4 v4.29.0

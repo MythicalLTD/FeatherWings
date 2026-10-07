@@ -54,6 +54,11 @@ func Scheduler(ctx context.Context, m *server.Manager) (gocron.Scheduler, error)
 		manager: m,
 	}
 
+	status := statusCron{
+		mu:      system.NewAtomicBool(false),
+		manager: m,
+	}
+
 	l := log.WithField("subsystem", "cron")
 
 	interval := time.Duration(config.Get().System.ActivitySendInterval) * time.Second
@@ -119,6 +124,31 @@ func Scheduler(ctx context.Context, m *server.Manager) (gocron.Scheduler, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "cron: failed to create runtime reconciliation job")
 		}
+	}
+
+	// Periodic power-state sync so the Panel DB stays accurate if a push was missed.
+	statusIntervalSec := config.Get().System.StatusSyncInterval
+	if statusIntervalSec > 0 {
+		statusInterval := time.Duration(statusIntervalSec) * time.Second
+		l.WithField("interval", statusInterval).Info("configuring server power status sync cron")
+		_, err = s.NewJob(
+			gocron.DurationJob(statusInterval),
+			gocron.NewTask(func() {
+				l.WithField("cron", "status").Debug("syncing server power states to Panel")
+				if err := status.Run(ctx); err != nil {
+					if errors.Is(err, ErrCronRunning) {
+						l.WithField("cron", "status").Warn("status sync already running, skipping...")
+					} else {
+						l.WithField("cron", "status").WithField("error", err).Error("status sync failed")
+					}
+				}
+			}),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "cron: failed to create status sync job")
+		}
+	} else {
+		l.Info("server power status sync cron disabled (status_sync_interval=0)")
 	}
 
 	return s, nil

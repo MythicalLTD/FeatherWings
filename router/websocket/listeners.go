@@ -88,11 +88,14 @@ func (h *Handler) listenForServerEvents(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	eventChan := make(chan []byte)
-	logOutput := make(chan []byte, 8)
-	installOutput := make(chan []byte, 4)
+	// Buffered: SinkPool.Push only waits ~5ms on unbuffered sinks then drops.
+	// A slow WriteJSON (console spam / congested client) used to drop status/stats
+	// while power actions still succeeded inbound — UI looked dead until refresh.
+	eventChan := make(chan []byte, 64)
+	logOutput := make(chan []byte, 64)
+	installOutput := make(chan []byte, 16)
 
-	h.server.Events().On(eventChan) // TODO: make a sinky
+	h.server.Events().On(eventChan)
 	h.server.Sink(system.LogSink).On(logOutput)
 	h.server.Sink(system.InstallSink).On(installOutput)
 

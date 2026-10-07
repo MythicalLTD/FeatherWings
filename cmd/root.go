@@ -54,6 +54,7 @@ var rootCommand = &cobra.Command{
 	PreRun: func(cmd *cobra.Command, args []string) {
 		initConfig()
 		initLogging()
+		initSentry()
 		if tls, _ := cmd.Flags().GetBool("auto-tls"); tls {
 			if host, _ := cmd.Flags().GetString("tls-hostname"); host == "" {
 				fmt.Println("A TLS hostname must be provided when running wings with automatic TLS, e.g.:\n\n    ./wings --auto-tls --tls-hostname my.example.com")
@@ -94,6 +95,7 @@ func init() {
 	rootCommand.AddCommand(newConfigureCommand())
 	rootCommand.AddCommand(newDiagnosticsCommand())
 	rootCommand.AddCommand(newSelfupdateCommand())
+	rootCommand.AddCommand(newNodeBackupCommand())
 }
 
 func isDockerSnap() bool {
@@ -114,6 +116,8 @@ func isDockerSnap() bool {
 }
 
 func rootCmdRun(cmd *cobra.Command, _ []string) {
+	defer flushSentry()
+
 	if config.Get().Debug || !config.Get().Quiet {
 		printLogo()
 	}

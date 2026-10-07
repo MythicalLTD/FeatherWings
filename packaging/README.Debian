@@ -24,6 +24,20 @@ Configuration lives in `/etc/featherpanel/config.yml`. The binary is installed
 to `/usr/local/bin/featherwings`; a `wings` symlink is created for compatibility
 with older scripts.
 
+Error reporting (GlitchTip / Sentry)
+------------------------------------
+
+FeatherWings ships with GlitchTip error reporting enabled. Override or disable
+it in `/etc/featherpanel/config.yml`:
+
+    sentry:
+      enabled: true
+      dsn: "https://YOUR_KEY@your-glitchtip.example/PROJECT_ID"
+      environment: production
+      traces_sample_rate: 0.01
+
+Set `enabled: false` or clear `dsn` to turn reporting off.
+
 Channels
 --------
 
@@ -41,6 +55,16 @@ Existing configuration is preserved on upgrade. After installing a new version:
        sudo apt-get install --only-upgrade featherwings
        # or
        sudo apt-get install --only-upgrade featherwings-dev
+
+Node backups
+------------
+
+Whole-node archives (volumes / full / user backups) can be created with:
+
+       sudo featherwings node-backup create --mode volumes
+
+Archives are stored under `/var/lib/featherpanel/wings_backup` by default.
+See `docs/node-backups.md` and the FeatherPanel installer Wings Backup Manager.
 
 Support
 -------

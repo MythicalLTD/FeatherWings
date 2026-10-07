@@ -481,6 +481,12 @@ func generateConfigSchema() []ConfigSchemaField {
 					Default:     100,
 				},
 				{
+					Key:         "status_sync_interval",
+					Type:        "integer",
+					Description: "Interval in seconds to re-sync server power states to the Panel (0 disables)",
+					Default:     300,
+				},
+				{
 					Key:         "check_permissions_on_boot",
 					Type:        "boolean",
 					Description: "Check file permissions when server boots",

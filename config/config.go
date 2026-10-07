@@ -230,6 +230,10 @@ type SystemConfiguration struct {
 	// Directory where local backups will be stored on the machine.
 	BackupDirectory string `default:"/var/lib/featherpanel/backups" json:"-" yaml:"backup_directory"`
 
+	// Directory where whole-node Wings backups are stored (outside volumes so they
+	// are not exposed over SFTP).
+	NodeBackupDirectory string `default:"/var/lib/featherpanel/wings_backup" json:"-" yaml:"node_backup_directory"`
+
 	// Directory where per-server file revision databases are stored.
 	DiffsDirectory string `default:"/var/lib/featherpanel/diffs" json:"-" yaml:"diffs_directory"`
 
@@ -316,6 +320,11 @@ type SystemConfiguration struct {
 
 	// ActivitySendCount is the number of activity events to send per batch.
 	ActivitySendCount int `default:"100" yaml:"activity_send_count"`
+
+	// StatusSyncInterval is how often (in seconds) Wings re-reports each server's power state to the
+	// Panel. This keeps the Panel database accurate if a transition push was missed (daemon restart,
+	// temporary Panel outage, etc). Set to 0 to disable. Defaults to 300 (5 minutes).
+	StatusSyncInterval int `default:"300" yaml:"status_sync_interval"`
 
 	// If set to true, file ownership for a server will be synced to the Wings user when the
 	// process is booted (recursive chown). On large trees this can still take noticeable time;
@@ -547,6 +556,25 @@ type Token struct {
 	Token string
 }
 
+// SentryConfiguration configures error reporting to GlitchTip or any
+// Sentry-compatible backend. Ships enabled with the FeatherPanel default DSN;
+// operators can point dsn at their own project or set enabled: false.
+type SentryConfiguration struct {
+	// Enabled controls whether the SDK is initialized. When false, no events are sent.
+	Enabled bool `default:"true" json:"enabled" yaml:"enabled"`
+
+	// Dsn is the Sentry/GlitchTip project DSN. An empty value disables reporting
+	// even when Enabled is true.
+	Dsn string `default:"https://293bbc3bca1d4f7b92d27e04fdda3fa8@error.mythical.systems/4" json:"dsn" yaml:"dsn"`
+
+	// Environment is attached to every event (for example production or staging).
+	Environment string `default:"production" json:"environment" yaml:"environment"`
+
+	// TracesSampleRate is the fraction of transactions sent (0.0–1.0).
+	// Keep this low in production to limit storage on self-hosted GlitchTip.
+	TracesSampleRate float64 `default:"0.01" json:"traces_sample_rate" yaml:"traces_sample_rate"`
+}
+
 type Configuration struct {
 	Token Token `json:"-" yaml:"-"`
 
@@ -577,6 +605,9 @@ type Configuration struct {
 	Api    ApiConfiguration    `json:"api" yaml:"api"`
 	System SystemConfiguration `json:"system" yaml:"system"`
 	Docker DockerConfiguration `json:"docker" yaml:"docker"`
+
+	// Sentry configures GlitchTip / Sentry-compatible error reporting.
+	Sentry SentryConfiguration `json:"sentry" yaml:"sentry"`
 
 	// Defines internal throttling configurations for server processes to prevent
 	// someone from running an endless loop that spams data to logs.
@@ -928,6 +959,11 @@ func ConfigureDirectories() error {
 
 	log.WithField("path", _config.System.BackupDirectory).Debug("ensuring backup data directory exists")
 	if err := os.MkdirAll(_config.System.BackupDirectory, 0o700); err != nil {
+		return err
+	}
+
+	log.WithField("path", _config.System.NodeBackupDirectory).Debug("ensuring node backup directory exists")
+	if err := os.MkdirAll(_config.System.NodeBackupDirectory, 0o700); err != nil {
 		return err
 	}
 

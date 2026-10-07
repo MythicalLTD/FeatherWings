@@ -9,6 +9,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -95,6 +96,16 @@ func CaptureErrors() gin.HandlerFunc {
 			c.AbortWithStatusJSON(status, gin.H{"error": msg, "request_id": c.Writer.Header().Get("X-Request-Id")})
 			return
 		}
+		// Report unexpected API errors to GlitchTip (Sentry-compatible).
+		sentry.WithScope(func(scope *sentry.Scope) {
+			scope.SetTag("request_id", c.Writer.Header().Get("X-Request-Id"))
+			scope.SetContext("http", sentry.Context{
+				"status": status,
+				"path":   c.FullPath(),
+				"method": c.Request.Method,
+			})
+			sentry.CaptureException(err.Err)
+		})
 		captured.Abort(c, status)
 	}
 }

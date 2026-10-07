@@ -466,6 +466,23 @@ func (s *Server) OnStateChange() {
 	}
 }
 
+// ReportPowerState re-reports the current container power state to the Panel so
+// its database stays accurate even when a transition push was missed. If local
+// tracking has drifted from the environment, this runs full OnStateChange
+// handling (events / crash detection) instead of a silent heartbeat.
+func (s *Server) ReportPowerState(ctx context.Context) error {
+	st := s.Environment.State()
+	prev := s.resources.State.Load()
+	if prev != st {
+		s.OnStateChange()
+		return nil
+	}
+
+	sc := remote.ServerStateChange{PrevState: st, NewState: st}
+	s.Log().WithField("state_change", sc).Debug("syncing server power state to panel")
+	return s.client.PushServerStateChange(ctx, s.ID(), sc)
+}
+
 // IsRunning determines if the server state is running or not. This is different
 // from the environment state, it is simply the tracked state from this daemon
 // instance, and not the response from Docker.
