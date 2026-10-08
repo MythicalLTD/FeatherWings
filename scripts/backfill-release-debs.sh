@@ -7,7 +7,7 @@ cd "${ROOT}"
 REPO="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 WORKDIR="${WORKDIR:-$(mktemp -d)}"
 ARCHES="${ARCHES:-amd64 arm64}"
-NEXUS_BLOCKED_VERSIONS="${NEXUS_BLOCKED_VERSIONS:-1.4.0}"
+NEXUS_BLOCKED_VERSIONS="${NEXUS_BLOCKED_VERSIONS:-}"
 
 cleanup() {
   rm -rf "${WORKDIR}"

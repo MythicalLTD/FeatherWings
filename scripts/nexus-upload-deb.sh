@@ -28,14 +28,16 @@ filename="$(basename "${deb_file}")"
 public_url="${NEXUS_BASE}/${filename}"
 api_url="${NEXUS_HOST}/service/rest/v1/components?repository=${NEXUS_REPOSITORY}"
 
-NEXUS_BLOCKED_VERSIONS="${NEXUS_BLOCKED_VERSIONS:-1.4.0}"
-for blocked in ${NEXUS_BLOCKED_VERSIONS//,/ }; do
-  blocked="${blocked#v}"
-  if [[ "${filename}" == "featherwings_${blocked}_"* ]]; then
-    echo "Refusing to upload blocked version ${blocked}: ${filename}" >&2
-    exit 3
-  fi
-done
+NEXUS_BLOCKED_VERSIONS="${NEXUS_BLOCKED_VERSIONS:-}"
+if [[ -n "${NEXUS_BLOCKED_VERSIONS}" ]]; then
+  for blocked in ${NEXUS_BLOCKED_VERSIONS//,/ }; do
+    blocked="${blocked#v}"
+    if [[ -n "${blocked}" && "${filename}" == "featherwings_${blocked}_"* ]]; then
+      echo "Refusing to upload blocked version ${blocked}: ${filename}" >&2
+      exit 3
+    fi
+  done
+fi
 
 # Prod package must not use git-describe dirty versions (e.g. 1.3.7.10-5-gabcdef).
 # Dev channel (~dev+) is allowed for featherwings-dev only.

@@ -6,6 +6,12 @@ on:
       - "v*"
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload .debs to Nexus (e.g. v1.4.0)"
+        required: true
+        type: string
 
 jobs:
   build-and-release:
@@ -15,6 +21,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      tag: ${{ github.ref_name }}
+      upload_nexus: ${{ steps.release_state.outputs.upload_nexus }}
 
     steps:
       - name: Code Checkout
@@ -86,13 +95,24 @@ jobs:
           BRANCH=release/${REF:10}
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git checkout -b ${BRANCH}
-          git push -u origin ${BRANCH}
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${BRANCH}"
+            git checkout "${BRANCH}"
+          else
+            git checkout -b "${BRANCH}"
+            git push -u origin "${BRANCH}"
+          fi
           sed -i "s/var Version = \".*\"/var Version = \"${REF:11}\"/" system/const.go
           git add system/const.go
-          git commit -m "bump version for release"
-          git push
+          if git diff --cached --quiet; then
+            echo "Version already bumped on ${BRANCH}"
+          else
+            git commit -m "bump version for release"
+            git push -u origin "${BRANCH}"
+          fi
 
+      # Keep new releases as drafts. If a published release already exists for the tag,
+      # softprops updates it in place; we then upload to Nexus from the after-build job.
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -153,35 +173,81 @@ jobs:
           asset_name: checksums.txt
           asset_content_type: text/plain
 
+      - name: Detect published release (empty-publish race)
+        id: release_state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          is_draft="$(gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" --json isDraft -q .isDraft)"
+          if [ "${is_draft}" = "false" ]; then
+            echo "upload_nexus=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload_nexus=false" >> "$GITHUB_OUTPUT"
+          fi
+
   upload-to-nexus:
     name: Upload to Nexus APT Repository
-    if: github.event_name == 'release'
+    needs: [build-and-release]
+    # build-and-release is skipped on release/workflow_dispatch; always() lets this job still run.
+    if: |
+      always() && !cancelled() && (
+        github.event_name == 'release' ||
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' && needs.build-and-release.result == 'success' && needs.build-and-release.outputs.upload_nexus == 'true')
+      )
     runs-on: ubuntu-22.04
     permissions:
       contents: read
 
     steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            echo "name=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ needs.build-and-release.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Code Checkout
         uses: actions/checkout@v4
 
       - name: Download .deb release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          mapfile -t deb_assets < <(gh release view "${{ github.event.release.tag_name }}" \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            -q '.assets[] | select(.name | endswith(".deb")) | .name')
+
+          # When a release is published before tag CI finishes uploading assets,
+          # wait rather than failing immediately.
+          attempts=36
+          delay=10
+          deb_assets=()
+          for ((i=1; i<=attempts; i++)); do
+            mapfile -t deb_assets < <(gh release view "${TAG}" \
+              --repo "${{ github.repository }}" \
+              --json assets \
+              -q '.assets[] | select(.name | endswith(".deb")) | .name')
+
+            if [ "${#deb_assets[@]}" -gt 0 ]; then
+              break
+            fi
+
+            echo "No .deb assets on ${TAG} yet (attempt ${i}/${attempts}); waiting ${delay}s..."
+            sleep "${delay}"
+          done
 
           if [ "${#deb_assets[@]}" -eq 0 ]; then
-            echo "No .deb assets found on release ${{ github.event.release.tag_name }}"
+            echo "No .deb assets found on release ${TAG} after waiting"
             exit 1
           fi
 
           for asset in "${deb_assets[@]}"; do
-            gh release download "${{ github.event.release.tag_name }}" \
+            gh release download "${TAG}" \
               --repo "${{ github.repository }}" \
               --pattern "${asset}" \
               --dir dist

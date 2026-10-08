@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.4.0 
+## v1.4.0
 
 ### Fixed
 
