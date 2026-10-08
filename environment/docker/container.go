@@ -358,6 +358,16 @@ func (e *Environment) Destroy() error {
 		RemoveLinks:   false,
 		Force:         true,
 	})
+	if err == nil || client.IsErrNotFound(err) {
+		// A replacement container needs its own attachment even if the old reader has not exited.
+		e.mu.Lock()
+		stream := e.stream
+		e.stream = nil
+		e.mu.Unlock()
+		if stream != nil {
+			stream.Close()
+		}
+	}
 
 	e.SetState(environment.ProcessOfflineState)
 
