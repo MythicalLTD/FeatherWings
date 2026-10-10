@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.1
+
+### Fixed
+
+- PBS snapshot list/delete no longer passes `--backup-type`/`--backup-id` to `proxmox-backup-client snapshot list` (use group `ct/<server-uuid>` instead), fixing parameter verification failures on current client versions. by @nayskutzu
+- Fixed: listing archive (zip) contents no longer fails with "duplicate entries in zip file" errors if multiple files share the same path. by @nayskutzu
+
+
 ## v1.4.0
 
 ### Fixed

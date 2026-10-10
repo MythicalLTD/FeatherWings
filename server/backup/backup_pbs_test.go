@@ -78,6 +78,25 @@ func TestParseSnapshotFromBackupOutput(t *testing.T) {
 	}
 }
 
+func TestPbsBackupGroup(t *testing.T) {
+	uuid := "7c3a0937-b858-411a-9308-caaa9b988fe2"
+	got := pbsBackupGroup(uuid)
+	want := "ct/" + uuid
+	if got != want {
+		t.Fatalf("pbsBackupGroup(%q) = %q, want %q", uuid, got, want)
+	}
+}
+
+func TestPbsSnapshotFullPath(t *testing.T) {
+	uuid := "7c3a0937-b858-411a-9308-caaa9b988fe2"
+	s := pbsSnapshot{Time: 1726696256} // 2024-09-18T21:50:56Z
+	got := s.fullPath(uuid)
+	want := "ct/" + uuid + "/2024-09-18T21:50:56Z"
+	if got != want {
+		t.Fatalf("fullPath = %q, want %q", got, want)
+	}
+}
+
 func TestPbsArchiveCandidates(t *testing.T) {
 	got := pbsArchiveCandidates("")
 	if got[0] != "root.pxar" {

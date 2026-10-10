@@ -433,7 +433,7 @@ func (b *PBSBackup) findSnapshotByPath(ctx context.Context, snapshot string) (st
 	if snapshot == "" || strings.HasPrefix(snapshot, "/") || strings.Contains(snapshot, "\x00") || strings.Contains(snapshot, "..") {
 		return "", 0, errors.WithStack(os.ErrNotExist)
 	}
-	prefix := pbsBackupType + "/" + b.ServerId() + "/"
+	prefix := pbsBackupGroup(b.ServerId()) + "/"
 	if !strings.HasPrefix(snapshot, prefix) || len(snapshot) <= len(prefix) {
 		return "", 0, errors.WithStack(os.ErrNotExist)
 	}
@@ -503,9 +503,13 @@ func (s pbsSnapshot) fullPath(serverUUID string) string {
 	// Reconstruct ct/<server>/<rfc3339> when only components are present.
 	if s.Time > 0 {
 		ts := time.Unix(s.Time, 0).UTC().Format("2006-01-02T15:04:05Z")
-		return fmt.Sprintf("%s/%s/%s", pbsBackupType, serverUUID, ts)
+		return fmt.Sprintf("%s/%s", pbsBackupGroup(serverUUID), ts)
 	}
 	return s.BackupID
+}
+
+func pbsBackupGroup(serverUUID string) string {
+	return fmt.Sprintf("%s/%s", pbsBackupType, serverUUID)
 }
 
 func (b *PBSBackup) listSnapshots(ctx context.Context) ([]pbsSnapshot, error) {
@@ -513,10 +517,11 @@ func (b *PBSBackup) listSnapshots(ctx context.Context) ([]pbsSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
+	// snapshot list takes an optional group as a positional arg (ct/<id>),
+	// not --backup-type/--backup-id (those are backup-command flags only).
 	args := []string{
 		"snapshot", "list",
-		"--backup-type", pbsBackupType,
-		"--backup-id", b.ServerId(),
+		pbsBackupGroup(b.ServerId()),
 		"--output-format", "json",
 	}
 	args = append(args, b.repoArgs(cfg)...)

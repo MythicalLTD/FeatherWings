@@ -201,7 +201,9 @@ func (fs *Filesystem) openArchiveFS(ctx context.Context, archivePath string) (_ 
 			cleanup()
 			return nil, func() {}, err
 		}
-		return zr, cleanup, nil
+		// Use a deduplicating FS: stdlib/klauspost zip.Reader rejects archives
+		// with duplicate entry names (e.g. shaded jars with multiple LICENSE files).
+		return archiverext.NewZipFS(zr), cleanup, nil
 	case archives.Extraction:
 		afs := &archives.ArchiveFS{
 			Stream:  io.NewSectionReader(f, 0, info.Size()),
