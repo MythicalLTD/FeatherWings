@@ -1,8 +1,10 @@
 package server
 
 import (
+	stderrors "errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/secsy/goftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // Import imports server files from a remote SFTP or FTP server.
@@ -136,13 +139,42 @@ func (s *Server) internalImport(user string, password string, hote string, port 
 	return nil
 }
 
+// importHostKeyCallback builds a host-key callback for SFTP imports. If the
+// target host is present in ~/.ssh/known_hosts its key is verified strictly; if
+// the host is unknown the connection proceeds as before (the panel does not yet
+// supply a fingerprint) but a prominent warning is logged so the insecure
+// connection is visible. A key *mismatch* for a known host is rejected.
+func importHostKeyCallback(s *Server, hote string) ssh.HostKeyCallback {
+	logger := s.Log().WithField("host", hote)
+
+	if home, err := os.UserHomeDir(); err == nil {
+		knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
+		if checker, err := knownhosts.New(knownHostsPath); err == nil {
+			return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+				if err := checker(hostname, remote, key); err != nil {
+					var keyErr *knownhosts.KeyError
+					if stderrors.As(err, &keyErr) && len(keyErr.Want) == 0 {
+						logger.Warnf("insecure host key: %s not in known_hosts, accepting any host key", knownhosts.Normalize(hostname))
+						return nil
+					}
+					return errors.Wrapf(err, "server/import: host key verification failed for %s", knownhosts.Normalize(hostname))
+				}
+				return nil
+			}
+		}
+	}
+
+	logger.Warn("insecure host key: known_hosts unavailable, accepting any host key")
+	return ssh.InsecureIgnoreHostKey()
+}
+
 func (s *Server) ServerImporter(user string, password string, hote string, port int, srclocation string, dstlocation string) error {
 	config := ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: importHostKeyCallback(s, hote),
 	}
 
 	// Get the full destination path

@@ -32,16 +32,21 @@ const (
 )
 
 const (
-	StatusPending    = "pending"
-	StatusRunning    = "running"
-	StatusCompleted  = "completed"
-	StatusFailed     = "failed"
-	metaFileSuffix   = ".meta.json"
-	archiveExt       = ".tar.gz"
-	infoFileName     = "backup_info.txt"
-	migrationInfo    = "migration_info.txt"
-	migrationReadme  = "README_MIGRATION.txt"
+	StatusPending   = "pending"
+	StatusRunning   = "running"
+	StatusCompleted = "completed"
+	StatusFailed    = "failed"
+	metaFileSuffix  = ".meta.json"
+	archiveExt      = ".tar.gz"
+	infoFileName    = "backup_info.txt"
+	migrationInfo   = "migration_info.txt"
+	migrationReadme = "README_MIGRATION.txt"
 )
+
+// maxRestoreTotalBytes bounds the total uncompressed size extracted from a node
+// backup archive during a restore, guarding against decompression bombs. The
+// limit is deliberately generous (50 GiB) so legitimate backups are unaffected.
+const maxRestoreTotalBytes int64 = 50 << 30 // 50 GiB
 
 // Info describes a node backup archive on disk.
 type Info struct {
@@ -488,6 +493,7 @@ func RestoreFile(ctx context.Context, archive string, mode Mode) error {
 	tr := tar.NewReader(gr)
 
 	cfg := config.Get()
+	var restoredBytes int64
 	for {
 		select {
 		case <-ctx.Done():
@@ -528,6 +534,9 @@ func RestoreFile(ctx context.Context, archive string, mode Mode) error {
 		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
 			continue
 		}
+		if hdr.Size < 0 || hdr.Size > maxRestoreTotalBytes-restoredBytes {
+			return errors.Errorf("nodebackup: restore aborted, archive exceeds maximum uncompressed size of %d bytes", maxRestoreTotalBytes)
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return err
 		}
@@ -535,7 +544,8 @@ func RestoreFile(ctx context.Context, archive string, mode Mode) error {
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.Copy(out, tr)
+		n, copyErr := io.Copy(out, tr)
+		restoredBytes += n
 		_ = out.Close()
 		if copyErr != nil {
 			return copyErr
