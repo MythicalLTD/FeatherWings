@@ -1,11 +1,14 @@
 package nodebackup
 
 import (
+	"archive/tar"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/klauspost/pgzip"
 	"github.com/mythicalltd/featherwings/config"
 )
 
@@ -70,5 +73,83 @@ func TestCreateVolumesArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(info.Path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRestoreFileRejectsOversizedArchive(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Configuration{AuthenticationToken: "test-token-for-nodebackup"}
+	cfg.System.RootDirectory = root
+	cfg.System.Data = filepath.Join(root, "volumes")
+	cfg.System.BackupDirectory = filepath.Join(root, "backups")
+	cfg.System.NodeBackupDirectory = filepath.Join(root, "nodebackup")
+	config.Set(cfg)
+
+	archive := filepath.Join(root, "oversized.tar.gz")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := pgzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+	hdr := &tar.Header{
+		Name:     "volumes/huge.bin",
+		Typeflag: tar.TypeReg,
+		Mode:     0o644,
+		Size:     maxRestoreTotalBytes + 1,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	_ = tw.Close()
+	_ = gw.Close()
+	_ = f.Close()
+
+	err = RestoreFile(context.Background(), archive, ModeVolumes)
+	if err == nil {
+		t.Fatal("expected oversized archive to be rejected")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum uncompressed size") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRestoreFileAcceptsNormalArchive(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Configuration{AuthenticationToken: "test-token-for-nodebackup"}
+	cfg.System.RootDirectory = root
+	cfg.System.Data = filepath.Join(root, "volumes")
+	cfg.System.BackupDirectory = filepath.Join(root, "backups")
+	cfg.System.NodeBackupDirectory = filepath.Join(root, "nodebackup")
+	config.Set(cfg)
+
+	archive := filepath.Join(root, "normal.tar.gz")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := pgzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+	body := []byte("eula=true\n")
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "volumes/small.txt",
+		Typeflag: tar.TypeReg,
+		Mode:     0o644,
+		Size:     int64(len(body)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	_ = tw.Close()
+	_ = gw.Close()
+	_ = f.Close()
+
+	if err := RestoreFile(context.Background(), archive, ModeVolumes); err != nil {
+		t.Fatalf("normal archive rejected: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.System.Data, "small.txt")); err != nil {
+		t.Fatalf("expected restored file: %v", err)
 	}
 }

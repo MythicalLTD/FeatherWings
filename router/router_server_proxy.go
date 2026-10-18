@@ -5,10 +5,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/apex/log"
@@ -139,6 +143,88 @@ func cleanupServerProxies(serverIP string, logger *log.Entry) {
 	}
 }
 
+// proxyDomainRe matches an RFC-1123 style hostname: labels composed of
+// [A-Za-z0-9.-] that do not start or end with a dot. Length and per-label
+// limits are enforced separately in validateProxyDomain.
+var proxyDomainRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
+
+// proxyPortRe matches a purely numeric port string.
+var proxyPortRe = regexp.MustCompile(`^[0-9]{1,5}$`)
+
+// validateProxyDomain rejects any domain that could break out of its intended
+// position in an nginx directive or a filesystem path. Only valid values are
+// allowed to reach the nginx configuration or the cert/config paths.
+func validateProxyDomain(domain string) error {
+	if domain == "" {
+		return errors.New("domain must not be empty")
+	}
+	if len(domain) > 253 {
+		return errors.New("domain exceeds maximum length of 253 characters")
+	}
+	if strings.Contains(domain, "..") {
+		return errors.New("domain must not contain consecutive dots")
+	}
+	if !proxyDomainRe.MatchString(domain) {
+		return errors.New("domain contains invalid characters")
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return errors.New("domain labels must be between 1 and 63 characters")
+		}
+	}
+	return nil
+}
+
+// validateProxyIP ensures the upstream address is a real IPv4 or IPv6 address.
+func validateProxyIP(ip string) error {
+	if net.ParseIP(ip) == nil {
+		return errors.New("ip must be a valid IPv4 or IPv6 address")
+	}
+	return nil
+}
+
+// validateProxyPort ensures the upstream port is numeric and within range.
+func validateProxyPort(port string) error {
+	if !proxyPortRe.MatchString(port) {
+		return errors.New("port must be numeric")
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	return nil
+}
+
+// safeProxySlug converts a validated domain into a filesystem-safe slug. For
+// values accepted by validateProxyDomain it is the identity, keeping existing
+// config files compatible; any other character is replaced defensively.
+func safeProxySlug(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	out := strings.ReplaceAll(b.String(), "..", "_")
+	out = strings.Trim(out, ".")
+	if out == "" {
+		out = "_"
+	}
+	return out
+}
+
+// proxyTargetHost brackets IPv6 literals so they form a valid nginx proxy_pass
+// authority ("[::1]:port"). IPv4 addresses are returned unchanged.
+func proxyTargetHost(ip string) string {
+	if strings.Contains(ip, ":") {
+		return "[" + ip + "]"
+	}
+	return ip
+}
+
 type LetsEncryptUser struct {
 	Email        string
 	Registration *registration.Resource
@@ -195,6 +281,23 @@ func postServerProxyCreate(c *gin.Context) {
 		return
 	}
 
+	// Validate every client-supplied field before it reaches the nginx
+	// configuration or any filesystem path.
+	if err := validateProxyDomain(data.Domain); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid domain: " + err.Error()})
+		return
+	}
+	if err := validateProxyIP(data.IP); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid ip: " + err.Error()})
+		return
+	}
+	if err := validateProxyPort(data.Port); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid port: " + err.Error()})
+		return
+	}
+
+	configName := safeProxySlug(data.Domain) + "_" + data.Port + ".conf"
+
 	nginxconfig := []byte(`server {
 		listen 80;
 		server_name ` + data.Domain + `;
@@ -202,7 +305,7 @@ func postServerProxyCreate(c *gin.Context) {
 		location / {
 			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 			proxy_set_header Host $http_host;
-			proxy_pass http://` + data.IP + `:` + data.Port + `;
+			proxy_pass http://` + proxyTargetHost(data.IP) + `:` + data.Port + `;
 		}
 
 		location /.well-known/acme-challenge/ {
@@ -211,16 +314,16 @@ func postServerProxyCreate(c *gin.Context) {
 		}
 	}`)
 
-	err := os.WriteFile("/etc/nginx/sites-available/"+data.Domain+"_"+data.Port+".conf", nginxconfig, 0644)
+	err := os.WriteFile("/etc/nginx/sites-available/"+configName, nginxconfig, 0644)
 	if err != nil {
-		s.Log().WithField("error", err).Error("failed to write nginx config " + data.Domain + "_" + data.Port + ".conf")
+		s.Log().WithField("error", err).Error("failed to write nginx config " + configName)
 	}
 
 	lncmd := exec.Command(
 		"ln",
 		"-s",
-		"/etc/nginx/sites-available/"+data.Domain+"_"+data.Port+".conf",
-		"/etc/nginx/sites-enabled/"+data.Domain+"_"+data.Port+".conf",
+		"/etc/nginx/sites-available/"+configName,
+		"/etc/nginx/sites-enabled/"+configName,
 	)
 	lncmd.Run()
 
@@ -354,7 +457,7 @@ server {
 	location / {
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 		proxy_set_header Host $http_host;
-		proxy_pass http://` + data.IP + `:` + data.Port + `;
+		proxy_pass http://` + proxyTargetHost(data.IP) + `:` + data.Port + `;
 	}
 
 	location /.well-known/acme-challenge/ {
@@ -363,9 +466,9 @@ server {
 	}
 }`)
 
-		err := os.WriteFile("/etc/nginx/sites-available/"+data.Domain+"_"+data.Port+".conf", nginxconfig, 0644)
+		err := os.WriteFile("/etc/nginx/sites-available/"+configName, nginxconfig, 0644)
 		if err != nil {
-			s.Log().WithField("error", err).Error("failed to write nginx config " + data.Domain + "_" + data.Port + ".conf")
+			s.Log().WithField("error", err).Error("failed to write nginx config " + configName)
 		}
 
 		restartcmd := exec.Command("systemctl", "reload", "nginx")
@@ -409,14 +512,27 @@ func postServerProxyDelete(c *gin.Context) {
 		return
 	}
 
-	err := os.RemoveAll("/etc/nginx/sites-available/" + data.Domain + "_" + data.Port + ".conf")
-	if err != nil {
-		s.Log().WithField("error", err).Error("failed to remove nginx config sites-available/" + data.Domain + "_" + data.Port + ".conf")
+	// Validate client-supplied fields before any path is constructed so a
+	// crafted domain/port cannot escape /etc/nginx or /srv/server_certs.
+	if err := validateProxyDomain(data.Domain); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid domain: " + err.Error()})
+		return
+	}
+	if err := validateProxyPort(data.Port); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid port: " + err.Error()})
+		return
 	}
 
-	err = os.RemoveAll("/etc/nginx/sites-enabled/" + data.Domain + "_" + data.Port + ".conf")
+	configName := safeProxySlug(data.Domain) + "_" + data.Port + ".conf"
+
+	err := os.RemoveAll("/etc/nginx/sites-available/" + configName)
 	if err != nil {
-		s.Log().WithField("error", err).Error("failed to remove nginx config sites-enabled/" + data.Domain + "_" + data.Port + ".conf")
+		s.Log().WithField("error", err).Error("failed to remove nginx config sites-available/" + configName)
+	}
+
+	err = os.RemoveAll("/etc/nginx/sites-enabled/" + configName)
+	if err != nil {
+		s.Log().WithField("error", err).Error("failed to remove nginx config sites-enabled/" + configName)
 	}
 
 	// Remove SSL certificate directory if it exists
