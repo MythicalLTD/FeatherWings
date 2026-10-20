@@ -74,6 +74,11 @@ while [[ "${attempt}" -le "${NEXUS_MAX_RETRIES}" ]]; do
     exit 0
   fi
 
+  if [[ "${http_code}" == "409" ]] && grep -q "asset already exists and redeploy is not allowed" /tmp/nexus-upload-response.txt; then
+    echo "Skipping ${filename} (already present in Nexus)"
+    exit 2
+  fi
+
   if [[ "${http_code}" =~ ^(429|502|503|504)$ && "${attempt}" -lt "${NEXUS_MAX_RETRIES}" ]]; then
     echo "Transient error (HTTP ${http_code}). Waiting ${delay}s before retry ${attempt}/${NEXUS_MAX_RETRIES}..." >&2
     sleep "${delay}"
