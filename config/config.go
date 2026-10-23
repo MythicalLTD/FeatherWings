@@ -756,29 +756,22 @@ func Set(c *Configuration) {
 	_config = c
 }
 
-// ResolveRemoteToken populates the derived Token field after the Panel has sent
-// us new token values. Because the resolved token is what everything else in
-// Wings authenticates against, this has to be called whenever the underlying
-// AuthenticationToken values change, otherwise the previously resolved token
-// stays in use until the process is restarted.
-func (c *Configuration) ResolveRemoteToken() error {
-	return c.resolveToken(false)
-}
-
-// resolveToken resolves the token to use, preferring values pinned through the
-// environment so that a token supplied by the system running Wings is never
-// replaced by one sent to us by the Panel. expandLocal controls whether the
-// values held in the configuration itself are trusted enough to be passed through
-// Expand.
-func (c *Configuration) resolveToken(expandLocal bool) error {
+// ResolveToken populates the derived Token field, preferring values pinned
+// through the environment over those in the configuration itself.
+//
+// Set remote when the values came from the Panel. Local values may use
+// "file://" or "$VAR" indirection; expanding one sent over the network would
+// leak files and environment variables back out through the token we attach to
+// every request.
+func (c *Configuration) ResolveToken(remote bool) error {
 	resolve := func(env, local string) (string, error) {
 		if env != "" {
 			return Expand(env)
 		}
-		if expandLocal {
-			return Expand(local)
+		if remote {
+			return local, nil
 		}
-		return local, nil
+		return Expand(local)
 	}
 
 	var err error
@@ -977,7 +970,7 @@ func FromFile(path string) error {
 		return err
 	}
 
-	if err := c.resolveToken(true); err != nil {
+	if err := c.ResolveToken(false); err != nil {
 		return err
 	}
 

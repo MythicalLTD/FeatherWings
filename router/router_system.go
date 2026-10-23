@@ -440,7 +440,7 @@ func postUpdateConfiguration(c *gin.Context) {
 	// The token that everything authenticates against is a derived value that is
 	// not part of the payload sent by the Panel, so it has to be re-resolved from
 	// the new token values.
-	if err := cfg.ResolveRemoteToken(); err != nil {
+	if err := cfg.ResolveToken(true); err != nil {
 		middleware.CaptureAndAbort(c, err)
 		return
 	}
