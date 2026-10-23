@@ -199,6 +199,14 @@ func RequireAuthorization() gin.HandlerFunc {
 			return
 		}
 
+		// An empty `Authorization: Bearer ` header must never authenticate.
+		// ConstantTimeCompare("","") returns 1, so a node without a configured
+		// token would otherwise accept any request (including /api/system/*).
+		if auth[1] == "" || config.Get().Token.Token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "The required authorization heads were not present in the request."})
+			return
+		}
+
 		// All requests to Wings must be authorized with the authentication token present in
 		// the Wings configuration file. Remeber, all requests to Wings come from the Panel
 		// backend, or using a signed JWT for temporary authentication.

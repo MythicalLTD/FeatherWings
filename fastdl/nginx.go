@@ -119,37 +119,62 @@ func buildNginxConfig(cfg *config.Configuration, servers []serverConfig) string 
 	fastdlCfg := cfg.System.FastDL
 	serverName := resolveNginxServerName(cfg)
 
-	// Build the config exactly as the user's template - no SSL, simple structure
-	// Uses default blocked extensions and directories from the nginx config
-	config := fmt.Sprintf(`server {
+	// Only the directories of servers that actually enabled FastDL are exposed.
+	// The previous template used `root <data>` with autoindex, which served every
+	// volume on the node (including other customers' server.properties with the
+	// RCON password) as soon as one server had FastDL switched on.
+	var locations strings.Builder
+	for _, srv := range servers {
+		uuid := sanitizeFastDLSlug(srv.UUID)
+		if uuid == "" {
+			continue
+		}
+		fmt.Fprintf(&locations, `
+	location /%[1]s/ {
+		alias %[2]s/%[1]s/;
+		index index.html;
+		try_files $uri $uri/ =404;
+		autoindex on;
+	}
+`, uuid, filepath.ToSlash(cfg.System.Data))
+	}
+
+	return fmt.Sprintf(`server {
     listen %d;
     listen [::]:%d;
 
-	root %s;
 	index index.html;
-
 	server_name %s;
 
+	# Nothing outside the FastDL directories below is served.
 	location / {
-		# First attempt to serve request as file, then
-		# as directory, then fall back to displaying a 404.
-		try_files $uri $uri/ =404;
-        
-		# Comment this line if dont want to list files (only after checking that your fastdl works)
-		autoindex on;
+		return 404;
 	}
-	
+
 	location ~\.(sma|amxx|sp|smx|cfg|ini|log|bak|dat|sql|sq3|so|dll|php|zip|rar|jar|sh)$ {
 		return 403;
 	}
-    
-	location ~ /(addons|cfg|logs) {
-  		deny all;
-	}
-}
-`, fastdlCfg.Port, fastdlCfg.Port, cfg.System.Data, serverName)
 
-	return config
+	location ~ /(addons|cfg|logs) {
+		deny all;
+	}
+%s}
+`, fastdlCfg.Port, fastdlCfg.Port, serverName, locations.String())
+}
+
+// sanitizeFastDLSlug keeps only the characters a server UUID can contain so the
+// value can be used inside an nginx location block.
+func sanitizeFastDLSlug(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
 }
 
 // resolveNginxServerName returns the node hostname for nginx server_name.

@@ -84,7 +84,7 @@ type SftpConfiguration struct {
 	// AllowConsoleShell permits interactive SSH (shell/PTY) access to the game console for anyone
 	// who successfully authenticates on this listener. When false, the panel must include
 	// "control.console" in SFTP validation permissions (file-only subusers cannot open a shell).
-	AllowConsoleShell bool `default:"true" yaml:"allow_console_shell"`
+	AllowConsoleShell bool `default:"false" yaml:"allow_console_shell"`
 }
 
 type FastDLConfiguration struct {
@@ -205,7 +205,7 @@ type UpdateConfiguration struct {
 	AllowAPI bool `default:"true" yaml:"allow_api"`
 
 	// DisableChecksum skips checksum verification for all self-updates.
-	DisableChecksum bool `default:"true" yaml:"disable_checksum"`
+	DisableChecksum bool `default:"false" yaml:"disable_checksum"`
 
 	// RestartCommand, when set, is executed after a successful self-update.
 	RestartCommand string `default:"systemctl restart featherwings" yaml:"restart_command"`
