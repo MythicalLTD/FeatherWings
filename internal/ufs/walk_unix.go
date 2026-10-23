@@ -196,6 +196,7 @@ func (fs *UnixFS) readDir(fd int, name, relative string, b []byte) ([]DirEntry, 
 		}
 
 		// "Go is like C, except that you just put `unsafe` all over the place".
+		//nolint:gosec // bounded by the size of sde
 		copy((*[unsafe.Sizeof(unix.Dirent{})]byte)(unsafe.Pointer(&sde))[:], workBuffer)
 		workBuffer = workBuffer[sde.Reclen:] // advance buffer for next iteration through loop
 
