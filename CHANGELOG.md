@@ -2,8 +2,15 @@
 
 ## Unreleased
 
+> Pairs with FeatherPanel v1.5.3. The panel's node options (#363) need #23, its auto start and crash auto restart fixes need #19 and #20, and transfer power restore (#368) starts the server right away with #25 (older Wings is covered by panel retries).
+
 ### Fixed
 
+- Servers restored when Wings boots only auto start when the panel's auto start setting allows it. Needs FeatherPanel v1.5.3. (#19) by @nayskutzu
+- Turning off crash detection for a server applies live; Wings reads the current setting instead of a per server copy, so no Wings restart is needed. Needs FeatherPanel v1.5.3. (#20) by @nayskutzu
+- After a successful incoming transfer the transferring flag is cleared before the panel is told, so the panel can start the server again (FeatherPanel transfer power restore, #368). (#25) by @nayskutzu
+- Filesystem errors keep their not-found error code instead of turning into a generic error. (#17)
+- Environment variables that are `null` in the panel return an empty string instead of logging a warning, and `int32` values no longer panic. (#18)
 - Ported security and bug fixes from pterodactyl/wings and pelican/wings: malformed SFTP Setstat requests no longer crash the node (GHSA-p682-235x-522p), `wings.log` is written through the logrotate wrapper, deauthorizing a user revokes their tokens on every server and only closes their own websockets, and CORS preflights send `Access-Control-Allow-Private-Network`. (#21) by @nayskutzu
 - Security hardening from upstream (#22) by @nayskutzu:
   - Connection limits for SFTP and websockets, open file limits for SFTP, and HTTP timeouts.
@@ -18,6 +25,12 @@
 - `docker.cpu_shares`: CPU weight for containers that have a CPU limit. The default stays 1024; set it to 0 to use the Docker default. (#23) by @nayskutzu
 - S3 backups upload parts concurrently when the panel sends `max_concurrent_uploads`; otherwise they upload one at a time, as before. (#23) by @nayskutzu
 - The compose example mounts `/run/wings`, where the machine-id files are written. (#23) by @nayskutzu
+- `system.check_install_exit_code` and `docker.cpu_shares` can be set per node from FeatherPanel v1.5.3 (Admin, Nodes, Advanced, #363). (#23)
+
+### Docs
+
+- Documented `ReadDirMap` in the UFS walker. (#24)
+- Transfer docs describe the new order of clearing the transferring flag and reporting success. (#25)
 
 ## v1.4.1
 

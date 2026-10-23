@@ -49,6 +49,7 @@ sequenceDiagram
   Destination->>Destination: installer.New() -> create/attach server; mark transferring
   Destination->>Destination: Extract archive into server directory; verify SHA-256 checksum
   Destination->>Destination: CreateEnvironment(); successful=true
+  Destination->>Destination: Clear transferring flag
   Destination->>Panel: SetTransferStatus(uuid, successful=true)
   Source-->>Panel: Only report failures (successful=false)
 ```
@@ -66,6 +67,7 @@ sequenceDiagram
     - Calls `SetTransferStatus(ctx, uuid, successful)` on the Panel client, which performs:
       - `POST /api/remote/servers/{uuid}/transfer/success` when `successful=true`.
       - `POST /api/remote/servers/{uuid}/transfer/failure` when `successful=false`.
+    - On success the destination clears the server's transferring flag before calling the Panel, so the Panel can send a power action (for example restoring a server that was running before the transfer) from its success callback without Wings refusing it. (#25)
     - These requests have an empty JSON body and rely on the URL segment (`success` or `failure`) to convey state.
     - Retries with exponential backoff are handled by the shared HTTP client (`remote/http.go`), so transient Panel errors are retried automatically.
   - **Source node** (only on failure while pushing the archive):
