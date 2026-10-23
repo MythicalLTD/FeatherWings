@@ -16,6 +16,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
+	"github.com/asaskevich/govalidator"
 	"github.com/creasty/defaults"
 	"github.com/goccy/go-json"
 
@@ -312,6 +313,15 @@ func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) e
 	}
 	if err := json.Unmarshal(cfg.Settings, &c); err != nil {
 		return errors.WithStackIf(err)
+	}
+
+	// Only accept a UUID from the Panel, and never allow it to change once the
+	// server has been created.
+	if !govalidator.IsUUID(c.Uuid) {
+		return errors.New("server: configuration returned by the Panel contains an invalid server uuid")
+	}
+	if id := s.ID(); id != "" && id != c.Uuid {
+		return errors.New("server: configuration returned by the Panel is for a different server")
 	}
 
 	// Older panels omit fastdl from settings; preserve in-memory FastDL across Sync/restart.

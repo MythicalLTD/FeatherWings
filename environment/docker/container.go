@@ -385,22 +385,37 @@ func (e *Environment) Destroy() error {
 // SendCommand sends the specified command to the stdin of the running container
 // instance. There is no confirmation that this data is sent successfully, only
 // that it gets pushed into the stdin.
+// commandWriteTimeout is the amount of time allowed for a command to be written
+// to the container before giving up.
+var commandWriteTimeout = time.Second * 10
+
 func (e *Environment) SendCommand(c string) error {
-	if !e.IsAttached() {
-		return errors.Wrap(ErrNotAttached, "environment/docker: cannot send command to container")
+	// Commands may not contain control characters, other than tabs.
+	if strings.ContainsFunc(c, func(r rune) bool {
+		return (r < 0x20 && r != '\t' && r != '\n' && r != '\r') || r == 0x7f
+	}) {
+		return errors.New("environment/docker: command contains control characters")
 	}
 
 	e.mu.RLock()
-	defer e.mu.RUnlock()
+	stream := e.stream
+	stop := e.meta.Stop
+	e.mu.RUnlock()
+	if stream == nil {
+		return errors.Wrap(ErrNotAttached, "environment/docker: cannot send command to container")
+	}
 
 	// If the command being processed is the same as the process stop command then we
 	// want to mark the server as entering the stopping state otherwise the process will
 	// stop and Wings will think it has crashed and attempt to restart it.
-	if e.meta.Stop.Type == "command" && c == e.meta.Stop.Value {
+	if stop.Type == "command" && c == stop.Value {
 		e.SetState(environment.ProcessStoppingState)
 	}
 
-	_, err := e.stream.Conn.Write([]byte(c + "\n"))
+	// The process may never read its input, so don't wait forever for there to be
+	// room for the command.
+	_ = stream.Conn.SetWriteDeadline(time.Now().Add(commandWriteTimeout))
+	_, err := stream.Conn.Write([]byte(c + "\n"))
 
 	return errors.Wrap(err, "environment/docker: could not write to container stream")
 }
