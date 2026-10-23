@@ -141,7 +141,7 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	if ignoreCertErrors {
 		log.Warn("running with certificate error ignoring enabled: TLS certificate host chains and name will not be verified")
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // opt-in via --ignore-certificate-errors
+			InsecureSkipVerify: true,
 		}
 	}
 

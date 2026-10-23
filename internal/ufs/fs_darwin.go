@@ -61,3 +61,6 @@ func (fs *UnixFS) Chtimesat(dirfd int, name string, atime, mtime time.Time) erro
 	}
 	return ensurePathError(unix.UtimesNanoAt(dirfd, name, utimes[0:], AT_SYMLINK_NOFOLLOW), "chtimes", name)
 }
+
+// oPath is 0 on Darwin because it has no O_PATH, so descriptors are opened read-only.
+const oPath = 0

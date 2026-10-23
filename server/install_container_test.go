@@ -148,12 +148,12 @@ func TestInstallContainerIsRestricted(t *testing.T) {
 func TestInstallLogKeepsEnvironmentValuesVerbatim(t *testing.T) {
 	fake := &fakeInstallerDocker{logs: "installer output\n"}
 	p := newInstallerTestProcess(t, fake)
-	p.Server.cfg.EnvVars = environment.Variables{"DB_PASSWORD": "p&ss'word<1>"}
+	p.Server.cfg.EnvVars = environment.Variables{"SPECIAL_VALUE": "a&b'c<1>"}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(config.Get().System.LogDirectory, "install"), 0o700))
 	require.NoError(t, p.AfterExecute("installer-test-id"))
 
 	body, err := os.ReadFile(p.GetLogPath())
 	require.NoError(t, err)
-	assert.Contains(t, string(body), "DB_PASSWORD=p&ss'word<1>")
+	assert.Contains(t, string(body), "SPECIAL_VALUE=a&b'c<1>")
 }
