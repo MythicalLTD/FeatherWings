@@ -224,10 +224,10 @@ func (ip *InstallationProcess) Run() error {
 		return err
 	}
 
-	cID, err := ip.Execute()
-	if err != nil {
+	cID, executeErr := ip.Execute()
+	if cID == "" {
 		_ = ip.RemoveContainer()
-		return err
+		return executeErr
 	}
 
 	// Ensure correct file ownership after installation since the install
@@ -242,7 +242,7 @@ func (ip *InstallationProcess) Run() error {
 		ip.Server.Log().WithField("error", err).Warn("failed to complete after-execute step of installation process")
 	}
 
-	return nil
+	return executeErr
 }
 
 // Returns the location of the temporary data for the installation process.
@@ -558,18 +558,50 @@ func (ip *InstallationProcess) Execute() (string, error) {
 	}(r.ID)
 
 	sChan, eChan := ip.client.ContainerWait(ctx, r.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-eChan:
-		// Once the container has stopped running we can mark the install process as being completed.
-		if err == nil {
-			ip.Server.Events().Publish(DaemonMessageEvent, "Installation process completed.")
-		} else {
-			return "", err
-		}
-	case <-sChan:
+	if err := ip.waitForInstallationContainer(sChan, eChan); err != nil {
+		return r.ID, err
 	}
 
 	return r.ID, nil
+}
+
+func (ip *InstallationProcess) waitForInstallationContainer(sChan <-chan container.WaitResponse, eChan <-chan error) error {
+	select {
+	case err := <-eChan:
+		ip.Server.Events().Publish(DaemonMessageEvent, "Installation process failed: "+err.Error())
+		return err
+	case response := <-sChan:
+		if err := installationWaitError(response); err != nil {
+			if !config.Get().System.CheckInstallExitCode {
+				// Keep the historic behaviour unless the operator opted in, since
+				// many install scripts exit non-zero after a usable install.
+				ip.Server.Log().WithField("error", err).Warn("installation script did not exit cleanly; marking as successful because system.check_install_exit_code is disabled")
+				ip.Server.Events().Publish(DaemonMessageEvent, "Installation script finished with an error ("+err.Error()+"), continuing anyway.")
+				break
+			}
+			ip.Server.Events().Publish(DaemonMessageEvent, "Installation process failed: "+err.Error())
+			return err
+		}
+	}
+
+	ip.Server.Events().Publish(DaemonMessageEvent, "Installation process completed.")
+	return nil
+}
+
+func installationWaitError(response container.WaitResponse) error {
+	if response.Error != nil {
+		message := strings.TrimSpace(response.Error.Message)
+		if message == "" {
+			message = "unknown container wait error"
+		}
+
+		return errors.Errorf("install: installation container wait failed: %s", message)
+	}
+	if response.StatusCode != 0 {
+		return errors.Errorf("install: installation script exited with code %d", response.StatusCode)
+	}
+
+	return nil
 }
 
 // StreamOutput streams the output of the installation process to a log file in
