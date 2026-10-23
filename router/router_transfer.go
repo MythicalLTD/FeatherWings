@@ -464,12 +464,18 @@ func completeIncomingTransfer(manager *server.Manager, trnsfr *transfer.Transfer
 		}
 	}
 
+	// Clear the transferring flag before telling the Panel, so the Panel can send
+	// a power action (for example restoring a server that was running before the
+	// transfer) from its success callback without being refused.
+	if successful {
+		trnsfr.Server.SetTransferring(false)
+	}
+
 	if err := manager.Client().SetTransferStatus(context.Background(), trnsfr.Server.ID(), successful); err != nil {
 		trnsfr.Log().WithField("status", successful).WithError(err).Error("failed to set transfer status on panel")
 	}
 
 	if successful {
-		trnsfr.Server.SetTransferring(false)
 		trnsfr.Server.Events().Publish(server.TransferStatusEvent, "success")
 	}
 }
