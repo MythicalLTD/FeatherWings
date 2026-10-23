@@ -282,7 +282,7 @@ func (c *SFTPServer) serve(listener net.Listener, conf *ssh.ServerConfig) error 
 				log.WithField("error", err).WithField("ip", conn.RemoteAddr().String()).Error("sftp: failed to accept inbound connection")
 				return
 			}
-			user := sconn.User()
+			user := sessionKey(sconn)
 			if !c.sessions.acquire(user, 0, c.limits.maxPerUser) {
 				c.droppedUser.log("too many connections for user, dropping connections", user)
 				_ = sconn.Close()
@@ -294,6 +294,17 @@ func (c *SFTPServer) serve(listener net.Listener, conf *ssh.ServerConfig) error 
 			}
 		}(conn, key)
 	}
+}
+
+// sessionKey returns the key used to limit the connections of a user, which is
+// the user and server the Panel authenticated.
+func sessionKey(sconn *ssh.ServerConn) string {
+	if sconn.Permissions != nil {
+		if user := sconn.Permissions.Extensions["user"]; user != "" {
+			return user + ":" + sconn.Permissions.Extensions["uuid"]
+		}
+	}
+	return strings.ToLower(sconn.User())
 }
 
 // handshake performs the SSH handshake, including authentication, on the
@@ -343,17 +354,14 @@ func (c *SFTPServer) handle(sconn *ssh.ServerConn, chans <-chan ssh.NewChannel, 
 			continue
 		}
 
-		channel, requests, err := ch.Accept()
-		if err != nil {
+		srv, ok := c.manager.Get(sconn.Permissions.Extensions["uuid"])
+		if !ok {
+			_ = ch.Reject(ssh.ConnectionFailed, "server not found")
 			continue
 		}
 
-		srv, ok := c.manager.Get(sconn.Permissions.Extensions["uuid"])
-		if !ok {
-			// No matching server instance for this connection's UUID: nothing will
-			// ever consume this channel, so close it immediately to avoid leaking it.
-			go ssh.DiscardRequests(requests)
-			_ = channel.Close()
+		channel, requests, err := ch.Accept()
+		if err != nil {
 			continue
 		}
 
@@ -451,12 +459,10 @@ func (c *SFTPServer) Handle(conn *ssh.ServerConn, srv *server.Server, channel ss
 	ctx := srv.Sftp().Context(handler.User())
 	rs := sftp.NewRequestServer(channel, handler.Handlers())
 
-	// Signals the supervisor goroutine below to stop watching "ctx" once this
-	// function returns, so it doesn't linger until the server's protected-state
-	// context is eventually cancelled (which may be much later, or never).
+	// Close the session when access is revoked, and stop waiting for that once
+	// the session ends on its own.
 	done := make(chan struct{})
 	defer close(done)
-
 	go func() {
 		select {
 		case <-ctx.Done():
