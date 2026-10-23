@@ -193,10 +193,12 @@ func (v Variables) Get(key string) string {
 	}
 
 	switch val.(type) {
+	case nil:
+		return ""
 	case int:
 		return strconv.Itoa(val.(int))
 	case int32:
-		return strconv.FormatInt(val.(int64), 10)
+		return strconv.FormatInt(int64(val.(int32)), 10)
 	case int64:
 		return strconv.FormatInt(val.(int64), 10)
 	case float32:
@@ -209,8 +211,6 @@ func (v Variables) Get(key string) string {
 		return val.(string)
 	}
 
-	// TODO: I think we can add a check for val == nil and return an empty string for those
-	//  and this warning should theoretically never happen?
 	log.Warn(fmt.Sprintf("failed to marshal environment variable \"%s\" of type %+v into string", key, val))
 
 	return ""
