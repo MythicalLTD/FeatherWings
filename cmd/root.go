@@ -310,7 +310,14 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 			//
 			// This does mean that booting wings after a catastrophic machine crash and wiping out the Docker images
 			// as a result will result in a slow boot.
-			if !r && (st == environment.ProcessRunningState || st == environment.ProcessStartingState) {
+			wasRunning := st == environment.ProcessRunningState || st == environment.ProcessStartingState
+			if !r && wasRunning && !s.Config().ShouldRestoreOnBoot() {
+				// The owner turned auto start off (or stopped the server by hand) on the Panel,
+				// so do not bring it back just because it was running before Wings stopped.
+				s.Log().Info("server was running before boot but auto start is disabled on the panel, leaving it offline")
+				s.Environment.SetState(environment.ProcessOfflineState)
+				s.OnStateChange()
+			} else if !r && wasRunning {
 				if err := s.HandlePowerAction(server.PowerActionStart); err != nil {
 					s.Log().WithField("error", err).Warn("failed to return server to running state")
 				}

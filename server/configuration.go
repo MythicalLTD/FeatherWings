@@ -105,6 +105,28 @@ type Configuration struct {
 		// Example: "csgo" would serve files from /var/lib/featherpanel/volumes/{uuid}/csgo/
 		Directory string `json:"directory" default:""`
 	} `json:"fastdl,omitempty"`
+
+	// AutoStart mirrors the panel setting "Start after node reconnect". It is nil when the
+	// panel does not send it (older panels), which keeps the previous restore on boot behavior.
+	AutoStart *AutoStartConfiguration `json:"auto_start,omitempty"`
+}
+
+// AutoStartConfiguration is the per server auto start block sent by the panel.
+type AutoStartConfiguration struct {
+	Enabled         bool `json:"enabled"`
+	ManuallyStopped bool `json:"manually_stopped"`
+	Delay           int  `json:"delay"`
+}
+
+// ShouldRestoreOnBoot reports whether a server that was running before Wings stopped
+// may be started again when Wings boots.
+func (c *Configuration) ShouldRestoreOnBoot() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.AutoStart == nil {
+		return true
+	}
+	return c.AutoStart.Enabled && !c.AutoStart.ManuallyStopped
 }
 
 func (s *Server) Config() *Configuration {
