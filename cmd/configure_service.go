@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	featherwingsServiceName      = "featherwings"
-	featherwingsUnitPath         = "/etc/systemd/system/featherwings.service"
-	featherwingsPackageUnitPath  = "/lib/systemd/system/featherwings.service"
-	featherwingsInstallBinPath   = "/usr/local/bin/featherwings"
-	featherwingsDebPackageName   = "featherwings"
-	systemctlTimeout             = 45 * time.Second
+	featherwingsServiceName     = "featherwings"
+	featherwingsUnitPath        = "/etc/systemd/system/featherwings.service"
+	featherwingsPackageUnitPath = "/lib/systemd/system/featherwings.service"
+	featherwingsInstallBinPath  = "/usr/local/bin/featherwings"
+	featherwingsDebPackageName  = "featherwings"
+	systemctlTimeout            = 45 * time.Second
 )
 
 // packageManagedFeatherwings reports whether FeatherWings was installed via the
