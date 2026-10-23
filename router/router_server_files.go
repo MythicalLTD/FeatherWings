@@ -1167,6 +1167,7 @@ func postServerUploadFiles(c *gin.Context) {
 		})
 		return
 	}
+	middleware.ClearDeadlines(c)
 
 	form, err := c.MultipartForm()
 	if err != nil {

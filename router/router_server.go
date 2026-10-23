@@ -15,8 +15,8 @@ import (
 	"github.com/apex/log"
 	"github.com/gin-gonic/gin"
 
-	"github.com/mythicalltd/featherwings/firewall"
 	environmentDocker "github.com/mythicalltd/featherwings/environment/docker"
+	"github.com/mythicalltd/featherwings/firewall"
 	"github.com/mythicalltd/featherwings/router/downloader"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/router/tokens"

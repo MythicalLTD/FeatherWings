@@ -19,16 +19,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/config"
+	wnet "github.com/mythicalltd/featherwings/internal/network"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 )
-
-var blockedBackupRestorePrefixes = []netip.Prefix{
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-}
 
 type backupDownloadError string
 
@@ -457,39 +453,14 @@ func isBlockedBackupRestoreIP(host string, ip net.IP) bool {
 		return true
 	}
 	addr = addr.Unmap()
-	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || isExplicitlyBlockedBackupRestoreIP(addr) {
+	if wnet.IsInternal(addr) {
 		return !isAllowedBackupRestoreDestination(host, addr)
 	}
 	return false
 }
 
-func isExplicitlyBlockedBackupRestoreIP(addr netip.Addr) bool {
-	for _, prefix := range blockedBackupRestorePrefixes {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
-}
-
 func isAllowedBackupRestoreDestination(host string, addr netip.Addr) bool {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	for _, entry := range config.Get().System.Backups.RestoreHostAllowlist {
-		entry = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(entry)), ".")
-		if entry == "" {
-			continue
-		}
-		if entry == host {
-			return true
-		}
-		if allowedAddr, err := netip.ParseAddr(entry); err == nil && allowedAddr.Unmap() == addr {
-			return true
-		}
-		if prefix, err := netip.ParsePrefix(entry); err == nil && prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return wnet.IsAllowed(config.Get().System.Backups.RestoreHostAllowlist, host, addr)
 }
 
 func isSupportedBackupRestoreContentType(value string) bool {
