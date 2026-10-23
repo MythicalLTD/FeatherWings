@@ -110,7 +110,7 @@ func (fs *UnixFS) fchmodat(op string, dirfd int, name string, mode FileMode) err
 // fchmodNoFollow changes the mode of name without following it if it is a
 // symbolic link, without needing fchmodat2.
 func fchmodNoFollow(dirfd int, name string, mode uint32) error {
-	fd, err := unix.Openat(dirfd, name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	fd, err := unix.Openat(dirfd, name, oPath|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return err
 	}
@@ -556,7 +556,7 @@ func (fs *UnixFS) statFollow(name string) (FileInfo, error) {
 	}
 	defer unix.Close(rootfd)
 
-	fd, err := fs.openatResolved(rootfd, rel, unix.O_PATH, 0)
+	fd, err := fs.openatResolved(rootfd, rel, oPath, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -736,7 +736,7 @@ func (fs *UnixFS) openat(dirfd int, name string, flag int, mode FileMode) (int, 
 func (fs *UnixFS) openatResolved(dirfd int, name string, flag int, mode FileMode) (int, error) {
 	// Open everything without blocking and refuse anything that is not a regular
 	// file or a directory. Paths opened with O_PATH are never read or written.
-	checkType := flag&unix.O_PATH == 0
+	checkType := flag&oPath == 0
 	if checkType {
 		flag |= unix.O_NONBLOCK
 	}
