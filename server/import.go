@@ -73,6 +73,24 @@ func (s *Server) Import(sync bool, user string, password string, hote string, po
 
 // ImportNew imports server files from a remote SFTP or FTP server.
 // If Wipe is true, the destination directory will be cleared before importing.
+// safeImportPath resolves a panel-supplied destination inside the server
+// directory and refuses values that would leave it (the import runs as root, so
+// "../../etc/cron.d" must never reach os.RemoveAll or os.Create).
+func (s *Server) safeImportPath(dstlocation string) (string, error) {
+	return resolveImportPath(s.Filesystem().Path(), dstlocation)
+}
+
+// resolveImportPath is the pure part of safeImportPath so it can be unit tested.
+func resolveImportPath(base, dstlocation string) (string, error) {
+	base = filepath.Clean(base)
+	cleaned := filepath.Clean(filepath.Join(base, filepath.FromSlash(dstlocation)))
+	if cleaned != base && !strings.HasPrefix(cleaned, base+string(os.PathSeparator)) {
+		return "", errors.New("server/import: destination path escapes the server directory")
+	}
+
+	return cleaned, nil
+}
+
 func (s *Server) ImportNew(user string, password string, hote string, port int, srclocation string, dstlocation string, Type string, Wipe bool) error {
 	if s.Environment.State() != environment.ProcessOfflineState {
 		s.Log().Debug("waiting for server instance to enter a stopped state")
@@ -86,8 +104,11 @@ func (s *Server) ImportNew(user string, password string, hote string, port int, 
 		return errors.Wrap(err, "server/import: destination path is not allowed")
 	}
 
-	// Get the full destination path
-	cleaned := filepath.Join(s.Filesystem().Path(), dstlocation)
+	// Get the full destination path (refused when it would leave the server dir)
+	cleaned, err := s.safeImportPath(dstlocation)
+	if err != nil {
+		return err
+	}
 
 	if Wipe {
 		s.Log().Info("wiping destination directory before import")
@@ -177,8 +198,11 @@ func (s *Server) ServerImporter(user string, password string, hote string, port 
 		HostKeyCallback: importHostKeyCallback(s, hote),
 	}
 
-	// Get the full destination path
-	cleaned := filepath.Join(s.Filesystem().Path(), dstlocation)
+	// Get the full destination path (refused when it would leave the server dir)
+	cleaned, err := s.safeImportPath(dstlocation)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(cleaned, 0o755); err != nil {
 		return errors.Wrap(err, "server/import: failed to create destination directory")
 	}
@@ -330,8 +354,11 @@ func (s *Server) ServerImporterFtp(user string, password string, hote string, po
 		Timeout:            10 * time.Second,
 	}
 
-	// Get the full destination path
-	cleaned := filepath.Join(s.Filesystem().Path(), dstlocation)
+	// Get the full destination path (refused when it would leave the server dir)
+	cleaned, err := s.safeImportPath(dstlocation)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(cleaned, 0o755); err != nil {
 		return errors.Wrap(err, "server/import: failed to create destination directory")
 	}
