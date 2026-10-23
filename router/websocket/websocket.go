@@ -326,6 +326,15 @@ func (h *Handler) GetJwt() *tokens.WebsocketPayload {
 	return h.jwt
 }
 
+// User returns the UUID of the user the websocket is authenticated as, or an
+// empty string if it has not authenticated.
+func (h *Handler) User() string {
+	if j := h.GetJwt(); j != nil {
+		return j.UserUUID
+	}
+	return ""
+}
+
 // setJwt sets the JWT for the websocket in a race-safe manner.
 func (h *Handler) setJwt(token *tokens.WebsocketPayload) {
 	h.Lock()

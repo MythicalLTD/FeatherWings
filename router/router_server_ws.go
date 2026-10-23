@@ -76,7 +76,7 @@ func getServerWebsocket(c *gin.Context) {
 
 	// Track this open connection on the server so that we can close them all programmatically
 	// if the server is deleted.
-	s.Websockets().Push(handler.Uuid(), &cancel)
+	s.Websockets().Push(handler.Uuid(), &cancel, handler.User)
 	s.Collab().Register(handler.Uuid(), func(msg collab.Message) {
 		_ = handler.SendJson(websocket.Message{Event: websocket.Event(msg.Event), Args: msg.Args})
 	})
