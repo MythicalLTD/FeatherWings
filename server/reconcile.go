@@ -16,10 +16,10 @@ import (
 
 // Runtime health statuses exposed via the server API.
 const (
-	RuntimeStatusOK            = "ok"
-	RuntimeStatusUnresponsive  = "unresponsive"
-	RuntimeStatusDesynced      = "desynced"
-	RuntimeStatusRecovered     = "recovered"
+	RuntimeStatusOK           = "ok"
+	RuntimeStatusUnresponsive = "unresponsive"
+	RuntimeStatusDesynced     = "desynced"
+	RuntimeStatusRecovered    = "recovered"
 )
 
 // RuntimeInfo is included in server API responses so the Panel can surface
@@ -32,13 +32,13 @@ type RuntimeInfo struct {
 }
 
 type runtimeTracker struct {
-	mu               sync.RWMutex
-	status           string
-	message          string
-	checkedAt        time.Time
-	stateEnteredAt   time.Time
-	failCount        int
-	lastRecoveredAt  time.Time
+	mu              sync.RWMutex
+	status          string
+	message         string
+	checkedAt       time.Time
+	stateEnteredAt  time.Time
+	failCount       int
+	lastRecoveredAt time.Time
 }
 
 func (s *Server) initRuntimeTracker() {

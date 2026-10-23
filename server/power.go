@@ -12,6 +12,7 @@ import (
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/environment"
 	"github.com/mythicalltd/featherwings/server/filesystem/quotas"
+	"github.com/mythicalltd/featherwings/system"
 )
 
 type PowerAction string
@@ -121,6 +122,9 @@ func (s *Server) handlePowerAction(action PowerAction, fromCrashDetection bool, 
 		if err := s.powerLock.Acquire(); err == nil {
 			log.Info("acquired exclusive lock on power actions, processing event...")
 			defer cleanup()
+		} else if errors.Is(err, system.ErrLockerDestroyed) {
+			// The server is being deleted.
+			return err
 		} else {
 			log.Warn("failed to acquire exclusive lock, ignoring failure for termination event")
 		}

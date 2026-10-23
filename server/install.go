@@ -3,13 +3,13 @@ package server
 import (
 	"bufio"
 	"context"
-	"html/template"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"emperror.dev/errors"
@@ -165,6 +165,16 @@ func (s *Server) SetTransferring(state bool) {
 	}
 }
 
+// StartTransferring marks the server as being transferred, returning false if
+// it already is, or if it is being installed or restored.
+func (s *Server) StartTransferring() bool {
+	if s.IsInstalling() || s.IsRestoring() || !s.transferring.SwapIf(true) {
+		return false
+	}
+	s.Sftp().CancelAll()
+	return true
+}
+
 func (s *Server) IsRestoring() bool {
 	return s.restoring.Load()
 }
@@ -177,7 +187,7 @@ func (s *Server) SetRestoring(state bool) {
 }
 
 func (s *Server) IsInProtectedState() bool {
-	return s.IsInstalling() || s.IsTransferring() || s.IsRestoring()	
+	return s.IsInstalling() || s.IsTransferring() || s.IsRestoring()
 }
 
 // RemoveContainer removes the installation container for the server.
@@ -464,10 +474,12 @@ func (ip *InstallationProcess) Execute() (string, error) {
 				ReadOnly: false,
 			},
 			{
+				// The script only needs to be read, and must not be changed while
+				// it is running.
 				Target:   "/mnt/install",
 				Source:   ip.tempDir(),
 				Type:     mount.TypeBind,
-				ReadOnly: false,
+				ReadOnly: true,
 			},
 		},
 		Resources: ip.resourceLimits(),
@@ -478,6 +490,12 @@ func (ip *InstallationProcess) Execute() (string, error) {
 		LogConfig:   cfg.Docker.ContainerLogConfig(),
 		NetworkMode: container.NetworkMode(cfg.Docker.Network.Mode),
 		UsernsMode:  container.UsernsMode(cfg.Docker.UsernsMode),
+		// Install scripts run as root, and commonly install packages, so they keep
+		// the capabilities that needs. Drop the ones they do not need.
+		SecurityOpt: []string{"no-new-privileges"},
+		CapDrop: []string{
+			"setpcap", "mknod", "audit_write", "net_raw", "sys_chroot",
+		},
 	}
 
 	// Ensure the root directory for the server exists properly before attempting
@@ -517,7 +535,7 @@ func (ip *InstallationProcess) Execute() (string, error) {
 	}
 	// Pass the networkings configuration or nil if none required
 	r, err := ip.client.ContainerCreate(ctx, conf, hostConf, netConf, nil, ip.Server.ID()+"_installer")
-	
+
 	if err != nil {
 		return "", err
 	}
@@ -601,13 +619,17 @@ func (ip *InstallationProcess) resourceLimits() container.Resources {
 	}
 
 	resources := cfg.AsContainerResources()
-	// Explicitly remove the PID limits for the installation container. These scripts are
-	// defined at an administrative level and users can't manually execute things like a
-	// fork bomb during this process.
-	resources.PidsLimit = nil
+	// Installation scripts can need more processes than the server itself, for example
+	// when compiling, so use a higher limit than the server's.
+	pids := max(config.Get().Docker.ContainerPidLimit, installerPidLimit)
+	resources.PidsLimit = &pids
 
 	return resources
 }
+
+// installerPidLimit is the lowest limit on the number of processes in an
+// installation container.
+const installerPidLimit int64 = 4096
 
 // SyncInstallState makes an HTTP request to the Panel instance notifying it that
 // the server has completed the installation process, and what the state of the

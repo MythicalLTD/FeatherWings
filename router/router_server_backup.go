@@ -138,16 +138,10 @@ func postServerRestoreBackup(c *gin.Context) {
 	}()
 
 	logger.Info("processing server backup restore request")
-	if data.TruncateDirectory {
-		logger.Info("received \"truncate_directory\" flag in request: deleting server files")
-		if err := s.Filesystem().TruncateRootDirectory(); err != nil {
-			middleware.CaptureAndAbort(c, err)
-			return
-		}
-	}
 
-	// Now that we've cleaned up the data directory if necessary, grab the backup file
-	// and attempt to restore it into the server directory.
+	// Find the backup before changing anything, so that a restore that cannot
+	// happen leaves the server's files as they are. If the truncate_directory flag
+	// is set, the files are deleted once the server has stopped.
 	if data.Adapter == backup.LocalBackupAdapter {
 		b, _, err := backup.LocateLocal(client, backupUuid, s.ID())
 		if err != nil {
@@ -156,7 +150,7 @@ func postServerRestoreBackup(c *gin.Context) {
 		}
 		go func(s *server.Server, b backup.BackupInterface, logger *log.Entry) {
 			logger.Info("starting restoration process for server backup using local driver")
-			if err := s.RestoreBackup(b, nil); err != nil {
+			if err := s.RestoreBackup(b, nil, data.TruncateDirectory); err != nil {
 				logger.WithField("error", err).Error("failed to restore local backup to server")
 			}
 			s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from local backup.")
@@ -177,7 +171,7 @@ func postServerRestoreBackup(c *gin.Context) {
 		}
 		go func(s *server.Server, b backup.BackupInterface, logger *log.Entry) {
 			logger.Info("starting restoration process for server backup using PBS driver")
-			if err := s.RestoreBackup(b, nil); err != nil {
+			if err := s.RestoreBackup(b, nil, data.TruncateDirectory); err != nil {
 				logger.WithField("error", err).Error("failed to restore PBS backup to server")
 			}
 			s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from Proxmox Backup Server.")
@@ -231,7 +225,7 @@ func postServerRestoreBackup(c *gin.Context) {
 
 	go func(s *server.Server, uuid string, logger *log.Entry) {
 		logger.Info("starting restoration process for server backup using S3 driver")
-		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body); err != nil {
+		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body, data.TruncateDirectory); err != nil {
 			logger.WithField("error", errors.WithStack(err)).Error("failed to restore remote S3 backup to server")
 		}
 		s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from S3 backup.")
