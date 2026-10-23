@@ -756,6 +756,41 @@ func Set(c *Configuration) {
 	_config = c
 }
 
+// ResolveRemoteToken populates the derived Token field after the Panel has sent
+// us new token values. Because the resolved token is what everything else in
+// Wings authenticates against, this has to be called whenever the underlying
+// AuthenticationToken values change, otherwise the previously resolved token
+// stays in use until the process is restarted.
+func (c *Configuration) ResolveRemoteToken() error {
+	return c.resolveToken(false)
+}
+
+// resolveToken resolves the token to use, preferring values pinned through the
+// environment so that a token supplied by the system running Wings is never
+// replaced by one sent to us by the Panel. expandLocal controls whether the
+// values held in the configuration itself are trusted enough to be passed through
+// Expand.
+func (c *Configuration) resolveToken(expandLocal bool) error {
+	resolve := func(env, local string) (string, error) {
+		if env != "" {
+			return Expand(env)
+		}
+		if expandLocal {
+			return Expand(local)
+		}
+		return local, nil
+	}
+
+	var err error
+	if c.Token.ID, err = resolve(os.Getenv("WINGS_TOKEN_ID"), c.AuthenticationTokenId); err != nil {
+		return err
+	}
+	if c.Token.Token, err = resolve(os.Getenv("WINGS_TOKEN"), c.AuthenticationToken); err != nil {
+		return err
+	}
+	return nil
+}
+
 // SetDebugViaFlag tracks if the application is running in debug mode because of
 // a command line flag argument. If so we do not want to store that configuration
 // change to the disk.
@@ -942,23 +977,7 @@ func FromFile(path string) error {
 		return err
 	}
 
-	c.Token = Token{
-		ID:    os.Getenv("WINGS_TOKEN_ID"),
-		Token: os.Getenv("WINGS_TOKEN"),
-	}
-	if c.Token.ID == "" {
-		c.Token.ID = c.AuthenticationTokenId
-	}
-	if c.Token.Token == "" {
-		c.Token.Token = c.AuthenticationToken
-	}
-
-	c.Token.ID, err = Expand(c.Token.ID)
-	if err != nil {
-		return err
-	}
-	c.Token.Token, err = Expand(c.Token.Token)
-	if err != nil {
+	if err := c.resolveToken(true); err != nil {
 		return err
 	}
 
@@ -1232,7 +1251,7 @@ func Expand(v string) (string, error) {
 
 		b, err := os.ReadFile(p) //nolint:gosec // file:// values come from the operator's config
 		if err != nil {
-			return "", nil
+			return "", err
 		}
 		v = string(bytes.TrimRight(bytes.TrimRight(b, "\r"), "\n"))
 	}
