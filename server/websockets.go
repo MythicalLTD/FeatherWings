@@ -29,7 +29,13 @@ func (s *Server) Collab() *collab.Manager {
 
 type WebsocketBag struct {
 	mu    sync.Mutex
-	conns map[uuid.UUID]*context.CancelFunc
+	conns map[uuid.UUID]websocketConn
+}
+
+type websocketConn struct {
+	cancel *context.CancelFunc
+	// user returns the user the connection is currently authenticated as.
+	user func() string
 }
 
 // Websockets returns the websocket bag which contains all the currently open websocket connections
@@ -52,16 +58,17 @@ func (w *WebsocketBag) Len() int {
 	return len(w.conns)
 }
 
-// Push adds a new websocket connection to the end of the stack.
-func (w *WebsocketBag) Push(u uuid.UUID, cancel *context.CancelFunc) {
+// Push adds a new websocket connection to the end of the stack. user returns
+// the user the connection is currently authenticated as, and may be nil.
+func (w *WebsocketBag) Push(u uuid.UUID, cancel *context.CancelFunc, user func() string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.conns == nil {
-		w.conns = make(map[uuid.UUID]*context.CancelFunc)
+		w.conns = make(map[uuid.UUID]websocketConn)
 	}
 
-	w.conns[u] = cancel
+	w.conns[u] = websocketConn{cancel: cancel, user: user}
 }
 
 // Remove removes a connection from the stack.
@@ -78,11 +85,24 @@ func (w *WebsocketBag) CancelAll() {
 	defer w.mu.Unlock()
 
 	if w.conns != nil {
-		for _, cancel := range w.conns {
-			(*cancel)()
+		for _, c := range w.conns {
+			(*c.cancel)()
 		}
 	}
 
 	// Reset the connections.
-	w.conns = make(map[uuid.UUID]*context.CancelFunc)
+	w.conns = make(map[uuid.UUID]websocketConn)
+}
+
+// CancelUser disconnects every websocket that is authenticated as the user.
+func (w *WebsocketBag) CancelUser(user string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for u, c := range w.conns {
+		if c.user != nil && c.user() == user {
+			(*c.cancel)()
+			delete(w.conns, u)
+		}
+	}
 }
