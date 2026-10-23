@@ -13,6 +13,7 @@ import (
 
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/filesystem"
+	"github.com/mythicalltd/featherwings/internal/ufs"
 )
 
 // RequestError is a custom error type returned when something goes wrong with
@@ -128,6 +129,9 @@ func (re *RequestError) asFilesystemError() (int, string) {
 	}
 	if filesystem.IsErrorCode(err, filesystem.ErrCodeIsDirectory) || strings.Contains(err.Error(), "filesystem: is a directory") {
 		return http.StatusBadRequest, "Cannot perform that action: file is a directory."
+	}
+	if errors.Is(err, ufs.ErrNotRegular) {
+		return http.StatusBadRequest, "Cannot perform that action: not a regular file."
 	}
 	if filesystem.IsErrorCode(err, filesystem.ErrCodeDiskSpace) || strings.Contains(err.Error(), "filesystem: not enough disk space") {
 		return http.StatusBadRequest, "There is not enough disk space available to perform that action."

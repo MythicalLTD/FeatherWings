@@ -16,6 +16,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
+	"github.com/asaskevich/govalidator"
 	"github.com/creasty/defaults"
 	"github.com/goccy/go-json"
 
@@ -227,12 +228,18 @@ func parseInvocation(invocation string, envvars map[string]interface{}, memory i
 // Returns all of the environment variables that should be assigned to a running
 // server instance.
 func (s *Server) GetEnvironmentVariables() []string {
+	var defaultIp string
+	var defaultPort int
+	if m := s.Config().Allocations.DefaultMapping; m != nil {
+		defaultIp, defaultPort = m.Ip, m.Port
+	}
+
 	out := []string{
 		fmt.Sprintf("TZ=%s", DetermineServerTimezone(s.Config().EnvVars, config.Get().System.Timezone)),
-		fmt.Sprintf("STARTUP=%s", parseInvocation(s.Config().Invocation, s.Config().EnvVars, s.MemoryLimit(), s.Config().Allocations.DefaultMapping.Port, s.Config().Allocations.DefaultMapping.Ip)),
+		fmt.Sprintf("STARTUP=%s", parseInvocation(s.Config().Invocation, s.Config().EnvVars, s.MemoryLimit(), defaultPort, defaultIp)),
 		fmt.Sprintf("SERVER_MEMORY=%d", s.MemoryLimit()),
-		fmt.Sprintf("SERVER_IP=%s", s.Config().Allocations.DefaultMapping.Ip),
-		fmt.Sprintf("SERVER_PORT=%d", s.Config().Allocations.DefaultMapping.Port),
+		fmt.Sprintf("SERVER_IP=%s", defaultIp),
+		fmt.Sprintf("SERVER_PORT=%d", defaultPort),
 	}
 
 eloop:
@@ -312,6 +319,15 @@ func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) e
 	}
 	if err := json.Unmarshal(cfg.Settings, &c); err != nil {
 		return errors.WithStackIf(err)
+	}
+
+	// Only accept a UUID from the Panel, and never allow it to change once the
+	// server has been created.
+	if !govalidator.IsUUID(c.Uuid) {
+		return errors.New("server: configuration returned by the Panel contains an invalid server uuid")
+	}
+	if id := s.ID(); id != "" && id != c.Uuid {
+		return errors.New("server: configuration returned by the Panel is for a different server")
 	}
 
 	// Older panels omit fastdl from settings; preserve in-memory FastDL across Sync/restart.

@@ -32,8 +32,9 @@ func newTestServer(t *testing.T, diskSpaceMiB int64) *server.Server {
 	cfg.System.User.Gid = os.Getgid()
 	config.Set(cfg)
 
+	id := uuid.NewString()
 	settings, err := json.Marshal(map[string]any{
-		"uuid":  uuid.NewString(),
+		"uuid":  id,
 		"build": map[string]any{"disk_space": diskSpaceMiB},
 		"allocations": map[string]any{
 			"default": map[string]any{"ip": "127.0.0.1", "port": 25565},
@@ -43,7 +44,7 @@ func newTestServer(t *testing.T, diskSpaceMiB int64) *server.Server {
 		t.Fatal(err)
 	}
 
-	s, err := server.NewEmptyManager(nil).InitServer(remote.ServerConfigurationResponse{Settings: settings})
+	s, err := server.NewEmptyManager(nil).InitServer(id, remote.ServerConfigurationResponse{Settings: settings})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -177,8 +177,8 @@ func renderDNSTXTInstructions(name, value string) string {
 		lipConfigureMuted().Render("Add this TXT record at your DNS provider:"),
 		"",
 		lipConfigureInk().Render("  Type:  TXT"),
-		lipConfigureInk().Render("  Name:  "+name),
-		lipConfigureInk().Render("  Value: "+value),
+		lipConfigureInk().Render("  Name:  " + name),
+		lipConfigureInk().Render("  Value: " + value),
 		lipConfigureMuted().Render("  TTL:   300 (or automatic)"),
 		"",
 		lipConfigureMuted().Render("DNS changes can take a few minutes to propagate."),

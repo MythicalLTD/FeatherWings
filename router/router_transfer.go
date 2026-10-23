@@ -63,6 +63,7 @@ func postTransfers(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden."})
 		return
 	}
+	middleware.ClearDeadlines(c)
 
 	manager := middleware.ExtractManager(c)
 	u, err := uuid.Parse(token.Subject)
@@ -76,8 +77,24 @@ func postTransfers(c *gin.Context) {
 		ctx    context.Context
 		cancel context.CancelFunc
 	)
-	trnsfr := transfer.Incoming().Get(u.String())
-	if trnsfr == nil {
+	// Only one request can send the server at a time.
+	if transfer.Incoming().Get(u.String()) != nil {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "A transfer is already in progress for this server.",
+		})
+		return
+	}
+
+	var trnsfr *transfer.Transfer
+	{
+		// A server that already exists on this instance cannot be transferred to it.
+		if _, ok := manager.Get(u.String()); ok {
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+				"error": "A server with this identifier already exists on this instance.",
+			})
+			return
+		}
+
 		// TODO: should this use the request context?
 		trnsfr = transfer.New(c, nil)
 
@@ -104,56 +121,33 @@ func postTransfers(c *gin.Context) {
 		}
 
 		i.Server().SetTransferring(true)
-		manager.Add(i.Server())
+		if !manager.AddIfMissing(i.Server()) {
+			i.Server().CleanupForDestroy()
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+				"error": "A server with this identifier already exists on this instance.",
+			})
+			return
+		}
 
 		// We add the transfer to the list of transfers once we have a server instance to use.
 		trnsfr.Server = i.Server()
-		transfer.Incoming().Add(trnsfr)
-	} else {
-		ctx, cancel = context.WithCancel(trnsfr.Context())
-		defer cancel()
+		if !transfer.Incoming().Add(trnsfr) {
+			manager.Remove(func(match *server.Server) bool { return match == i.Server() })
+			i.Server().CleanupForDestroy()
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+				"error": "A transfer is already in progress for this server.",
+			})
+			return
+		}
 	}
 
 	// Any errors past this point (until the transfer is complete) will abort
 	// the transfer.
 
 	successful := false
-	defer func(ctx context.Context, trnsfr *transfer.Transfer) {
-		// Remove the transfer from the list of incoming transfers.
-		transfer.Incoming().Remove(trnsfr)
-
-		if !successful {
-			trnsfr.Server.Events().Publish(server.TransferStatusEvent, "failure")
-			// Clean up firewall rules if transfer failed
-			firewallMgr := firewall.NewManager()
-			if err := firewallMgr.DeleteAllRulesForServer(trnsfr.Server.ID()); err != nil {
-				trnsfr.Log().WithError(err).Warn("failed to delete firewall rules for failed transfer")
-			}
-			manager.Remove(func(match *server.Server) bool {
-				return match.ID() == trnsfr.Server.ID()
-			})
-		}
-
-		if err := manager.Client().SetTransferStatus(context.Background(), trnsfr.Server.ID(), successful); err != nil {
-			// Only delete the files if the transfer actually failed, otherwise we could have
-			// unrecoverable data-loss.
-			if !successful && err != nil {
-				// Delete all extracted files.
-				go func(trnsfr *transfer.Transfer) {
-					_ = trnsfr.Server.Filesystem().UnixFS().Close()
-					if err := os.RemoveAll(trnsfr.Server.Filesystem().Path()); err != nil && !os.IsNotExist(err) {
-						trnsfr.Log().WithError(err).Warn("failed to delete local server files")
-					}
-				}(trnsfr)
-			}
-
-			trnsfr.Log().WithField("status", successful).WithError(err).Error("failed to set transfer status on panel")
-			return
-		}
-
-		trnsfr.Server.SetTransferring(false)
-		trnsfr.Server.Events().Publish(server.TransferStatusEvent, "success")
-	}(ctx, trnsfr)
+	defer func() {
+		completeIncomingTransfer(manager, trnsfr, successful)
+	}()
 
 	{
 		remotePool := config.Get().System.Transfers.StoragePool
@@ -227,7 +221,7 @@ out:
 					reader = io.TeeReader(p, archiveHasher)
 
 					// Stream directly to extraction while calculating checksum
-					if err := trnsfr.Server.Filesystem().ExtractStreamUnsafe(ctx, "/", reader); err != nil {
+					if err := trnsfr.Server.Filesystem().ExtractTransfer(ctx, reader); err != nil {
 						middleware.CaptureAndAbort(c, err)
 						return
 					}
@@ -237,7 +231,7 @@ out:
 					trnsfr.Log().Debug("archive extracted and checksum calculated")
 				} else {
 					// Stream directly to extraction without checksum calculation
-					if err := trnsfr.Server.Filesystem().ExtractStreamUnsafe(ctx, "/", reader); err != nil {
+					if err := trnsfr.Server.Filesystem().ExtractTransfer(ctx, reader); err != nil {
 						middleware.CaptureAndAbort(c, err)
 						return
 					}
@@ -444,6 +438,42 @@ out:
 	c.Status(http.StatusAccepted)
 }
 
+// completeIncomingTransfer finishes receiving a transfer, telling the Panel
+// whether it was successful. If it was not, everything that was received is
+// removed, since the server still exists on the node it was being transferred
+// from.
+func completeIncomingTransfer(manager *server.Manager, trnsfr *transfer.Transfer, successful bool) {
+	// Remove the transfer from the list of incoming transfers.
+	transfer.Incoming().Remove(trnsfr)
+
+	if !successful {
+		trnsfr.Server.Events().Publish(server.TransferStatusEvent, "failure")
+		// Clean up firewall rules if the transfer failed.
+		if err := firewall.NewManager().DeleteAllRulesForServer(trnsfr.Server.ID()); err != nil {
+			trnsfr.Log().WithError(err).Warn("failed to delete firewall rules for failed transfer")
+		}
+		manager.Remove(func(match *server.Server) bool {
+			return match == trnsfr.Server
+		})
+		trnsfr.Server.CleanupForDestroy()
+		if err := trnsfr.Server.Environment.Destroy(); err != nil {
+			trnsfr.Log().WithError(err).Warn("failed to remove server environment")
+		}
+		if err := os.RemoveAll(trnsfr.Server.Filesystem().Path()); err != nil && !os.IsNotExist(err) {
+			trnsfr.Log().WithError(err).Warn("failed to delete local server files")
+		}
+	}
+
+	if err := manager.Client().SetTransferStatus(context.Background(), trnsfr.Server.ID(), successful); err != nil {
+		trnsfr.Log().WithField("status", successful).WithError(err).Error("failed to set transfer status on panel")
+	}
+
+	if successful {
+		trnsfr.Server.SetTransferring(false)
+		trnsfr.Server.Events().Publish(server.TransferStatusEvent, "success")
+	}
+}
+
 // deleteTransfer cancels an incoming transfer for a server.
 // @Summary Cancel incoming transfer
 // @Tags Transfers
@@ -453,16 +483,7 @@ out:
 // @Security NodeToken
 // @Router /api/transfers/{server} [delete]
 func deleteTransfer(c *gin.Context) {
-	s := ExtractServer(c)
-
-	if !s.IsTransferring() {
-		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
-			"error": "Server is not currently being transferred.",
-		})
-		return
-	}
-
-	trnsfr := transfer.Incoming().Get(s.ID())
+	trnsfr := transfer.Incoming().Get(c.Param("server"))
 	if trnsfr == nil {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
 			"error": "Server is not currently being transferred.",

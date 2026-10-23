@@ -1,15 +1,15 @@
 package filesystem
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
 	"io"
 	iofs "io/fs"
-	"math"	
+	"math"
 	"path"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
@@ -110,20 +110,29 @@ func (fs *Filesystem) CompressFiles(ctx context.Context, dir string, name string
 		return nil, "", err
 	}
 
-	f, err := fs.unixFS.OpenFile(destPath, ufs.O_WRONLY|ufs.O_CREATE, 0o644)
+	// Never write into an existing file, such as an archive created by another
+	// request within the same second.
+	f, err := fs.unixFS.OpenFile(destPath, ufs.O_WRONLY|ufs.O_CREATE|ufs.O_EXCL, 0o644)
 	if err != nil {
 		return nil, "", err
 	}
-	defer f.Close()
 
-	cw := ufs.NewCountedWriter(f)
+	// Count every write to the archive against the disk limit as it happens, so
+	// that archives being created at the same time cannot each use all the space
+	// that is left.
+	cw := newQuotaFile(fs, f, 0)
+	fail := func(err error) (ufs.FileInfo, string, error) {
+		_ = cw.Close()
+		_ = fs.unixFS.Remove(destPath)
+		return nil, "", err
+	}
 
 	// Call the correct archiver
 	switch extension {
 	case "zip":
 		zipper := archives.Zip{}
 		if err := zipper.Archive(ctx, cw, files); err != nil {
-			return nil, "", err
+			return fail(err)
 		}
 	case "tar.bz2", "tbz2":
 		format := archives.CompressedArchive{
@@ -131,7 +140,7 @@ func (fs *Filesystem) CompressFiles(ctx context.Context, dir string, name string
 			Archival:    archives.Tar{},
 		}
 		if err := format.Archive(ctx, cw, files); err != nil {
-			return nil, "", err
+			return fail(err)
 		}
 	case "tar.xz", "txz":
 		format := archives.CompressedArchive{
@@ -139,7 +148,7 @@ func (fs *Filesystem) CompressFiles(ctx context.Context, dir string, name string
 			Archival:    archives.Tar{},
 		}
 		if err := format.Archive(ctx, cw, files); err != nil {
-			return nil, "", err
+			return fail(err)
 		}
 	default: // tar.gz and fallback
 		format := archives.CompressedArchive{
@@ -147,18 +156,18 @@ func (fs *Filesystem) CompressFiles(ctx context.Context, dir string, name string
 			Archival:    archives.Tar{},
 		}
 		if err := format.Archive(ctx, cw, files); err != nil {
-			return nil, "", err
+			return fail(err)
 		}
 	}
 
-	if cw.BytesWritten() < 0 || !fs.unixFS.CanFit(cw.BytesWritten()) {
-		_ = fs.unixFS.Remove(destPath)
-		return nil, "", newFilesystemError(ErrCodeDiskSpace, nil)
+	info, err := cw.Stat()
+	if err != nil {
+		return fail(err)
 	}
-
-	fs.unixFS.Add(cw.BytesWritten())
-	info, err := f.Stat()
-	return info, mimetype, err
+	if err := cw.Close(); err != nil {
+		return nil, "", err
+	}
+	return info, mimetype, nil
 }
 
 // openArchiveFS opens an on-disk archive as an io/fs.FS. The caller must invoke cleanup
@@ -219,8 +228,15 @@ func (fs *Filesystem) openArchiveFS(ctx context.Context, archivePath string) (_ 
 	return nil, func() {}, archives.NoMatch
 }
 
+// maxArchiveEntryNameLength is the longest name an entry in an archive can have,
+// which matches the longest path that can be created on Linux.
+const maxArchiveEntryNameLength = 4096
+
 // SpaceAvailableForDecompression looks through a given archive and determines
 // if decompressing it would put the server over its allocated disk space limit.
+//
+// The entries are read one at a time rather than opening the archive as a file
+// system, which is much faster for large archives.
 func (fs *Filesystem) SpaceAvailableForDecompression(ctx context.Context, dir string, file string) error {
 	// Don't waste time trying to determine this if we know the server will have the space for
 	// it since there is no limit.
@@ -228,46 +244,74 @@ func (fs *Filesystem) SpaceAvailableForDecompression(ctx context.Context, dir st
 		return nil
 	}
 
-	fsys, cleanup, err := fs.openArchiveFS(ctx, filepath.Join(dir, file))
+	f, err := fs.unixFS.Open(filepath.Join(dir, file))
 	if err != nil {
-		if errors.Is(err, archives.NoMatch) {
-			return newFilesystemError(ErrCodeUnknownArchive, err)
-		}
 		return err
 	}
-	defer cleanup()
+	defer f.Close()
 
-	var size atomic.Int64
-	return iofs.WalkDir(fsys, ".", func(path string, d iofs.DirEntry, err error) error {
+	format, _, err := archives.Identify(ctx, filepath.Base(file), f)
+	if err != nil && !errors.Is(err, archives.NoMatch) {
+		return err
+	}
+	// Reset the file reader.
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	var size int64
+	add := func(name string, n int64) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if len(name) > maxArchiveEntryNameLength {
+			return errors.New("filesystem: archive contains an entry with a name that is too long")
+		}
+		if n <= 0 {
+			return nil
+		}
+		if n > math.MaxInt64-size {
+			return newFilesystemError(ErrCodeDiskSpace, nil)
+		}
+		size += n
+		if !fs.unixFS.CanFit(size) {
+			return newFilesystemError(ErrCodeDiskSpace, nil)
+		}
+		return nil
+	}
+
+	switch ff := format.(type) {
+	case archives.Zip:
+		// The sizes can be read straight from the central directory of a zip.
+		reader, err := zip.NewReader(f, info.Size())
 		if err != nil {
 			return err
 		}
-
-		select {
-		case <-ctx.Done():
-			// Stop walking if the context is canceled.
-			return ctx.Err()
-		default:
-			info, err := d.Info()
-			if err != nil {
+		for _, e := range reader.File {
+			if e.UncompressedSize64 > math.MaxInt64 {
+				return newFilesystemError(ErrCodeDiskSpace, nil)
+			}
+			if err := add(e.Name, int64(e.UncompressedSize64)); err != nil {
 				return err
 			}
-			fileSize := info.Size()
-			if fileSize <= 0 {
-				return nil
-			}
-			current := size.Load()
-			if fileSize > math.MaxInt64-current {
-				return newFilesystemError(ErrCodeDiskSpace, nil)
-			}
-			next := current + fileSize
-			if !fs.unixFS.CanFit(next) {			
-				return newFilesystemError(ErrCodeDiskSpace, nil)
-			}
-			size.Store(next)
-			return nil
 		}
-	})
+		return nil
+	case archives.Extraction:
+		return ff.Extract(ctx, io.NewSectionReader(f, 0, info.Size()), func(ctx context.Context, e archives.FileInfo) error {
+			return add(e.NameInArchive, e.Size())
+		})
+	case archives.Compression:
+		// A single compressed file is checked against the disk limit as it is
+		// decompressed, since its size is not known until then.
+		return add(file, info.Size())
+	}
+	return newFilesystemError(ErrCodeUnknownArchive, archives.NoMatch)
 }
 
 // DecompressFile will decompress a file in a given directory by using the
@@ -299,8 +343,10 @@ func (fs *Filesystem) DecompressFile(ctx context.Context, dir string, file strin
 	})
 }
 
-// ExtractStreamUnsafe .
-func (fs *Filesystem) ExtractStreamUnsafe(ctx context.Context, dir string, r io.Reader) error {
+// ExtractTransfer extracts the archive of a server that is being transferred to
+// this node into the server's directory. Every file is kept, including ones the
+// denylist would refuse, since they are the server's own files.
+func (fs *Filesystem) ExtractTransfer(ctx context.Context, r io.Reader) error {
 	format, input, err := archives.Identify(ctx, "archive.tar.gz", r)
 	if err != nil {
 		if errors.Is(err, archives.NoMatch) {
@@ -309,9 +355,10 @@ func (fs *Filesystem) ExtractStreamUnsafe(ctx context.Context, dir string, r io.
 		return err
 	}
 	return fs.extractStream(ctx, extractStreamOptions{
-		Directory: dir,
-		Format:    format,
-		Reader:    input,
+		Directory:    "/",
+		Format:       format,
+		Reader:       input,
+		KeepDenylist: true,
 	})
 }
 
@@ -324,6 +371,8 @@ type extractStreamOptions struct {
 	Format archives.Format
 	// Reader for the archive.
 	Reader io.Reader
+	// KeepDenylist extracts files the denylist would otherwise skip.
+	KeepDenylist bool
 }
 
 func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptions) error {
@@ -351,44 +400,11 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 		}
 		defer reader.Close()
 
-		// Open the file for creation/writing
-		f, err := fs.unixFS.OpenFile(p, ufs.O_WRONLY|ufs.O_CREATE, 0o644)
-		if err != nil {
-			return err
+		// Write the file, counting each write against the disk limit. The file is
+		// removed if it does not fit.
+		if _, err := fs.WriteFrom(p, reader); err != nil {
+			return wrapError(err, opts.FileName)
 		}
-		defer f.Close()
-
-		// Read in 4 KB chunks
-		buf := make([]byte, 4096)
-		for {
-			n, err := reader.Read(buf)
-			if n > 0 {
-
-				// Check quota before writing the chunk
-				if quotaErr := fs.HasSpaceFor(int64(n)); quotaErr != nil {
-					return quotaErr
-				}
-
-				// Write the chunk
-				if _, writeErr := f.Write(buf[:n]); writeErr != nil {
-					return writeErr
-				}
-
-				// Add to quota
-				fs.addDisk(int64(n))
-			}
-
-			if err != nil {
-				// EOF are expected
-				if err == io.EOF {
-					break
-				}
-
-				// Return any other
-				return err
-			}
-		}
-
 		return nil
 	}
 
@@ -396,8 +412,10 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 	return ex.Extract(ctx, opts.Reader, func(ctx context.Context, f archives.FileInfo) error {
 		p := filepath.Join(opts.Directory, f.NameInArchive)
 		// If it is ignored, just don't do anything with the entry and skip over it.
-		if err := fs.IsIgnored(p); err != nil {
-			return nil
+		if !opts.KeepDenylist {
+			if err := fs.IsIgnored(p); err != nil {
+				return nil
+			}
 		}
 		// Create directories explicitly; an empty one has no file to create it
 		// implicitly and would otherwise be dropped during extraction.
@@ -405,6 +423,25 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 			if err := fs.mkdirAll(p, 0o755); err != nil {
 				return wrapError(err, opts.FileName)
 			}
+			return nil
+		}
+		if f.Mode()&iofs.ModeSymlink != 0 {
+			if f.LinkTarget == "" {
+				return nil
+			}
+			if err := fs.mkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return wrapError(err, opts.FileName)
+			}
+			if err := fs.Symlink(f.LinkTarget, p); err != nil && !errors.Is(err, ufs.ErrExist) {
+				return wrapError(err, opts.FileName)
+			}
+			return nil
+		}
+		// Hard links, devices and other special files are not extracted.
+		if !f.Mode().IsRegular() {
+			return nil
+		}
+		if h, ok := f.Header.(*tar.Header); ok && h.Typeflag == tar.TypeLink {
 			return nil
 		}
 		r, err := f.Open()

@@ -85,7 +85,7 @@ type Archive struct {
 func (a *Archive) Create(ctx context.Context, dst string) error {
 	// Using os.OpenFile here is expected, as long as `dst` is not a user
 	// provided path.
-	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // dst is never user provided, see above
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (a *Archive) Stream(ctx context.Context, w io.Writer) error {
 		}
 		// Time each evaluation and abort if the patterns prove disproportionately
 		// expensive for this server's file tree.
-		budget := newIgnoreMatchBudget()
+		budget := newIgnoreMatchBudget(ignorePatternCount(a.Ignore))
 		callback = a.callback(func(_ int, _, relative string, _ ufs.DirEntry) error {
 			start := time.Now()
 			skip := i.MatchesPath(relative)
@@ -292,10 +292,10 @@ func (a *Archive) addToArchive(dirfd int, name, relative string, entry ufs.DirEn
 		// the logs, but we're not going to stop the backup. There are far too many cases of
 		// symlinks causing all sorts of unnecessary pain in this process. Sucks to suck if
 		// it doesn't work.
-		target, err = os.Readlink(s.Name())
+		target, err = a.Filesystem.unixFS.Readlinkat(dirfd, name)
 		if err != nil {
 			// Ignore the not exist errors specifically, since there is nothing important about that.
-			if !os.IsNotExist(err) {
+			if !errors.Is(err, ufs.ErrNotExist) {
 				log.WithField("name", name).WithField("readlink_err", err.Error()).Warn("failed reading symlink for target path; skipping...")
 			}
 			return nil
@@ -307,11 +307,7 @@ func (a *Archive) addToArchive(dirfd int, name, relative string, entry ufs.DirEn
 	if err != nil {
 		return errors.WrapIff(err, "failed to get tar#FileInfoHeader for '%s'", name)
 	}
-
-	// Fix the header name if the file is not a symlink.
-	if s.Mode()&fs.ModeSymlink == 0 {
-		header.Name = relative
-	}
+	header.Name = relative
 
 	// Write the tar FileInfoHeader to the archive.
 	if err := a.w.WriteHeader(header); err != nil {

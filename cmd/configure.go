@@ -38,10 +38,10 @@ const (
 
 func newConfigureCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "configure",
-		Short: "Configure FeatherWings using panel join-data",
-		Long:  "Configure FeatherWings for FeatherPanel using join-data or interactive quick setup. Run without flags in a terminal for the setup wizard.",
-		RunE:  configureCmdRun,
+		Use:          "configure",
+		Short:        "Configure FeatherWings using panel join-data",
+		Long:         "Configure FeatherWings for FeatherPanel using join-data or interactive quick setup. Run without flags in a terminal for the setup wizard.",
+		RunE:         configureCmdRun,
 		SilenceUsage: true,
 	}
 

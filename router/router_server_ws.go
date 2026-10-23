@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -26,6 +27,17 @@ var expectedCloseCodes = []int{
 	ws.CloseServiceRestart,
 }
 
+var (
+	// maxWebsocketConnections is the maximum number of authenticated websocket
+	// connections a server can have open at once.
+	maxWebsocketConnections = 30
+	// websocketAuthenticationTimeout is the amount of time a websocket connection
+	// has to authenticate before it is closed.
+	websocketAuthenticationTimeout = 30 * time.Second
+
+	errTooManyWebsockets = errors.New("too many open websocket connections")
+)
+
 // getServerWebsocket upgrades a connection to a websocket and proxies console events.
 // @Summary Connect to server websocket
 // @Tags Servers
@@ -36,13 +48,23 @@ var expectedCloseCodes = []int{
 // @Failure 500 {object} ErrorResponse
 // @Security ServerJWT
 // @Router /api/servers/{server}/ws [get]
-func getServerWebsocket(c *gin.Context) {
+//
+// getServerWebsocket returns a handler that upgrades a connection to a websocket
+// and passes events along between, allowing at most maxConnections authenticated
+// connections to a server, each of which must authenticate within authTimeout.
+func getServerWebsocket(maxConnections int, authTimeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		handleServerWebsocket(c, maxConnections, authTimeout)
+	}
+}
+
+func handleServerWebsocket(c *gin.Context, maxConnections int, authTimeout time.Duration) {
 	manager := middleware.ExtractManager(c)
 	s, _ := manager.Get(c.Param("server"))
 
-	// Limit the total number of websockets that can be opened at any one time for
-	// a server instance. This applies across all users connected to the server, and
-	// is not applied on a per-user basis.
+	// Limit the total number of authenticated websockets that can be open at any one
+	// time for a server instance. This applies across all users connected to the server,
+	// and is not applied on a per-user basis.
 	//
 	// todo: it would be great to make this per-user instead, but we need to modify
 	//  how we even request this endpoint in order for that to be possible. Some type
@@ -50,7 +72,7 @@ func getServerWebsocket(c *gin.Context) {
 	//  panel using a shared secret is likely the easiest option. The benefit of that
 	//  is that we can both scope things to the user before authentication, and also
 	//  verify that the JWT provided by the panel is assigned to the same user.
-	if s.Websockets().Len() >= 30 {
+	if s.Websockets().Len() >= maxConnections {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Too many open websocket connections.",
 		})
@@ -74,20 +96,42 @@ func getServerWebsocket(c *gin.Context) {
 	}
 	defer handler.Connection.Close()
 
-	// Track this open connection on the server so that we can close them all programmatically
-	// if the server is deleted.
-	s.Websockets().Push(handler.Uuid(), &cancel, handler.User)
+	// Track this connection on the server once it authenticates so that we can close them
+	// all programmatically when access to the server is revoked. Connections only count
+	// towards the limit once they have authenticated, and those that do not
+	// authenticate in time are closed.
+	//
+	// Messages are handled in their own goroutines which can outlive this function, so
+	// a connection that authenticates after it has closed is not tracked.
+	// Connections that do not authenticate in time are closed.
+	var (
+		trackMu sync.Mutex
+		closed  bool
+	)
+	authTimer := time.AfterFunc(authTimeout, cancel)
+	defer authTimer.Stop()
+	handler.OnAuthenticated(func() error {
+		trackMu.Lock()
+		defer trackMu.Unlock()
+		if closed || !authTimer.Stop() {
+			return context.Canceled
+		}
+		if !s.Websockets().TryPush(handler.Uuid(), &cancel, handler.User, maxConnections) {
+			cancel()
+			return errTooManyWebsockets
+		}
+		return nil
+	})
 	s.Collab().Register(handler.Uuid(), func(msg collab.Message) {
 		_ = handler.SendJson(websocket.Message{Event: websocket.Event(msg.Event), Args: msg.Args})
 	})
 	handler.Logger().Debug("opening connection to server websocket")
-	defer s.Websockets().Remove(handler.Uuid())
-	defer s.Collab().Disconnect(handler.Uuid())
-
 	defer func() {
+		trackMu.Lock()
+		closed = true
+		trackMu.Unlock()
 		s.Websockets().Remove(handler.Uuid())
 		s.Collab().Disconnect(handler.Uuid())
-		handler.Logger().Debug("closing connection to server websocket")
 	}()
 
 	go func() {
@@ -127,7 +171,7 @@ func getServerWebsocket(c *gin.Context) {
 	// the HTTP response in the websocket client, thus we connect and then
 	// immediately close with failure.
 	if s.IsSuspended() {
-		_ = handler.Connection.WriteMessage(ws.CloseMessage, ws.FormatCloseMessage(4409, "server is suspended"))
+		_ = handler.SendClose(4409, "server is suspended")
 
 		return
 	}
@@ -153,7 +197,7 @@ func getServerWebsocket(c *gin.Context) {
 		if !rl.Allow() {
 			if !throttled {
 				throttled = true
-				_ = handler.Connection.WriteJSON(websocket.Message{Event: websocket.ThrottledEvent, Args: []string{"global"}})
+				_ = handler.SendThrottled("global")
 			}
 			continue
 		}
@@ -177,6 +221,13 @@ func getServerWebsocket(c *gin.Context) {
 		}
 
 		go func(msg websocket.Message) {
+			// Close this connection if handling the message panics.
+			defer func() {
+				if r := recover(); r != nil {
+					handler.Logger().WithField("panic", r).Error("recovered from panic while handling websocket message")
+					cancel()
+				}
+			}()
 			if err := handler.HandleInbound(ctx, msg); err != nil {
 				if errors.Is(err, server.ErrSuspended) {
 					cancel()

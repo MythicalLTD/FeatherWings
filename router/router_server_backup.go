@@ -19,16 +19,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mythicalltd/featherwings/config"
+	wnet "github.com/mythicalltd/featherwings/internal/network"
 	"github.com/mythicalltd/featherwings/router/middleware"
 	"github.com/mythicalltd/featherwings/server"
 	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 )
-
-var blockedBackupRestorePrefixes = []netip.Prefix{
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-}
 
 type backupDownloadError string
 
@@ -142,16 +138,10 @@ func postServerRestoreBackup(c *gin.Context) {
 	}()
 
 	logger.Info("processing server backup restore request")
-	if data.TruncateDirectory {
-		logger.Info("received \"truncate_directory\" flag in request: deleting server files")
-		if err := s.Filesystem().TruncateRootDirectory(); err != nil {
-			middleware.CaptureAndAbort(c, err)
-			return
-		}
-	}
 
-	// Now that we've cleaned up the data directory if necessary, grab the backup file
-	// and attempt to restore it into the server directory.
+	// Find the backup before changing anything, so that a restore that cannot
+	// happen leaves the server's files as they are. If the truncate_directory flag
+	// is set, the files are deleted once the server has stopped.
 	if data.Adapter == backup.LocalBackupAdapter {
 		b, _, err := backup.LocateLocal(client, backupUuid, s.ID())
 		if err != nil {
@@ -160,7 +150,7 @@ func postServerRestoreBackup(c *gin.Context) {
 		}
 		go func(s *server.Server, b backup.BackupInterface, logger *log.Entry) {
 			logger.Info("starting restoration process for server backup using local driver")
-			if err := s.RestoreBackup(b, nil); err != nil {
+			if err := s.RestoreBackup(b, nil, data.TruncateDirectory); err != nil {
 				logger.WithField("error", err).Error("failed to restore local backup to server")
 			}
 			s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from local backup.")
@@ -181,7 +171,7 @@ func postServerRestoreBackup(c *gin.Context) {
 		}
 		go func(s *server.Server, b backup.BackupInterface, logger *log.Entry) {
 			logger.Info("starting restoration process for server backup using PBS driver")
-			if err := s.RestoreBackup(b, nil); err != nil {
+			if err := s.RestoreBackup(b, nil, data.TruncateDirectory); err != nil {
 				logger.WithField("error", err).Error("failed to restore PBS backup to server")
 			}
 			s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from Proxmox Backup Server.")
@@ -235,7 +225,7 @@ func postServerRestoreBackup(c *gin.Context) {
 
 	go func(s *server.Server, uuid string, logger *log.Entry) {
 		logger.Info("starting restoration process for server backup using S3 driver")
-		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body); err != nil {
+		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body, data.TruncateDirectory); err != nil {
 			logger.WithField("error", errors.WithStack(err)).Error("failed to restore remote S3 backup to server")
 		}
 		s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from S3 backup.")
@@ -457,39 +447,14 @@ func isBlockedBackupRestoreIP(host string, ip net.IP) bool {
 		return true
 	}
 	addr = addr.Unmap()
-	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || isExplicitlyBlockedBackupRestoreIP(addr) {
+	if wnet.IsInternal(addr) {
 		return !isAllowedBackupRestoreDestination(host, addr)
 	}
 	return false
 }
 
-func isExplicitlyBlockedBackupRestoreIP(addr netip.Addr) bool {
-	for _, prefix := range blockedBackupRestorePrefixes {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
-}
-
 func isAllowedBackupRestoreDestination(host string, addr netip.Addr) bool {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	for _, entry := range config.Get().System.Backups.RestoreHostAllowlist {
-		entry = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(entry)), ".")
-		if entry == "" {
-			continue
-		}
-		if entry == host {
-			return true
-		}
-		if allowedAddr, err := netip.ParseAddr(entry); err == nil && allowedAddr.Unmap() == addr {
-			return true
-		}
-		if prefix, err := netip.ParsePrefix(entry); err == nil && prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return wnet.IsAllowed(config.Get().System.Backups.RestoreHostAllowlist, host, addr)
 }
 
 func isSupportedBackupRestoreContentType(value string) bool {

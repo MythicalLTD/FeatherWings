@@ -50,6 +50,7 @@ func getDownloadBackup(c *gin.Context) {
 		})
 		return
 	}
+	middleware.ClearDeadlines(c)
 
 	// Locate the backup on the local disk. We check this after token validation
 	// for security, but before attempting to open the file.
@@ -107,6 +108,7 @@ func getDownloadFile(c *gin.Context) {
 		})
 		return
 	}
+	middleware.ClearDeadlines(c)
 
 	if err := s.Filesystem().IsIgnored(token.FilePath); err != nil {
 		middleware.CaptureAndAbort(c, err)

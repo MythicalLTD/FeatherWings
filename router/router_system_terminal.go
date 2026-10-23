@@ -139,7 +139,7 @@ func sanitizeWorkingDirectory(path string, systemCfg config.SystemConfiguration)
 		}
 		cleaned = filepath.Clean(filepath.Join(systemCfg.RootDirectory, cleaned))
 	}
-	
+
 	if base := filepath.Clean(systemCfg.RootDirectory); base != "" {
 		if rel, err := filepath.Rel(base, cleaned); err != nil || strings.HasPrefix(rel, "..") {
 			return "", errors.New("working directory outside allowed root directory")

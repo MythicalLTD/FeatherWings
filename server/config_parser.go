@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/gammazero/workerpool"
 	"github.com/mythicalltd/featherwings/internal/ufs"
+	"github.com/mythicalltd/featherwings/parser"
 )
 
 // Helper function to replace variables in the file path of the configuration parser
@@ -43,13 +45,30 @@ func (s *Server) UpdateConfigurationFiles() {
 		f := cf
 
 		pool.Submit(func() {
-			filename := replaceParserConfigPathVariables(f.FileName, s.Config().EnvVars)
-			file, err := func() (ufs.File, error) {
-				if f.AllowCreateFile {
-					return s.Filesystem().UnixFS().Touch(filename, ufs.O_RDWR|ufs.O_CREATE, 0o644)
+			// Carry on with the other files if updating this one panics.
+			defer func() {
+				if r := recover(); r != nil {
+					s.Log().WithField("file_name", f.FileName).WithField("panic", r).Error("recovered from panic while updating configuration file")
 				}
-				return s.Filesystem().UnixFS().Open(filename)
 			}()
+
+			filename := replaceParserConfigPathVariables(f.FileName, s.Config().EnvVars)
+			if f.Parser == parser.File && !f.AllowCreateFile {
+				if _, err := s.Filesystem().UnixFS().Stat(filename); errors.Is(err, ufs.ErrNotExist) {
+					s.Log().WithField("file_name", f.FileName).Debug("skipping text configuration file that does not exist yet")
+					return
+				}
+			}
+
+			// Writes to the file count against the server's disk limit.
+			flag := ufs.O_RDWR
+			if f.AllowCreateFile {
+				flag |= ufs.O_CREATE
+			} else if _, err := s.Filesystem().UnixFS().Stat(filename); errors.Is(err, ufs.ErrNotExist) {
+				s.Log().WithField("file_name", filename).Debug("file not created")
+				return
+			}
+			file, err := s.Filesystem().Touch(filename, flag)
 			if err != nil {
 				log := s.Log().WithField("file_name", filename)
 				if os.IsNotExist(err) && !f.AllowCreateFile {
@@ -59,10 +78,15 @@ func (s *Server) UpdateConfigurationFiles() {
 				}
 				return
 			}
-			defer file.Close()
 
 			if err := f.Parse(file); err != nil {
 				s.Log().WithField("error", err).Error("failed to parse and update server configuration file")
+			}
+			if err := file.Close(); err != nil {
+				s.Log().WithField("file_name", f.FileName).WithField("error", err).Error("failed to close configuration file")
+			}
+			if err := s.Filesystem().Chown(filename); err != nil {
+				s.Log().WithField("file_name", f.FileName).WithField("error", err).Warn("failed to set the owner of configuration file")
 			}
 
 			s.Log().WithField("file_name", f.FileName).Debug("finished processing server configuration file")

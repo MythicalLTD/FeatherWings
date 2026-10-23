@@ -22,10 +22,10 @@ import (
 
 // Same permission keys as router/websocket.
 const (
-	permissionConsole            = "control.console"
-	permissionSendPowerStart     = "control.start"
-	permissionSendPowerStop      = "control.stop"
-	permissionSendPowerRestart   = "control.restart"
+	permissionConsole          = "control.console"
+	permissionSendPowerStart   = "control.start"
+	permissionSendPowerStop    = "control.stop"
+	permissionSendPowerRestart = "control.restart"
 )
 
 const sshConsoleMetaPrefix = ".featherwings"

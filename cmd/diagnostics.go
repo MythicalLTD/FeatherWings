@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/apex/log"
 	"github.com/charmbracelet/huh"
@@ -15,6 +16,9 @@ import (
 const (
 	DefaultLogLines = 200
 )
+
+// hastebinTimeout is how long uploading the report may take.
+var hastebinTimeout = 30 * time.Second
 
 var diagnosticsArgs struct {
 	IncludeEndpoints   bool

@@ -1,6 +1,9 @@
 package remote
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -65,5 +68,28 @@ func TestWithCustomHeadersEmpty(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("client should not be nil")
+	}
+}
+
+func TestSetCredentialsRotatesAuthorization(t *testing.T) {
+	var authorization []string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		authorization = append(authorization, r.Header.Get("Authorization"))
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, WithCredentials("old-id", "old-token")).(*client)
+	if _, err := c.requestOnce(context.Background(), http.MethodGet, "/test", nil); err != nil {
+		t.Fatal(err)
+	}
+	c.SetCredentials("rotated-id", "rotated-token")
+	if _, err := c.requestOnce(context.Background(), http.MethodGet, "/test", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"Bearer old-id.old-token", "Bearer rotated-id.rotated-token"}
+	if len(authorization) != len(want) || authorization[0] != want[0] || authorization[1] != want[1] {
+		t.Fatalf("unexpected authorization headers: %v", authorization)
 	}
 }

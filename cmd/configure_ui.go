@@ -225,12 +225,12 @@ func configureDetailLine(detail string, status configureStepStatus) string {
 }
 
 type configureSummary struct {
-	NodeUUID        string
-	PanelURL        string
-	ConfigPath      string
-	APIPort         int
-	Version         string
-	Service         configureServiceResult
+	NodeUUID   string
+	PanelURL   string
+	ConfigPath string
+	APIPort    int
+	Version    string
+	Service    configureServiceResult
 }
 
 func promptInstallService(install *bool) error {
@@ -392,7 +392,6 @@ func promptConfigurePanelURL() (string, error) {
 	}
 	return config.NormalizePanelURL(panelURL), nil
 }
-
 
 func promptConfigureLocation(ctx context.Context, panel *config.PanelAPI, locations []config.PanelLocation) (int, error) {
 	choice := "create"

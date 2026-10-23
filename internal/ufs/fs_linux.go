@@ -72,3 +72,6 @@ func (fs *UnixFS) Chtimesat(dirfd int, name string, atime, mtime time.Time) erro
 	// This does support `AT_SYMLINK_NOFOLLOW` as well if needed.
 	return ensurePathError(unix.UtimesNanoAt(dirfd, name, utimes[0:], AT_SYMLINK_NOFOLLOW), "chtimes", name)
 }
+
+// oPath opens a descriptor that only refers to a location in the filesystem.
+const oPath = unix.O_PATH
