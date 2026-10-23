@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -154,7 +155,7 @@ func (m *Manager) resolve(raw string) (key string, filePath string, err error) {
 func (m *Manager) readContent(filePath string, sizeCap int64) (string, error) {
 	f, st, err := m.fs.File(filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return "", ErrFileNotFound
 		}
 		if strings.Contains(err.Error(), "is a directory") {
@@ -563,7 +564,7 @@ func (m *Manager) Save(connectionID uuid.UUID, userUUID, rawPath string, force b
 		oldContentSize = st.Size()
 	case err == nil && st.IsDir():
 		return ErrNotAFile
-	case os.IsNotExist(err):
+	case errors.Is(err, os.ErrNotExist):
 		fileExists = false
 	default:
 		if strings.Contains(err.Error(), "not exist") {

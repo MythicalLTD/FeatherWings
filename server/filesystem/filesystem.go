@@ -89,6 +89,9 @@ func (fs *Filesystem) ReadDirStat(path string) ([]ufs.FileInfo, error) {
 func (fs *Filesystem) File(p string) (ufs.File, Stat, error) {
 	f, err := fs.unixFS.Open(p)
 	if err != nil {
+		if errors.Is(err, ufs.ErrNotExist) {
+			return nil, Stat{}, newFilesystemError(ErrNotExist, err)
+		}
 		return nil, Stat{}, err
 	}
 	st, err := statFromFile(f)
