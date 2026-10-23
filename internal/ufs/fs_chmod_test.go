@@ -5,6 +5,7 @@ package ufs
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -13,6 +14,9 @@ import (
 // The fallback used where fchmodat2 is unavailable changes the mode of a file
 // and refuses to follow a symbolic link.
 func TestChmodWithoutFchmodat2(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("fchmodat2 and O_PATH are Linux only")
+	}
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.txt")
 	if err := os.WriteFile(outside, nil, 0o644); err != nil {

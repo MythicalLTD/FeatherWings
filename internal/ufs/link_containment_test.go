@@ -5,6 +5,7 @@ package ufs_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -88,6 +89,9 @@ func TestStatFollowsLinksInsideRoot(t *testing.T) {
 // A parent directory that resolves outside the root is rejected, and its
 // descriptor is closed.
 func TestRejectedParentReleasesDescriptor(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("counts descriptors through /proc/self/fd")
+	}
 	fs, _ := newLinkedRoot(t, false)
 
 	before := openDescriptorCount(t)

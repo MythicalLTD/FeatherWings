@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,9 @@ func TestUnauthenticatedConnectionsAreClosedAfterTimeout(t *testing.T) {
 }
 
 func TestUnauthenticatedConnectionsAreLimited(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("dials from 127.0.0.2, which is only a loopback address on Linux")
+	}
 	addr := startTestServer(t, connectionLimits{handshakeTimeout: time.Minute, maxPending: 3, maxPendingPerIP: 2})
 
 	// Two connections from one address are accepted, the third is not.
