@@ -43,8 +43,15 @@ const (
 	PermissionFileArchive      = "file.archive"
 )
 
+// writeTimeout is how long a single write to a websocket may take before the
+// connection is treated as broken.
+const writeTimeout = 10 * time.Second
+
 type Handler struct {
-	sync.RWMutex    `json:"-"`
+	sync.RWMutex `json:"-"`
+	// writeMu serializes writes to the connection, which supports only one
+	// concurrent writer.
+	writeMu         sync.Mutex
 	Connection      *websocket.Conn `json:"-"`
 	jwt             *tokens.WebsocketPayload
 	server          *server.Server
@@ -254,10 +261,26 @@ func (h *Handler) SendJson(v Message) error {
 // socket user. Do not call this directly unless you are positive a response should be
 // sent back to the client!
 func (h *Handler) unsafeSendJson(v interface{}) error {
-	h.Lock()
-	defer h.Unlock()
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
 
+	_ = h.Connection.SetWriteDeadline(time.Now().Add(writeTimeout))
 	return h.Connection.WriteJSON(v)
+}
+
+// SendThrottled tells the client that messages are being dropped because too
+// many were sent.
+func (h *Handler) SendThrottled(scope string) error {
+	return h.unsafeSendJson(Message{Event: ThrottledEvent, Args: []string{scope}})
+}
+
+// SendClose sends a close message with the given code and reason.
+func (h *Handler) SendClose(code int, reason string) error {
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
+
+	_ = h.Connection.SetWriteDeadline(time.Now().Add(writeTimeout))
+	return h.Connection.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
 }
 
 // TokenValid checks if the JWT is still valid.
@@ -334,14 +357,6 @@ func (h *Handler) GetErrorMessage(msg string) (string, uuid.UUID) {
 	return m, u
 }
 
-// GetJwt returns the JWT for the websocket in a race-safe manner.
-func (h *Handler) GetJwt() *tokens.WebsocketPayload {
-	h.RLock()
-	defer h.RUnlock()
-
-	return h.jwt
-}
-
 // User returns the UUID of the user the websocket is authenticated as, or an
 // empty string if it has not authenticated.
 func (h *Handler) User() string {
@@ -349,6 +364,14 @@ func (h *Handler) User() string {
 		return j.UserUUID
 	}
 	return ""
+}
+
+// GetJwt returns the JWT for the websocket in a race-safe manner.
+func (h *Handler) GetJwt() *tokens.WebsocketPayload {
+	h.RLock()
+	defer h.RUnlock()
+
+	return h.jwt
 }
 
 // activity returns the request activity for an action authorized by the given

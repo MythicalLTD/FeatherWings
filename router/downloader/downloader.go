@@ -38,6 +38,9 @@ func init() {
 	trnspt := http.DefaultTransport.(*http.Transport).Clone()
 	// Always connect directly, so that every destination is checked.
 	trnspt.Proxy = nil
+	// Store the file exactly as it is served. Asking for a compressed response
+	// would also hide the length of the file, which is needed to write it.
+	trnspt.DisableCompression = true
 	trnspt.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -234,7 +237,7 @@ func (dl *Download) Execute() error {
 		req.Header.Set("User-Agent", "curl/8.5.0 FeatherWings (+https://featherpanel.com)")
 		res, err = client.Do(req)
 		if err != nil {
-			return errors.WrapIf(err, "downloader: failed to perform request")
+			return errors.WithStack(fmt.Errorf("%w: %w", ErrDownloadFailed, err))
 		}
 
 		if res.StatusCode >= http.StatusMultipleChoices && res.StatusCode < http.StatusBadRequest {
@@ -286,8 +289,12 @@ func (dl *Download) Execute() error {
 				return errors.WrapIf(err, "downloader: invalid \"Content-Disposition\" header")
 			}
 
+			// Only use the name of the file, so that it is saved in the
+			// directory that was asked for.
 			if v, ok := params["filename"]; ok {
-				dl.path = v
+				if name := filepath.Base(filepath.Clean("/" + v)); name != "/" && name != "." {
+					dl.path = name
+				}
 			}
 		}
 	}

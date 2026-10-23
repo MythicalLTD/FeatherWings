@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +14,6 @@ import (
 
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/environment"
-	"github.com/mythicalltd/featherwings/internal/database"
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/router/tokens"
 	"github.com/mythicalltd/featherwings/router/websocket"
@@ -39,30 +36,16 @@ func startWebsocketTestServer(t *testing.T) string {
 	return url
 }
 
-var (
-	testDatabaseOnce sync.Once
-	testDatabaseRoot string
-	testDatabaseErr  error
-)
-
-// initTestDatabase sets up the local database once for the package, since the
-// FeatherWings router restores modules from it when it is configured.
-func initTestDatabase(t *testing.T, cfg *config.Configuration) {
+func startWebsocketTestServerFor(t *testing.T) (string, *server.Server) {
 	t.Helper()
-	testDatabaseOnce.Do(func() {
-		testDatabaseRoot, testDatabaseErr = os.MkdirTemp("", "wings-router-test")
-		if testDatabaseErr == nil {
-			cfg.System.RootDirectory = testDatabaseRoot
-			testDatabaseErr = database.Initialize()
-		}
-	})
-	if testDatabaseErr != nil {
-		t.Fatal(testDatabaseErr)
-	}
-	cfg.System.RootDirectory = testDatabaseRoot
+	manager, s := newWebsocketTestManager(t)
+	srv := httptest.NewServer(Configure(manager, nil))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/servers/" + websocketTestServerUuid + "/ws", s
 }
 
-func startWebsocketTestServerFor(t *testing.T) (string, *server.Server) {
+// newWebsocketTestManager returns a manager holding a single running server.
+func newWebsocketTestManager(t *testing.T) (*server.Manager, *server.Server) {
 	t.Helper()
 	cfg, err := config.NewAtPath(filepath.Join(t.TempDir(), "config.yml"))
 	if err != nil {
@@ -71,7 +54,7 @@ func startWebsocketTestServerFor(t *testing.T) (string, *server.Server) {
 	cfg.AuthenticationToken = "test-token"
 	cfg.PanelLocation = "http://panel.test"
 	config.Set(cfg)
-	initTestDatabase(t, cfg)
+	initTestDatabase(t)
 
 	s, err := server.New(nil)
 	if err != nil {
@@ -84,10 +67,7 @@ func startWebsocketTestServerFor(t *testing.T) (string, *server.Server) {
 	s.Environment = runningEnvironment{}
 	manager := server.NewEmptyManager(nil)
 	manager.Add(s)
-
-	srv := httptest.NewServer(Configure(manager, nil))
-	t.Cleanup(srv.Close)
-	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/servers/" + websocketTestServerUuid + "/ws", s
+	return manager, s
 }
 
 func dialWebsocket(t *testing.T, url string) (*ws.Conn, error) {
