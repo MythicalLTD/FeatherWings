@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/environment"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 )
@@ -86,8 +87,11 @@ type Configuration struct {
 	Allocations           environment.Allocations `json:"allocations"`
 	Build                 environment.Limits      `json:"build"`
 	CrashDetectionEnabled bool                    `json:"crash_detection_enabled"`
-	Mounts                []Mount                 `json:"mounts"`
-	Egg                   EggConfiguration        `json:"egg,omitempty"`
+	// crashDetectionFromPanel is true when the panel sent crash_detection_enabled for this
+	// server. Otherwise the node wide setting is read live (see CrashDetection).
+	crashDetectionFromPanel bool
+	Mounts                  []Mount          `json:"mounts"`
+	Egg                     EggConfiguration `json:"egg,omitempty"`
 
 	Container struct {
 		// Defines the Docker image that will be used for this server
@@ -196,4 +200,19 @@ func (s *Server) FileTrashLimits() filesystem.TrashLimits {
 		MaxSizeBytes:  s.cfg.FileTrash.MaxSizeBytes,
 		RetentionDays: s.cfg.FileTrash.RetentionDays,
 	}
+}
+
+// CrashDetection reports whether Wings may restart this server after a crash. The node
+// wide crash_detection.enabled setting is read live, so turning it off in the config
+// applies right away instead of waiting for the next server sync or a Wings restart.
+func (c *Configuration) CrashDetection() bool {
+	if !config.Get().System.CrashDetection.CrashDetectionEnabled {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.crashDetectionFromPanel {
+		return c.CrashDetectionEnabled
+	}
+	return true
 }

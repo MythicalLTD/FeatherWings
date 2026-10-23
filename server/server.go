@@ -317,6 +317,7 @@ func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) e
 	// Older panels omit fastdl from settings; preserve in-memory FastDL across Sync/restart.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(cfg.Settings, &raw); err == nil {
+		_, c.crashDetectionFromPanel = raw["crash_detection_enabled"]
 		if _, ok := raw["fastdl"]; !ok {
 			c.FastDL.Enabled = prevEnabled
 			c.FastDL.Directory = prevDirectory
