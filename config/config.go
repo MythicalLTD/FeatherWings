@@ -228,6 +228,12 @@ type UpdateConfiguration struct {
 
 // SystemConfiguration defines basic system configuration settings.
 type SystemConfiguration struct {
+	// CheckInstallExitCode marks a server installation as failed when the install
+	// script exits with a non-zero code, or the container wait reports an error.
+	// It is disabled by default to keep the historic behaviour, where every
+	// installation that ran to completion was reported to the Panel as successful.
+	CheckInstallExitCode bool `default:"false" json:"check_install_exit_code" yaml:"check_install_exit_code"`
+
 	// The root directory where all of the featherpanel data is stored at.
 	RootDirectory string `default:"/var/lib/featherpanel" json:"-" yaml:"root_directory"`
 

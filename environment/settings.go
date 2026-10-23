@@ -130,7 +130,9 @@ func (l Limits) AsContainerResources() container.Resources {
 	if l.CpuLimit > 0 {
 		resources.CPUQuota = l.CpuLimit * 1_000
 		resources.CPUPeriod = 100_000
-		resources.CPUShares = 1024
+		if shares := config.Get().Docker.CpuShares; shares > 0 {
+			resources.CPUShares = shares
+		}
 	}
 
 	// Similar to above, don't set the specific assigned CPUs if we didn't actually limit
@@ -139,7 +141,6 @@ func (l Limits) AsContainerResources() container.Resources {
 		resources.CpusetCpus = l.Threads
 	}
 
-	
 	// Add KVM device mapping if native KVM support is enabled
 	if config.Get().Docker.EnableNativeKVM {
 		kvmDevice := container.DeviceMapping{

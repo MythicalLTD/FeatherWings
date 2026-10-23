@@ -20,6 +20,7 @@ services:
       - "/var/lib/featherpanel/:/var/lib/featherpanel/"
       - "/var/log/featherpanel/:/var/log/featherpanel/"
       - "/tmp/featherpanel/:/tmp/featherpanel/"
+      - "/run/wings:/run/wings"
       - "/etc/ssl/certs:/etc/ssl/certs:ro"
       # you may need /srv/daemon-data if you are upgrading from an old daemon
       #- "/srv/daemon-data/:/srv/daemon-data/"

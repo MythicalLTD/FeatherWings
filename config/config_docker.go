@@ -38,11 +38,11 @@ type DockerNetworkConfiguration struct {
 	// The name of the network to use. If this network already exists it will not
 	// be created. If it is not found, a new network will be created using the interface
 	// defined.
-	Name       string                  `default:"featherpanel_nw"`
-	ISPN       bool                    `default:"false" yaml:"ispn"`
-	IPv6       bool                    `default:"true" yaml:"IPv6"`
-	Driver     string                  `default:"bridge"`
-	Mode       string                  `default:"featherpanel_nw" yaml:"network_mode"`
+	Name   string `default:"featherpanel_nw"`
+	ISPN   bool   `default:"false" yaml:"ispn"`
+	IPv6   bool   `default:"true" yaml:"IPv6"`
+	Driver string `default:"bridge"`
+	Mode   string `default:"featherpanel_nw" yaml:"network_mode"`
 	// IsInternal, when true, creates an internal-only network: containers cannot
 	// reach the internet (e.g. Minecraft auth to api.minecraftservices.com will fail).
 	// Leave false for game servers that need outbound access.
@@ -84,6 +84,14 @@ type DockerConfiguration struct {
 		Memory int64 `default:"1024" json:"memory" yaml:"memory"`
 		Cpu    int64 `default:"100" json:"cpu" yaml:"cpu"`
 	} `json:"installer_limits" yaml:"installer_limits"`
+
+	// CpuShares is the relative CFS weight given to server containers that have a
+	// CPU limit, used when the host is fully saturated; it limits nothing on an idle
+	// host. It defaults to 1024, which is what Wings has always set. Set it to 0 to
+	// leave containers at the engine default: cgroup v2 turns 1024 shares into less
+	// than half of its default weight, so 0 gives servers more weight than host
+	// system services.
+	CpuShares int64 `default:"1024" json:"cpu_shares" yaml:"cpu_shares"`
 
 	// Overhead controls the memory overhead given to all containers to circumvent certain
 	// software such as the JVM not staying below the maximum memory limit.
@@ -160,6 +168,7 @@ func (c DockerConfiguration) ContainerLogConfig() container.LogConfig {
 		Config: c.LogConfig.Config,
 	}
 }
+
 // RegistryCredentialsForImage returns registry credentials for an image only
 // when the configured registry and image reference share the same registry
 // identity.

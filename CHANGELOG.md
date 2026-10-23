@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Ported security and bug fixes from pterodactyl/wings and pelican/wings: malformed SFTP Setstat requests no longer crash the node (GHSA-p682-235x-522p), `wings.log` is written through the logrotate wrapper, deauthorizing a user revokes their tokens on every server and only closes their own websockets, and CORS preflights send `Access-Control-Allow-Private-Network`. (#21) by @nayskutzu
+- Security hardening from upstream (#22) by @nayskutzu:
+  - Connection limits for SFTP and websockets, open file limits for SFTP, and HTTP timeouts.
+  - A disk space reserve, a remote download allowlist, and stricter validation of mounts, UUIDs and commands.
+  - Symlink and hard link containment, safer uploads and downloads, and parser hardening.
+  - The panel can now only change the panel-managed settings (debug, uuid, tokens, API and SFTP port) through `POST /api/update`, and new tokens apply without a restart.
+- macOS builds no longer fail on `O_PATH`, and tests that only work on Linux are skipped there. (#22) by @nayskutzu
+
+### Added
+
+- `system.check_install_exit_code`: mark an install as failed when the install script exits with a non-zero code. It is off by default, and then only a warning is logged. (#23) by @nayskutzu
+- `docker.cpu_shares`: CPU weight for containers that have a CPU limit. The default stays 1024; set it to 0 to use the Docker default. (#23) by @nayskutzu
+- S3 backups upload parts concurrently when the panel sends `max_concurrent_uploads`; otherwise they upload one at a time, as before. (#23) by @nayskutzu
+- The compose example mounts `/run/wings`, where the machine-id files are written. (#23) by @nayskutzu
+
 ## v1.4.1
 
 ### Fixed
