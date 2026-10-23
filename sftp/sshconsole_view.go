@@ -23,8 +23,8 @@ const sshUIViewWidth = 68
 
 // Lipgloss styles: colors work in 256-color and truecolor terminals (PuTTY, Windows Terminal, xterm).
 var (
-	lipFrame  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("39")).Padding(0, 1)
-	lipTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("51"))
+	lipFrame = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("39")).Padding(0, 1)
+	lipTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("51"))
 	// Bold only (no fixed 256-color white): bright white breaks some PuTTY modes and can clip text.
 	lipStrong = lipgloss.NewStyle().Bold(true)
 	lipKey    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
@@ -195,7 +195,7 @@ func renderSSHScrollbackHeader(n int) string {
 	return "\n  " + rule + "\n  " + lipStrong.Render("Scrollback") + "  " + lipMuted.Render(fmt.Sprintf("%d lines", n)) + "\n  " + rule + "\n"
 }
 
-func viewOK(msg string) string  { return lipOK.Render("[OK]") + "  " + msg }
+func viewOK(msg string) string   { return lipOK.Render("[OK]") + "  " + msg }
 func viewWarn(msg string) string { return lipWarn.Render("[WARN]") + "  " + msg }
 func viewErr(msg string) string  { return lipErr.Render("[ERR]") + "  " + msg }
 func viewNote(msg string) string { return lipMuted.Render("[*]") + "  " + msg }
