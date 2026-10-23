@@ -87,8 +87,11 @@ func (fs *UnixFS) walkDir(b []byte, parentfd int, name, relative string, d DirEn
 	return nil
 }
 
-// ReadDirMap .
-// TODO: document
+// ReadDirMap reads the directory at path and calls fn once for each entry.
+// path is resolved relative to fs's root using UnixFS's safe path handling.
+// The entries "." and ".." are omitted. Entries are visited in the order
+// returned by the underlying filesystem; that order is not guaranteed.
+// If fn returns a non-nil error, ReadDirMap stops and returns that error.
 func ReadDirMap[T any](fs *UnixFS, path string, fn func(DirEntry) (T, error)) ([]T, error) {
 	dirfd, name, closeFd, err := fs.safePath(path)
 	defer closeFd()
