@@ -92,8 +92,9 @@ func TestFilesystem_Openfile(t *testing.T) {
 			_, _, err := fs.File("foo/bar.txt")
 
 			g.Assert(err).IsNotNil()
-			// TODO
-			//g.Assert(IsErrorCode(err, ErrNotExist)).IsTrue()
+			g.Assert(IsErrorCode(err, ErrNotExist)).IsTrue()
+			g.Assert(errors.Is(err, ufs.ErrNotExist)).IsTrue("err is not ErrNotExist")
+			g.Assert(errors.Is(err, os.ErrNotExist)).IsTrue("err is not os.ErrNotExist")
 		})
 
 		g.It("returns file stat information", func() {
