@@ -91,6 +91,7 @@ func handleServerWebsocket(c *gin.Context, maxConnections int, authTimeout time.
 
 	handler, err := websocket.GetHandler(s, c.Writer, c.Request, c)
 	if err != nil {
+		cancel()
 		middleware.CaptureAndAbort(c, err)
 		return
 	}
