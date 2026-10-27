@@ -44,7 +44,11 @@ import (
 // refused with 409 and the current offset, a part that was already stored is
 // acknowledged without being written again.
 
-const chunkedUploadExpiry = 24 * time.Hour
+const (
+	chunkedUploadExpiry = 24 * time.Hour
+	// Open (staged) uploads one server may have at the same time.
+	chunkedUploadMaxOpen = 16
+)
 
 var (
 	chunkedUploadIdRegex = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
@@ -184,6 +188,25 @@ func chunkedUploadAuth(c *gin.Context) (*server.Server, *tokens.UploadPayload, s
 	return s, &token, chunkedUploadDir(s.ID(), token.UserUuid, id), true
 }
 
+// stagedChunkedTotals returns how many uploads a server has staged and the sum
+// of their declared sizes. Staged data lives outside the server's directory, so
+// it is added to the disk check for a new upload.
+func stagedChunkedTotals(serverDir string) (int, int64) {
+	entries, err := os.ReadDir(serverDir)
+	if err != nil {
+		return 0, 0
+	}
+	var n int
+	var total int64
+	for _, e := range entries {
+		if m, err := readChunkedMeta(filepath.Join(serverDir, e.Name())); err == nil {
+			n++
+			total += m.TotalSize
+		}
+	}
+	return n, total
+}
+
 func chunkedStatus(dir string) gin.H {
 	h := gin.H{"exists": false, "offset": int64(0), "max_chunk_size": chunkedMaxPartSize()}
 	if m, err := readChunkedMeta(dir); err == nil {
@@ -267,7 +290,12 @@ func postServerChunkedUpload(c *gin.Context) {
 			middleware.CaptureAndAbort(c, err)
 			return
 		}
-		if err := s.Filesystem().HasSpaceFor(total); err != nil {
+		open, staged := stagedChunkedTotals(filepath.Dir(dir))
+		if open >= chunkedUploadMaxOpen {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Too many unfinished uploads for this server. Finish or cancel some first."})
+			return
+		}
+		if err := s.Filesystem().HasSpaceFor(total + staged); err != nil {
 			middleware.CaptureAndAbort(c, err)
 			return
 		}
@@ -375,6 +403,10 @@ func postServerChunkedUploadComplete(c *gin.Context) {
 
 	hasher := sha256.New()
 	dest := meta.destination()
+	// Serialise completions that target the same file.
+	destMu, _ := chunkedUploadLocks.LoadOrStore("dest:"+s.ID()+":"+dest, &sync.Mutex{})
+	destMu.(*sync.Mutex).Lock()
+	defer destMu.(*sync.Mutex).Unlock()
 	tmp := path.Join(path.Dir(dest), ".fw-upload-"+filepath.Base(dir)+".part")
 	if err := s.Filesystem().IsIgnored(dest, tmp); err != nil {
 		middleware.CaptureAndAbort(c, err)

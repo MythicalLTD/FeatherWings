@@ -175,3 +175,19 @@ func TestChunkedUploadBigFile(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, total, st.Size())
 }
+
+func TestChunkedUploadLimitsOpenUploads(t *testing.T) {
+	u := newUploadTest(t, 1, 0)
+	for i := 0; i < chunkedUploadMaxOpen; i++ {
+		require.Equal(t, http.StatusOK, u.putChunk(t, "openlimit-"+strconv.Itoa(1000+i), "a.txt", 4, 0, []byte("ab")).status)
+	}
+	require.Equal(t, http.StatusTooManyRequests, u.putChunk(t, "openlimit-9999", "a.txt", 4, 0, []byte("ab")).status)
+}
+
+// Staged uploads count against the disk limit of the next one.
+func TestChunkedUploadCountsStagedAgainstDisk(t *testing.T) {
+	u := newUploadTest(t, 1, 2)
+	require.Equal(t, http.StatusOK, u.putChunk(t, "staged-000001", "a.bin", 3<<19, 0, []byte("ab")).status)
+	r := u.putChunk(t, "staged-000002", "b.bin", 3<<19, 0, []byte("ab"))
+	require.GreaterOrEqual(t, r.status, http.StatusBadRequest)
+}

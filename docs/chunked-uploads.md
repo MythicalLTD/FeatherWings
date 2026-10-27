@@ -30,3 +30,6 @@ spans many requests; it is still short lived and checked against the denylist.
   the server through the normal filesystem (containment, denylist and disk
   limit apply) under a temporary name and renames it into place. An existing
   file with the same name is replaced.
+- A server can have at most 16 unfinished uploads (`429` beyond that), and the
+  declared size of every staged upload is added to the disk check for a new one.
+- Completions that target the same file are serialised.
