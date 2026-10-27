@@ -222,7 +222,7 @@ func postServerRestoreBackup(c *gin.Context) {
 	}
 	// Don't allow content types that we know are going to give us problems.
 	if !isSupportedBackupRestoreContentType(res.Header.Get("Content-Type")) &&
-		!(data.Adapter == backup.ResumableBackupAdapter && isOctetStream(res.Header.Get("Content-Type"))) {
+		!(data.Adapter == backup.ResumableBackupAdapter && backup.IsOctetStream(res.Header.Get("Content-Type"))) {
 		_ = res.Body.Close()
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "The provided backup link is not a supported content type. \"" + res.Header.Get("Content-Type") + "\" is not application/x-gzip.",
@@ -231,7 +231,7 @@ func postServerRestoreBackup(c *gin.Context) {
 	}
 
 	// Resume the download with Range requests if the connection drops mid-way.
-	body := newRangeResumeReader(s.Context(), &httpClient, req, res, logger)
+	body := backup.NewRangeResumeReader(s.Context(), &httpClient, req, res, logger)
 	var restoreAdapter backup.BackupInterface = backup.NewS3(client, backupUuid, s.ID(), "")
 	if data.Adapter == backup.ResumableBackupAdapter {
 		restoreAdapter = backup.NewResumable(client, backupUuid, s.ID(), "")

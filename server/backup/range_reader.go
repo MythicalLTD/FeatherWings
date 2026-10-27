@@ -1,4 +1,4 @@
-package router
+package backup
 
 import (
 	"context"
@@ -14,10 +14,10 @@ import (
 
 const rangeResumeMaxAttempts = 5
 
-// rangeResumeReader wraps a backup download body. When the body fails before
+// RangeResumeReader wraps a backup download body. When the body fails before
 // the full content was read and the server advertised byte ranges, it asks
 // for the remainder with "Range: bytes=N-" and continues where it stopped.
-type rangeResumeReader struct {
+type RangeResumeReader struct {
 	ctx      context.Context
 	client   *http.Client
 	req      *http.Request
@@ -31,8 +31,8 @@ type rangeResumeReader struct {
 	sleep    func(time.Duration)
 }
 
-func newRangeResumeReader(ctx context.Context, client *http.Client, req *http.Request, res *http.Response, logger *log.Entry) *rangeResumeReader {
-	return &rangeResumeReader{
+func NewRangeResumeReader(ctx context.Context, client *http.Client, req *http.Request, res *http.Response, logger *log.Entry) *RangeResumeReader {
+	return &RangeResumeReader{
 		ctx:    ctx,
 		client: client,
 		req:    req,
@@ -45,7 +45,7 @@ func newRangeResumeReader(ctx context.Context, client *http.Client, req *http.Re
 	}
 }
 
-func (r *rangeResumeReader) Read(p []byte) (int, error) {
+func (r *RangeResumeReader) Read(p []byte) (int, error) {
 	for {
 		n, err := r.body.Read(p)
 		r.read += int64(n)
@@ -71,7 +71,7 @@ func (r *rangeResumeReader) Read(p []byte) (int, error) {
 	}
 }
 
-func (r *rangeResumeReader) resume(cause error) error {
+func (r *RangeResumeReader) resume(cause error) error {
 	_ = r.body.Close()
 	for r.attempts < rangeResumeMaxAttempts {
 		r.attempts++
@@ -94,19 +94,19 @@ func (r *rangeResumeReader) resume(cause error) error {
 		}
 		if res.StatusCode != http.StatusPartialContent {
 			_ = res.Body.Close()
-			return fmt.Errorf("router/backups: resuming download failed: server answered %s instead of 206", res.Status)
+			return fmt.Errorf("backup: resuming download failed: server answered %s instead of 206", res.Status)
 		}
 		r.body = res.Body
 		return nil
 	}
-	return fmt.Errorf("router/backups: backup download failed after %d resume attempts: %w", r.attempts, cause)
+	return fmt.Errorf("backup: backup download failed after %d resume attempts: %w", r.attempts, cause)
 }
 
-func (r *rangeResumeReader) Close() error {
+func (r *RangeResumeReader) Close() error {
 	return r.body.Close()
 }
 
-func isOctetStream(value string) bool {
+func IsOctetStream(value string) bool {
 	mediaType, _, err := mime.ParseMediaType(value)
 	if err != nil {
 		mediaType = strings.TrimSpace(value)
