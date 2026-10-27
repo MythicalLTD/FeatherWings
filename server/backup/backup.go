@@ -115,7 +115,11 @@ func (b *Backup) validateIdentifier() error {
 	if err != nil {
 		return err
 	}
-	b.Uuid = identifier
+	// Only write when the value changes: Details calls this from two
+	// goroutines at once, and an unconditional write is a data race.
+	if b.Uuid != identifier {
+		b.Uuid = identifier
+	}
 	return nil
 }
 

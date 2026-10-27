@@ -172,7 +172,8 @@ func TestResumableEndToEnd(t *testing.T) {
 			if restored["world.dat"] != hex.EncodeToString(want[:]) {
 				t.Fatalf("restored world.dat mismatch, files: %v", restored)
 			}
-			if _, ok := restored["plugins/a.yml"]; !ok {
+			small := sha1.Sum([]byte("hello: world\n"))
+			if restored["plugins/a.yml"] != hex.EncodeToString(small[:]) {
 				t.Fatalf("missing plugins/a.yml: %v", restored)
 			}
 			if ranged.Load() != 2 {
