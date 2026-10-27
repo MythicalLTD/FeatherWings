@@ -4,10 +4,6 @@
 
 > Pairs with FeatherPanel v1.5.3. The panel's node options (#363) need #23, its auto start and crash auto restart fixes need #19 and #20, and transfer power restore (#368) starts the server right away with #25 (older Wings is covered by panel retries).
 
-### Added
-
-- Chunked, resumable file uploads (`/upload/chunk`), so uploads work behind Cloudflare's 100 MB request limit and continue after a reload or network drop. See `docs/chunked-uploads.md`. Needs FeatherPanel v1.5.3 or newer. by @nayskutzu
-
 ### Fixed
 
 - Servers restored when Wings boots only auto start when the panel's auto start setting allows it. Needs FeatherPanel v1.5.3. (#19) by @nayskutzu
@@ -25,6 +21,7 @@
 
 ### Added
 
+- Chunked, resumable file uploads (`/upload/chunk`), so uploads work behind Cloudflare's 100 MB request limit and continue after a reload or network drop. See `docs/chunked-uploads.md`. Needs FeatherPanel v1.5.3 or newer. by @nayskutzu
 - `system.check_install_exit_code`: mark an install as failed when the install script exits with a non-zero code. It is off by default, and then only a warning is logged. (#23) by @nayskutzu
 - `docker.cpu_shares`: CPU weight for containers that have a CPU limit. The default stays 1024; set it to 0 to use the Docker default. (#23) by @nayskutzu
 - S3 backups upload parts concurrently when the panel sends `max_concurrent_uploads`; otherwise they upload one at a time, as before. (#23) by @nayskutzu
