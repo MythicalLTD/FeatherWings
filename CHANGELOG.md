@@ -4,6 +4,10 @@
 
 > Pairs with FeatherPanel v1.5.3. The panel's node options (#363) need #23, its auto start and crash auto restart fixes need #19 and #20, and transfer power restore (#368) starts the server right away with #25 (older Wings is covered by panel retries).
 
+### Added
+
+- Chunked, resumable file uploads (`/upload/chunk`), so uploads work behind Cloudflare's 100 MB request limit and continue after a reload or network drop. See `docs/chunked-uploads.md`. Needs FeatherPanel v1.5.3 or newer. by @nayskutzu
+
 ### Fixed
 
 - Servers restored when Wings boots only auto start when the panel's auto start setting allows it. Needs FeatherPanel v1.5.3. (#19) by @nayskutzu
