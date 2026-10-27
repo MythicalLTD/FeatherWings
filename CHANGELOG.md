@@ -21,6 +21,7 @@
 
 ### Added
 
+- Chunked, resumable file uploads (`/upload/chunk`), so uploads work behind Cloudflare's 100 MB request limit and continue after a reload or network drop. See `docs/chunked-uploads.md`. Needs FeatherPanel v1.5.3 or newer. by @nayskutzu
 - `system.check_install_exit_code`: mark an install as failed when the install script exits with a non-zero code. It is off by default, and then only a warning is logged. (#23) by @nayskutzu
 - `docker.cpu_shares`: CPU weight for containers that have a CPU limit. The default stays 1024; set it to 0 to use the Docker default. (#23) by @nayskutzu
 - S3 backups upload parts concurrently when the panel sends `max_concurrent_uploads`; otherwise they upload one at a time, as before. (#23) by @nayskutzu

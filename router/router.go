@@ -108,6 +108,10 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	router.GET("/download/backup", getDownloadBackup)
 	router.GET("/download/file", getDownloadFile)
 	router.POST("/upload/file", postServerUploadFiles)
+	router.GET("/upload/chunk", getServerChunkedUpload)
+	router.POST("/upload/chunk", postServerChunkedUpload)
+	router.DELETE("/upload/chunk", deleteServerChunkedUpload)
+	router.POST("/upload/chunk/complete", postServerChunkedUploadComplete)
 
 	// This route is special it sits above all the other requests because we are
 	// using a JWT to authorize access to it, therefore it needs to be publicly
