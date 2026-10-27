@@ -248,9 +248,12 @@ type ServerDenyTokenRequest struct {
 
 // ServerBackupRestoreRequest configures restore operations.
 type ServerBackupRestoreRequest struct {
-	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
+	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs resumable"`
 	TruncateDirectory bool               `json:"truncate_directory"`
 	DownloadURL       string             `json:"download_url"`
+	// Headers are optional request headers (e.g. a short-lived bearer token)
+	// sent when fetching download_url.
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // ServerBackupDescriptor describes a backup entry.
@@ -269,7 +272,7 @@ type ServerBackupListResponse struct {
 
 // ServerBackupCreateRequest defines the payload for creating a backup.
 type ServerBackupCreateRequest struct {
-	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
+	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs resumable"`
 	UUID    string             `json:"uuid" binding:"required"`
 	Ignore  string             `json:"ignore"`
 }

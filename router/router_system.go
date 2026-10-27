@@ -49,17 +49,19 @@ func getSystemInformation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, struct {
-		Architecture  string `json:"architecture"`
-		CPUCount      int    `json:"cpu_count"`
-		KernelVersion string `json:"kernel_version"`
-		OS            string `json:"os"`
-		Version       string `json:"version"`
+		Architecture  string          `json:"architecture"`
+		CPUCount      int             `json:"cpu_count"`
+		KernelVersion string          `json:"kernel_version"`
+		OS            string          `json:"os"`
+		Version       string          `json:"version"`
+		Features      map[string]bool `json:"features"`
 	}{
 		Architecture:  i.System.Architecture,
 		CPUCount:      i.System.CPUThreads,
 		KernelVersion: i.System.KernelVersion,
 		OS:            i.System.OSType,
 		Version:       i.Version,
+		Features:      i.Features,
 	})
 }
 

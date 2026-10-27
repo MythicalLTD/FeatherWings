@@ -33,6 +33,9 @@ const (
 	LocalBackupAdapter AdapterType = "wings"
 	S3BackupAdapter    AdapterType = "s3"
 	PBSBackupAdapter   AdapterType = "pbs"
+	// ResumableBackupAdapter uploads to a provider resumable upload session
+	// (Google Drive, OneDrive, Dropbox) created by the panel.
+	ResumableBackupAdapter AdapterType = "resumable"
 )
 
 // RestoreCallback is a generic restoration callback that exists for both local

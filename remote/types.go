@@ -168,6 +168,26 @@ type BackupRemoteUploadResponse struct {
 	Parts                []string `json:"parts"`
 	PartSize             int64    `json:"part_size"`
 	MaxConcurrentUploads int      `json:"max_concurrent_uploads"`
+
+	// The fields below are only used by the "resumable" adapter (Google Drive,
+	// OneDrive, Dropbox). See docs/resumable-backups.md.
+	Adapter     string                 `json:"adapter,omitempty"`
+	Protocol    string                 `json:"protocol,omitempty"`
+	SessionURL  string                 `json:"session_url,omitempty"`
+	SessionID   string                 `json:"session_id,omitempty"`
+	ChunkSize   int64                  `json:"chunk_size,omitempty"`
+	TotalSize   int64                  `json:"total_size,omitempty"`
+	Headers     map[string]string      `json:"headers,omitempty"`
+	CompleteURL string                 `json:"complete_url,omitempty"`
+	Finish      *BackupResumableFinish `json:"finish,omitempty"`
+}
+
+// BackupResumableFinish describes the final request of a Dropbox style upload
+// session. Arg is the Dropbox-API-Arg JSON object; Wings sets its "cursor" key.
+type BackupResumableFinish struct {
+	URL     string                 `json:"url"`
+	Headers map[string]string      `json:"headers,omitempty"`
+	Arg     map[string]interface{} `json:"arg,omitempty"`
 }
 
 type BackupPart struct {

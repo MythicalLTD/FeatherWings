@@ -70,6 +70,8 @@ func postServerBackup(c *gin.Context) {
 		adapter = backup.NewS3(client, backupUuid, s.ID(), data.Ignore)
 	case backup.PBSBackupAdapter:
 		adapter = backup.NewPBS(client, backupUuid, s.ID(), data.Ignore)
+	case backup.ResumableBackupAdapter:
+		adapter = backup.NewResumable(client, backupUuid, s.ID(), data.Ignore)
 	default:
 		middleware.CaptureAndAbort(c, errors.New("router/backups: provided adapter is not valid: "+string(data.Adapter)))
 		return
@@ -116,11 +118,12 @@ func postServerRestoreBackup(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if data.Adapter == backup.S3BackupAdapter && data.DownloadURL == "" {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "The download_url field is required when the backup adapter is set to S3."})
+	remoteAdapter := data.Adapter == backup.S3BackupAdapter || data.Adapter == backup.ResumableBackupAdapter
+	if remoteAdapter && data.DownloadURL == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "The download_url field is required when the backup adapter is set to " + string(data.Adapter) + "."})
 		return
 	}
-	if data.Adapter == backup.S3BackupAdapter {
+	if remoteAdapter {
 		if err := validateBackupDownloadUrl(data.DownloadURL); err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -199,6 +202,9 @@ func postServerRestoreBackup(c *gin.Context) {
 		middleware.CaptureAndAbort(c, err)
 		return
 	}
+	for k, v := range data.Headers {
+		req.Header.Set(k, v)
+	}
 	res, err := httpClient.Do(req)
 	if err != nil {
 		var downloadErr backupDownloadError
@@ -215,7 +221,8 @@ func postServerRestoreBackup(c *gin.Context) {
 		return
 	}
 	// Don't allow content types that we know are going to give us problems.
-	if !isSupportedBackupRestoreContentType(res.Header.Get("Content-Type")) {
+	if !isSupportedBackupRestoreContentType(res.Header.Get("Content-Type")) &&
+		!(data.Adapter == backup.ResumableBackupAdapter && isOctetStream(res.Header.Get("Content-Type"))) {
 		_ = res.Body.Close()
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "The provided backup link is not a supported content type. \"" + res.Header.Get("Content-Type") + "\" is not application/x-gzip.",
@@ -223,14 +230,22 @@ func postServerRestoreBackup(c *gin.Context) {
 		return
 	}
 
+	// Resume the download with Range requests if the connection drops mid-way.
+	body := newRangeResumeReader(s.Context(), &httpClient, req, res, logger)
+	var restoreAdapter backup.BackupInterface = backup.NewS3(client, backupUuid, s.ID(), "")
+	if data.Adapter == backup.ResumableBackupAdapter {
+		restoreAdapter = backup.NewResumable(client, backupUuid, s.ID(), "")
+	}
+
 	go func(s *server.Server, uuid string, logger *log.Entry) {
-		logger.Info("starting restoration process for server backup using S3 driver")
-		if err := s.RestoreBackup(backup.NewS3(client, uuid, s.ID(), ""), res.Body, data.TruncateDirectory); err != nil {
-			logger.WithField("error", errors.WithStack(err)).Error("failed to restore remote S3 backup to server")
+		defer body.Close()
+		logger.Info("starting restoration process for server backup using " + string(data.Adapter) + " driver")
+		if err := s.RestoreBackup(restoreAdapter, body, data.TruncateDirectory); err != nil {
+			logger.WithField("error", errors.WithStack(err)).Error("failed to restore remote backup to server")
 		}
-		s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from S3 backup.")
+		s.Events().Publish(server.DaemonMessageEvent, "Completed server restoration from remote backup.")
 		s.Events().Publish(server.BackupRestoreCompletedEvent, "")
-		logger.Info("completed server restoration from S3 backup")
+		logger.Info("completed server restoration from remote backup")
 		s.SetRestoring(false)
 	}(s, backupUuid, logger)
 
