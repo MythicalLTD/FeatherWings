@@ -425,12 +425,19 @@ func (r *ResumableBackup) uploadContentRange(ctx context.Context, src io.ReaderA
 			if out.done {
 				return nil
 			}
-			if out.offset > offset {
-				rs.reset()
-			}
 			if out.offset < 0 || out.offset > size {
 				return fmt.Errorf("backup: provider reported invalid offset %d", out.offset)
 			}
+			if out.offset <= offset {
+				// The provider did not take the chunk; count it as a failure so
+				// a session that never advances cannot loop forever.
+				offset = out.offset
+				if werr := r.wait(ctx, &rs, res, fmt.Errorf("backup: provider did not advance past offset %d", offset)); werr != nil {
+					return werr
+				}
+				continue
+			}
+			rs.reset()
 			offset = out.offset
 			r.log().WithField("offset", offset).WithField("size", size).Debug("uploaded backup chunk")
 			continue
@@ -484,6 +491,16 @@ func dropboxCorrectOffset(body []byte) (int64, bool) {
 	return *v.Error.CorrectOffset, true
 }
 
+func dropboxErrorTag(body []byte) string {
+	var v struct {
+		Error struct {
+			Tag string `json:".tag"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &v)
+	return v.Error.Tag
+}
+
 func (r *ResumableBackup) uploadDropbox(ctx context.Context, src io.ReaderAt, size, chunk int64, info remote.BackupRemoteUploadResponse) error {
 	if info.SessionID == "" {
 		return errors.New("backup: dropbox-append needs session_id")
@@ -528,7 +545,16 @@ func (r *ResumableBackup) uploadDropbox(ctx context.Context, src io.ReaderAt, si
 			rs.reset()
 		case res.StatusCode == http.StatusConflict:
 			if off, ok := dropboxCorrectOffset(body); ok && off >= 0 && off <= size {
+				if off == offset {
+					return fmt.Errorf("backup: dropbox rejected offset %d it reported as correct", off)
+				}
 				offset = off
+				continue
+			}
+			// A retried final chunk that already landed (and closed the
+			// session) is answered with a "closed" error.
+			if end == size && dropboxErrorTag(body) == "closed" {
+				offset = size
 				continue
 			}
 			return fmt.Errorf("backup: dropbox append failed: %s", strings.TrimSpace(string(body)))

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -95,6 +96,17 @@ func (r *RangeResumeReader) resume(cause error) error {
 		if res.StatusCode != http.StatusPartialContent {
 			_ = res.Body.Close()
 			return fmt.Errorf("backup: resuming download failed: server answered %s instead of 206", res.Status)
+		}
+		// Make sure the server continues the same object at our offset.
+		cr := strings.TrimSpace(res.Header.Get("Content-Range"))
+		var start int64
+		if _, err := fmt.Sscanf(cr, "bytes %d-", &start); err != nil || start != r.read {
+			_ = res.Body.Close()
+			return fmt.Errorf("backup: resumed download started at %q instead of byte %d", cr, r.read)
+		}
+		if r.etag != "" && res.Header.Get("ETag") != "" && res.Header.Get("ETag") != r.etag {
+			_ = res.Body.Close()
+			return errors.New("backup: backup file changed while it was being downloaded")
 		}
 		r.body = res.Body
 		return nil

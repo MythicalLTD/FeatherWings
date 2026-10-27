@@ -23,12 +23,17 @@ type SystemSummaryResponse struct {
 	KernelVersion string `json:"kernel_version"`
 	OS            string `json:"os"`
 	Version       string `json:"version"`
+	// Features lists optional capabilities, e.g. resumable_backup_upload.
+	Features map[string]bool `json:"features"`
 }
 
 // SystemBackupDestinationsResponse reports available backup adapters on this node.
 type SystemBackupDestinationsResponse struct {
 	DefaultAdapter string                `json:"default_adapter"`
 	PBS            SystemPBSBackupStatus `json:"pbs"`
+	// Resumable is true when the "resumable" adapter (Drive, OneDrive,
+	// Dropbox sessions opened by the panel) is supported.
+	Resumable bool `json:"resumable"`
 }
 
 // SystemPBSBackupStatus is a sanitized PBS config summary (no secrets).

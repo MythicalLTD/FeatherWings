@@ -222,3 +222,33 @@ func TestRangeResumeReaderRefusesNon206(t *testing.T) {
 		t.Fatalf("expected a 206 error, got %v", err)
 	}
 }
+
+func TestRangeResumeReaderRejectsWrongOffset(t *testing.T) {
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.Header().Set("Accept-Ranges", "bytes")
+		if n == 1 {
+			w.Header().Set("Content-Length", "100")
+			w.Write(make([]byte, 10))
+			w.(http.Flusher).Flush()
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+			return
+		}
+		w.Header().Set("Content-Range", "bytes 0-99/100")
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(make([]byte, 100))
+	}))
+	defer srv.Close()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := NewRangeResumeReader(context.Background(), http.DefaultClient, req, res, nil)
+	rr.sleep = func(time.Duration) {}
+	if _, err := io.ReadAll(rr); err == nil || !strings.Contains(err.Error(), "instead of byte 10") {
+		t.Fatalf("expected offset error, got %v", err)
+	}
+}

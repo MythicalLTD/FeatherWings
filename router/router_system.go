@@ -48,14 +48,7 @@ func getSystemInformation(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, struct {
-		Architecture  string          `json:"architecture"`
-		CPUCount      int             `json:"cpu_count"`
-		KernelVersion string          `json:"kernel_version"`
-		OS            string          `json:"os"`
-		Version       string          `json:"version"`
-		Features      map[string]bool `json:"features"`
-	}{
+	c.JSON(http.StatusOK, SystemSummaryResponse{
 		Architecture:  i.System.Architecture,
 		CPUCount:      i.System.CPUThreads,
 		KernelVersion: i.System.KernelVersion,
@@ -81,6 +74,7 @@ func getSystemBackupDestinations(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, SystemBackupDestinationsResponse{
 		DefaultAdapter: adapter,
+		Resumable:      system.Features["resumable_backup_upload"],
 		PBS: SystemPBSBackupStatus{
 			Enabled:    pbs.Enabled,
 			Namespace:  pbs.Namespace,

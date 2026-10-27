@@ -415,3 +415,54 @@ func TestResumableLargeFile(t *testing.T) {
 		})
 	}
 }
+
+// The final chunk lands and closes the session, but the response is lost; the
+// retry gets "closed" and the upload must still finish.
+func TestResumableDropboxClosedAfterLostResponse(t *testing.T) {
+	size := int64(chunk)
+	f, _ := testFile(t, size)
+	appends, finished := 0, false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		if r.URL.Path == "/finish" {
+			finished = true
+			w.Write([]byte("{}"))
+			return
+		}
+		appends++
+		if appends == 1 {
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":{".tag":"closed"}}`))
+	}))
+	defer srv.Close()
+	err := newTestResumable(nil).upload(context.Background(), f, size, remote.BackupRemoteUploadResponse{
+		Protocol: ProtocolDropboxAppend, SessionURL: srv.URL + "/append", SessionID: "sess", ChunkSize: chunk,
+		Finish: &remote.BackupResumableFinish{URL: srv.URL + "/finish"},
+	})
+	if err != nil || !finished {
+		t.Fatalf("err=%v finished=%v", err, finished)
+	}
+}
+
+// A session that keeps answering 308 without moving must not loop forever.
+func TestResumableNoProgressIsBounded(t *testing.T) {
+	size := int64(2 * chunk)
+	f, _ := testFile(t, size)
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		n++
+		w.WriteHeader(http.StatusPermanentRedirect)
+	}))
+	defer srv.Close()
+	err := newTestResumable(nil).upload(context.Background(), f, size, remote.BackupRemoteUploadResponse{
+		Protocol: ProtocolContentRange, SessionURL: srv.URL, ChunkSize: chunk,
+	})
+	if err == nil || n > resumableMaxAttempts {
+		t.Fatalf("err=%v requests=%d", err, n)
+	}
+}

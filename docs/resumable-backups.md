@@ -104,4 +104,6 @@ lasts long enough (Dropbox access tokens last about 4 hours).
   OneDrive and Dropbox serve files that way.
 - If the server sends `Accept-Ranges: bytes` and the connection drops, Wings
   resumes with `Range: bytes=N-` (and `If-Range` with the ETag), up to 5 times.
-  Any answer other than `206` stops the restore. This applies to S3 restores too.
+  The 206 must start at the requested byte (`Content-Range`) and keep the same ETag, or the restore stops. This applies to S3 restores too.
+
+`GET /api/system/backups` also returns `"resumable": true`.
