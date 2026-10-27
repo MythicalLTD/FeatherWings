@@ -25,10 +25,17 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
+// Features lists optional capabilities so the panel can detect support
+// without comparing version strings.
+var Features = map[string]bool{
+	"resumable_backup_upload": true,
+}
+
 type Information struct {
-	Version string            `json:"version"`
-	Docker  DockerInformation `json:"docker"`
-	System  System            `json:"system"`
+	Version  string            `json:"version"`
+	Features map[string]bool   `json:"features"`
+	Docker   DockerInformation `json:"docker"`
+	System   System            `json:"system"`
 }
 
 type DockerInformation struct {
@@ -141,7 +148,8 @@ func GetSystemInformation() (*Information, error) {
 	}
 
 	return &Information{
-		Version: Version,
+		Version:  Version,
+		Features: Features,
 		Docker: DockerInformation{
 			Version: version.Version,
 			Cgroups: DockerCgroups{

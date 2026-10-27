@@ -23,12 +23,17 @@ type SystemSummaryResponse struct {
 	KernelVersion string `json:"kernel_version"`
 	OS            string `json:"os"`
 	Version       string `json:"version"`
+	// Features lists optional capabilities, e.g. resumable_backup_upload.
+	Features map[string]bool `json:"features"`
 }
 
 // SystemBackupDestinationsResponse reports available backup adapters on this node.
 type SystemBackupDestinationsResponse struct {
 	DefaultAdapter string                `json:"default_adapter"`
 	PBS            SystemPBSBackupStatus `json:"pbs"`
+	// Resumable is true when the "resumable" adapter (Drive, OneDrive,
+	// Dropbox sessions opened by the panel) is supported.
+	Resumable bool `json:"resumable"`
 }
 
 // SystemPBSBackupStatus is a sanitized PBS config summary (no secrets).
@@ -248,9 +253,12 @@ type ServerDenyTokenRequest struct {
 
 // ServerBackupRestoreRequest configures restore operations.
 type ServerBackupRestoreRequest struct {
-	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
+	Adapter           backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs resumable"`
 	TruncateDirectory bool               `json:"truncate_directory"`
 	DownloadURL       string             `json:"download_url"`
+	// Headers are optional request headers (e.g. a short-lived bearer token)
+	// sent when fetching download_url.
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // ServerBackupDescriptor describes a backup entry.
@@ -269,7 +277,7 @@ type ServerBackupListResponse struct {
 
 // ServerBackupCreateRequest defines the payload for creating a backup.
 type ServerBackupCreateRequest struct {
-	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs"`
+	Adapter backup.AdapterType `json:"adapter" binding:"required,oneof=wings s3 pbs resumable"`
 	UUID    string             `json:"uuid" binding:"required"`
 	Ignore  string             `json:"ignore"`
 }
