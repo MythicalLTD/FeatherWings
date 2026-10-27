@@ -182,8 +182,9 @@ func (m *Manager) getChainLength(ruleType models.FirewallRuleType) (int, error) 
 	table := "raw"
 	chain := "PREROUTING"
 
-	// Use -L with --line-numbers and count the lines (excluding headers)
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("iptables -t %s -L %s --line-numbers 2>/dev/null | tail -n +3 | wc -l", table, chain))
+	// Use -L with --line-numbers and count the lines; the first two lines are
+	// headers and every following line is a rule.
+	cmd := exec.Command("iptables", "-t", table, "-L", chain, "--line-numbers")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = nil
@@ -193,9 +194,16 @@ func (m *Manager) getChainLength(ruleType models.FirewallRuleType) (int, error) 
 		return 0, errors.Wrap(err, "failed to get chain length")
 	}
 
-	output := strings.TrimSpace(stdout.String())
-	length := 0
-	fmt.Sscanf(output, "%d", &length)
+	lines := 0
+	for _, l := range strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n") {
+		if l != "" {
+			lines++
+		}
+	}
+	length := lines - 2
+	if length < 0 {
+		length = 0
+	}
 	return length, nil
 }
 
@@ -409,34 +417,49 @@ func (m *Manager) removeRuleUnlocked(rule *models.FirewallRule) error {
 
 // applyRuleUnlocked is like ApplyRule but without locking (for use within locked contexts)
 func (m *Manager) applyRuleUnlocked(rule *models.FirewallRule) error {
+	// Validate inputs before building commands (defense against command injection)
+	if err := ValidateIP(rule.RemoteIP); err != nil {
+		return errors.Wrap(err, "invalid remote IP")
+	}
+	if rule.ServerPort < 1 || rule.ServerPort > 65535 {
+		return errors.Errorf("invalid port: %d (must be between 1 and 65535)", rule.ServerPort)
+	}
+
 	// Set default protocol if not set
 	protocol := rule.Protocol
 	if protocol == "" {
 		protocol = "tcp"
+	}
+	if err := validateProtocol(protocol); err != nil {
+		return errors.Wrap(err, "invalid protocol")
 	}
 
 	target := map[models.FirewallRuleType]string{
 		models.FirewallRuleTypeAllow: "ACCEPT",
 		models.FirewallRuleTypeBlock: "DROP",
 	}[rule.Type]
+	if target == "" {
+		return errors.Errorf("invalid rule type: %s", rule.Type)
+	}
 
 	// First, check if rule already exists in iptables (to avoid duplicates)
-	// Use -C (check) which returns 0 if rule exists, 1 if it doesn't
-	// Redirect stderr to /dev/null to suppress the expected "Bad rule" message when rule doesn't exist
+	// Use -C (check) which returns 0 if rule exists, 1 if it doesn't.
+	// Stderr is discarded to suppress the expected "Bad rule" message when rule doesn't exist.
 	// In DOCKER-USER, --dport matches the original host port
-	checkCmd := fmt.Sprintf(
-		"iptables -t filter -C DOCKER-USER -p %s -s %s --dport %d -j %s 2>/dev/null",
-		protocol,
-		rule.RemoteIP,
-		rule.ServerPort,
-		target,
-	)
+	checkArgs := []string{
+		"-t", "filter",
+		"-C", "DOCKER-USER",
+		"-p", protocol,
+		"-s", rule.RemoteIP,
+		"--dport", fmt.Sprintf("%d", rule.ServerPort),
+		"-j", target,
+	}
 
 	// Execute check silently - we expect it to fail (exit code 1) if rule doesn't exist
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", checkCmd)
+	cmd := exec.CommandContext(ctx, "iptables", checkArgs...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 
