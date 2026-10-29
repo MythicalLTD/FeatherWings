@@ -143,11 +143,14 @@ func TestIgnore(t *testing.T) {
 				}
 				i, err := compileIgnore(strings.Join(ordinary, "\n"))
 				g.Assert(err).IsNil()
-				start := time.Now()
-				for n := 0; n < 20; n++ {
-					i.MatchesPath("plugins/Essentials/userdata/0123456789abcdef.yml")
-				}
-				if c, budget := time.Since(start)/20, newIgnoreMatchBudget(len(ordinary)).perFile; c > budget {
+				c := fastest(func() time.Duration {
+					start := time.Now()
+					for n := 0; n < 20; n++ {
+						i.MatchesPath("plugins/Essentials/userdata/0123456789abcdef.yml")
+					}
+					return time.Since(start) / 20
+				})
+				if budget := newIgnoreMatchBudget(len(ordinary)).perFile; c > budget {
 					g.Failf("the longest ordinary list costs %s per file, over its budget of %s", c, budget)
 				}
 			}
@@ -155,9 +158,22 @@ func TestIgnore(t *testing.T) {
 			// Compared against the most expensive list rather than the budget itself,
 			// since the race detector slows down both by a large amount.
 			typical := []string{"*.log", "logs/", "cache/", "*.tmp", "world/region/*.mca", "plugins/*/data/", "!plugins/keep/data/"}
-			if c := cost(typical); c*50 > worstCost {
+			if c := fastest(func() time.Duration { return cost(typical) }); c*50 > worstCost {
 				g.Failf("a typical list costs %s per file, compared to %s for the most expensive list", c, worstCost)
 			}
 		})
 	})
+}
+
+// fastest returns the shortest of several timings of f. Timing assertions that a cost
+// stays under a limit use it so that a busy machine (such as a shared CI runner) does
+// not make them fail at random: load can only make a run slower, never faster.
+func fastest(f func() time.Duration) time.Duration {
+	best := f()
+	for n := 0; n < 4; n++ {
+		if d := f(); d < best {
+			best = d
+		}
+	}
+	return best
 }
