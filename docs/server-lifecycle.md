@@ -631,3 +631,24 @@ pie title Server States Across Wings Instance
 
 
 
+
+## CPU burst and CFS period
+
+Servers with a CPU limit get a CFS quota of `cpu_limit% × cpu_period`. With
+`docker.cpu_burst.enabled: true` (default) Wings also writes a burst allowance of
+`quota × docker.cpu_burst.percent / 100` (capped at 100%) into the container's
+cgroup (`cpu.max.burst` on cgroup v2, `cpu.cfs_burst_us` on v1) after the
+container or installer starts and after every live limit update. The burst is
+cleared before a limit change because the kernel rejects a quota lower than the
+current burst. Kernels older than 5.14 or read-only cgroup trees log a single
+warning and run without burst.
+
+```yaml
+docker:
+  cpu_period: 100000   # microseconds, clamped to 1000..1000000
+  cpu_burst:
+    enabled: true
+    percent: 100
+```
+
+The `/api/system` response lists `cpu_burst: true` under `features`.
