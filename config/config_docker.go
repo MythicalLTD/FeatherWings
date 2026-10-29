@@ -93,6 +93,21 @@ type DockerConfiguration struct {
 	// system services.
 	CpuShares int64 `default:"1024" json:"cpu_shares" yaml:"cpu_shares"`
 
+	// CpuPeriod is the length of a CFS scheduling window in microseconds. Server
+	// quotas scale with it, so the configured CPU limits stay the same. A shorter
+	// period reduces the worst case throttle latency at the cost of additional
+	// scheduler overhead.
+	CpuPeriod int64 `default:"100000" json:"cpu_period" yaml:"cpu_period"`
+
+	// CpuBurst allows containers to bank unused CFS quota within a period and spend
+	// it on short spikes without raising their long term CPU limit. Percent sizes the
+	// burst relative to a server's quota and is capped at 100 by the kernel. Requires
+	// Linux 5.14 or newer, it is skipped silently otherwise.
+	CpuBurst struct {
+		Enabled bool  `default:"true" json:"enabled" yaml:"enabled"`
+		Percent int64 `default:"100" json:"percent" yaml:"percent"`
+	} `json:"cpu_burst" yaml:"cpu_burst"`
+
 	// Overhead controls the memory overhead given to all containers to circumvent certain
 	// software such as the JVM not staying below the maximum memory limit.
 	Overhead Overhead `json:"overhead" yaml:"overhead"`
@@ -156,6 +171,15 @@ type RuntimeReconciliationConfiguration struct {
 	// attempts for a server. Prevents terminate/destroy storms when Docker stays hung.
 	// Force-reconcile ignores this. Defaults to 300s (5 minutes).
 	RecoveryCooldownSeconds int `default:"300" json:"recovery_cooldown_seconds" yaml:"recovery_cooldown_seconds"`
+}
+
+// CpuPeriodMicroseconds returns the configured CFS period clamped to the range
+// the kernel accepts. A zero value (unset) falls back to the 100ms default.
+func (c DockerConfiguration) CpuPeriodMicroseconds() int64 {
+	if c.CpuPeriod == 0 {
+		return 100_000
+	}
+	return min(max(c.CpuPeriod, 1_000), 1_000_000)
 }
 
 func (c DockerConfiguration) ContainerLogConfig() container.LogConfig {

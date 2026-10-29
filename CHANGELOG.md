@@ -21,6 +21,8 @@
 
 ### Added
 
+- CPU burst: servers with a CPU limit can bank unused CFS quota and spend it on short spikes without raising their long term limit (`docker.cpu_burst.enabled`, default on, and `docker.cpu_burst.percent`, default 100). Needs Linux 5.14+ and a writable cgroup hierarchy, otherwise it is skipped with one warning. `docker.cpu_period` (default 100000µs) makes the CFS period configurable; quotas scale with it so CPU limits stay the same. Reported to the panel as the `cpu_burst` feature. Ported from pterodactyl/wings@2cc8a10. by @nayskutzu
+
 - `resumable` backup adapter for bring-your-own storage (Google Drive, OneDrive, Dropbox). The panel opens the upload session and Wings uploads in chunks with retries, `Retry-After` support and resume after failures, without getting long-lived provider credentials (it only gets the session URL and, for Dropbox, a short-lived access token). Restores accept optional `headers` and resume dropped downloads with `Range` requests. `/api/system` now returns `features.resumable_backup_upload`. See `docs/resumable-backups.md`. by @nayskutzu
 - Chunked, resumable file uploads (`/upload/chunk`), so uploads work behind Cloudflare's 100 MB request limit and continue after a reload or network drop. See `docs/chunked-uploads.md`. Needs FeatherPanel v1.5.3 or newer. by @nayskutzu
 - `system.check_install_exit_code`: mark an install as failed when the install script exits with a non-zero code. It is off by default, and then only a warning is logged. (#23) by @nayskutzu

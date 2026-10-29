@@ -29,6 +29,7 @@ import (
 // without comparing version strings.
 var Features = map[string]bool{
 	"resumable_backup_upload": true,
+	"cpu_burst":               true,
 }
 
 type Information struct {
