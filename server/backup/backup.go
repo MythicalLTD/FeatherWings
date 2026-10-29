@@ -217,6 +217,7 @@ type ArchiveDetails struct {
 	ChecksumType string              `json:"checksum_type"`
 	Size         int64               `json:"size"`
 	Parts        []remote.BackupPart `json:"parts"`
+	ContentHash  string              `json:"content_hash,omitempty"`
 }
 
 // ToRequest returns a request object.
@@ -227,5 +228,6 @@ func (ad *ArchiveDetails) ToRequest(successful bool) remote.BackupRequest {
 		Size:         ad.Size,
 		Successful:   successful,
 		Parts:        ad.Parts,
+		ContentHash:  ad.ContentHash,
 	}
 }

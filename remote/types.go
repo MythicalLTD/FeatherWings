@@ -201,6 +201,9 @@ type BackupRequest struct {
 	Size         int64        `json:"size"`
 	Successful   bool         `json:"successful"`
 	Parts        []BackupPart `json:"parts"`
+	// ContentHash is the Dropbox content_hash of the archive, sent only for
+	// dropbox-append uploads so the panel can verify the stored file.
+	ContentHash string `json:"content_hash,omitempty"`
 }
 
 type InstallStatusRequest struct {
