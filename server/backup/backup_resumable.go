@@ -122,6 +122,13 @@ func (r *ResumableBackup) Generate(ctx context.Context, fsys *filesystem.Filesys
 	if err != nil {
 		return nil, errors.WrapIf(err, "backup: failed to get archive details after upload")
 	}
+	if info.Protocol == ProtocolDropboxAppend {
+		h, err := DropboxContentHash(io.NewSectionReader(f, 0, st.Size()))
+		if err != nil {
+			return nil, errors.WrapIf(err, "backup: failed to compute the dropbox content hash")
+		}
+		ad.ContentHash = h
+	}
 	return ad, nil
 }
 

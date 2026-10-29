@@ -4,6 +4,10 @@
 
 > Pairs with FeatherPanel v1.5.3. The panel's node options (#363) need #23, its auto start and crash auto restart fixes need #19 and #20, and transfer power restore (#368) starts the server right away with #25 (older Wings is covered by panel retries).
 
+### Added
+
+- Dropbox backups send the archive's Dropbox `content_hash` with the completion report, so the panel can verify the stored file by hash and not only by size. Needs FeatherPanel v1.5.3. (#32) by @nayskutzu
+
 ### Fixed
 
 - Servers restored when Wings boots only auto start when the panel's auto start setting allows it. Needs FeatherPanel v1.5.3. (#19) by @nayskutzu
