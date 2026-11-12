@@ -4,11 +4,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/apex/log"
 	pkgsftp "github.com/pkg/sftp"
 
+	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
 type writeAtFunc func([]byte, int64) (int, error)
@@ -180,5 +185,57 @@ func TestSetstatMode(t *testing.T) {
 				t.Fatalf("expected mode %04o, got %04o", tt.expected, mode)
 			}
 		})
+	}
+}
+
+// A rename or symlink onto a path in the egg's file denylist is refused, not only
+// one whose source is denylisted.
+func TestFilecmdRefusesDenylistedTarget(t *testing.T) {
+	config.Set(&config.Configuration{AuthenticationToken: "test-token"})
+	srv, err := server.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	fs, err := filesystem.New(root, 0, []string{"server.properties", "locked/**"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = fs.UnixFS().Close() })
+	if err := os.WriteFile(filepath.Join(root, "evil.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler{
+		server:      srv,
+		fs:          fs,
+		permissions: []string{"*"},
+		logger:      log.WithField("test", t.Name()),
+	}
+
+	tests := []struct {
+		method string
+		target string
+		check  string
+	}{
+		{method: "Rename", target: "/server.properties", check: "server.properties"},
+		{method: "Rename", target: "/locked/file", check: "locked/file"},
+		{method: "Symlink", target: "/server.properties", check: "server.properties"},
+		{method: "Symlink", target: "/locked/link", check: "locked/link"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+tt.target, func(t *testing.T) {
+			request := pkgsftp.NewRequest(tt.method, "/evil.txt")
+			request.Target = tt.target
+			err := h.Filecmd(request)
+			if !filesystem.IsErrorCode(err, filesystem.ErrCodeDenylistFile) {
+				t.Fatalf("expected a denylist error, got %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(root, tt.check)); !os.IsNotExist(err) {
+				t.Fatalf("expected %s not to be created, got %v", tt.check, err)
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(root, "evil.txt")); err != nil {
+		t.Fatalf("source file should be untouched: %v", err)
 	}
 }
