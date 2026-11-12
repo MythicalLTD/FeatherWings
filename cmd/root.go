@@ -42,6 +42,7 @@ import (
 	"github.com/mythicalltd/featherwings/remote"
 	"github.com/mythicalltd/featherwings/router"
 	"github.com/mythicalltd/featherwings/server"
+	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/sftp"
 	"github.com/mythicalltd/featherwings/system"
 )
@@ -426,6 +427,19 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	// Ensure the backup directory exists.
 	if err := os.MkdirAll(sys.BackupDirectory, 0o700); err != nil {
 		log.WithField("error", err).Error("failed to create backup directory")
+	}
+
+	// Report local backups still stored in the legacy flat layout (Pterodactyl
+	// Wings and older versions). They are moved into their server's backup
+	// directory when the Panel next accesses them.
+	if count, size, err := backup.LegacyLocalArchives(); err != nil {
+		log.WithField("error", err).Warn("failed to check for local backups in the legacy location")
+	} else if count > 0 {
+		log.WithFields(log.Fields{
+			"count":      count,
+			"size_bytes": size,
+			"path":       sys.BackupDirectory,
+		}).Warn("found local backups stored in the legacy location, they will be moved into their server's backup directory when next downloaded, restored, deleted or transferred")
 	}
 
 	autotls, _ := cmd.Flags().GetBool("auto-tls")
