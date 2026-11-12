@@ -55,6 +55,13 @@ func (p *transferTestPanel) SetTransferStatus(_ context.Context, _ string, succe
 	return p.statusErr
 }
 
+// PushServerStateChange is reached asynchronously by the server's state
+// listener, which can fire after a transfer test has finished; it is a no-op so
+// that late event does not panic on the nil embedded interface.
+func (p *transferTestPanel) PushServerStateChange(context.Context, string, remote.ServerStateChange) error {
+	return nil
+}
+
 // transferTestEnvironment stands in for the Docker environment so that no
 // container is needed.
 type transferTestEnvironment struct {
