@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- A failed incoming transfer on a shared storage pool no longer deletes the server's data folder, which is the source node's live data. Transfers are refused when the server's files already exist on a non-pooled node, only one transfer per server is accepted at a time, and a failed transfer also removes its quota, received backups, install log and machine-id file. Ported from pelican/wings#247. by @nayskutzu
+- Backups received in a transfer are written as 0600 in a 0700 folder, like locally created backups (were 0644 in 0755), and only moved into place after the transfer is verified. Ported from pelican/wings#247. by @nayskutzu
+- SFTP rename and symlink check the target path against the egg's file denylist, not only the source. Ported from pelican/wings#210. by @nayskutzu
+- The CPU burst cgroup path must belong to the container, so a reused PID cannot get the burst written into an unrelated cgroup. A disabled burst is cleared on reattach, and the CPU quota is at least 1ms. Ported from pelican/wings#210. by @nayskutzu
+
 ## v1.5.0
 
 ### Added
