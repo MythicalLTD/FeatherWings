@@ -453,3 +453,68 @@ func TestReceivedBackupsArePrivate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, created)
 }
+
+// If moving one received backup into place fails, the backups that were already
+// on this node are restored unchanged and no received backup is left in place.
+func TestCommitReceivedBackupsRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "a.tar.gz")
+	require.NoError(t, os.WriteFile(existing, []byte("original"), 0o600))
+	fresh := filepath.Join(dir, "b.tar.gz")
+
+	tmpA, _, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("received a"))
+	require.NoError(t, err)
+	tmpB, _, err := stageReceivedBackup(dir, "b.tar.gz", strings.NewReader("received b"))
+	require.NoError(t, err)
+
+	// Fail the last move of a staged backup into place, whichever it is.
+	prev := renameFile
+	t.Cleanup(func() { renameFile = prev })
+	moved := 0
+	renameFile = func(from, to string) error {
+		if from == tmpA || from == tmpB {
+			moved++
+			if moved == 2 {
+				return errors.New("injected rename failure")
+			}
+		}
+		return os.Rename(from, to)
+	}
+
+	created, err := commitReceivedBackups(map[string]string{existing: tmpA, fresh: tmpB})
+	require.Error(t, err)
+	assert.Empty(t, created)
+
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(b))
+	_, err = os.Stat(fresh)
+	assert.True(t, os.IsNotExist(err))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), ".transfer-old-", "a moved-aside backup was left behind")
+	}
+}
+
+// A destination that cannot be replaced is detected before anything is moved.
+func TestCommitReceivedBackupsRefusesNonRegularDestination(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "a.tar.gz")
+	require.NoError(t, os.WriteFile(existing, []byte("original"), 0o600))
+	blocked := filepath.Join(dir, "b.tar.gz")
+	require.NoError(t, os.Mkdir(blocked, 0o700))
+
+	tmpA, _, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("received a"))
+	require.NoError(t, err)
+	tmpB, _, err := stageReceivedBackup(dir, "b.tar.gz", strings.NewReader("received b"))
+	require.NoError(t, err)
+
+	_, err = commitReceivedBackups(map[string]string{existing: tmpA, blocked: tmpB})
+	require.Error(t, err)
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(b))
+	_, err = os.Stat(tmpA)
+	assert.NoError(t, err, "staged files are left for the caller to remove")
+}

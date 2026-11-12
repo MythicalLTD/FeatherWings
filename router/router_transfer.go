@@ -705,19 +705,87 @@ func stageReceivedBackup(backupDir, name string, r io.Reader) (string, string, e
 	return f.Name(), hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+// renameFile is os.Rename, replaceable in tests.
+var renameFile = os.Rename
+
 // commitReceivedBackups moves each staged backup (keyed by its final path) into
 // place, replacing a backup of the same name that is already on this node, which
 // is the same backup. It returns the final paths that did not exist before, which
-// a failed transfer must remove again, including when it returns an error.
+// a failed transfer must remove again.
+//
+// Either every backup is moved into place or none is: backups that are being
+// replaced are first moved aside and only deleted once all staged backups are in
+// place, and restored if a step fails. On error the staged files are left for
+// the caller to remove.
 func commitReceivedBackups(staged map[string]string) ([]string, error) {
-	var created []string
+	type commit struct {
+		final, tmp string
+		existed    bool
+		aside      string // where the existing backup was moved to, if it existed
+		done       bool   // whether tmp has been moved to final
+	}
+	commits := make([]*commit, 0, len(staged))
 	for final, tmp := range staged {
-		_, statErr := os.Lstat(final)
-		if err := os.Rename(tmp, final); err != nil {
-			return created, err
+		cm := &commit{final: final, tmp: tmp}
+		st, err := os.Lstat(final)
+		switch {
+		case err == nil:
+			if !st.Mode().IsRegular() {
+				return nil, fmt.Errorf("backup %s already exists and is not a regular file", filepath.Base(final))
+			}
+			cm.existed = true
+		case errors.Is(err, os.ErrNotExist):
+		default:
+			return nil, err
 		}
-		if statErr != nil {
-			created = append(created, final)
+		commits = append(commits, cm)
+	}
+
+	rollback := func() {
+		for _, cm := range commits {
+			if cm.done && !cm.existed {
+				_ = os.Remove(cm.final)
+			}
+			if cm.aside != "" {
+				// Replaces the received copy, if it was already moved into place.
+				_ = renameFile(cm.aside, cm.final)
+			}
+		}
+	}
+
+	for _, cm := range commits {
+		if !cm.existed {
+			continue
+		}
+		f, err := os.CreateTemp(filepath.Dir(cm.final), ".transfer-old-"+filepath.Base(cm.final)+"-*")
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+		_ = f.Close()
+		if err := renameFile(cm.final, f.Name()); err != nil {
+			_ = os.Remove(f.Name())
+			rollback()
+			return nil, err
+		}
+		cm.aside = f.Name()
+	}
+
+	var created []string
+	for _, cm := range commits {
+		if err := renameFile(cm.tmp, cm.final); err != nil {
+			rollback()
+			return nil, err
+		}
+		cm.done = true
+		if !cm.existed {
+			created = append(created, cm.final)
+		}
+	}
+
+	for _, cm := range commits {
+		if cm.aside != "" {
+			_ = os.Remove(cm.aside)
 		}
 	}
 	return created, nil

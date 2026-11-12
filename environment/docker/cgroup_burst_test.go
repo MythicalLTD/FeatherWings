@@ -79,6 +79,27 @@ func TestResolveCgroupCpuFile(t *testing.T) {
 			wantErr:     true,
 		},
 		{
+			name:        "v2 podman split cgroup",
+			procCgroup:  "0::/machine.slice/libpod-abc123.scope/container\n",
+			v2:          true,
+			containerID: "abc123",
+			expected:    "/sys/fs/cgroup/machine.slice/libpod-abc123.scope/container/cpu.max.burst",
+		},
+		{
+			name:        "v2 unit that only contains the id",
+			procCgroup:  "0::/system.slice/docker-abc123-monitor.scope\n",
+			v2:          true,
+			containerID: "abc123",
+			wantErr:     true,
+		},
+		{
+			name:        "v1 cgroup that only contains the id",
+			procCgroup:  "4:cpu:/docker/abc123-sidecar\n",
+			v2:          false,
+			containerID: "abc123",
+			wantErr:     true,
+		},
+		{
 			name:        "v2 without a container id",
 			procCgroup:  "0::/system.slice/docker-abc123.scope\n",
 			v2:          true,

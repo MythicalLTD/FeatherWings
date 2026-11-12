@@ -76,7 +76,7 @@ func resolveCgroupCpuFile(procCgroup string, v2 bool, containerID string) (strin
 			}
 		}
 
-		if !strings.Contains(parts[2], containerID) {
+		if !cgroupPathHasContainer(parts[2], containerID) {
 			return "", errors.Errorf("environment/docker: cgroup path %q does not belong to container %s", parts[2], containerID)
 		}
 		return file, nil
@@ -85,6 +85,20 @@ func resolveCgroupCpuFile(procCgroup string, v2 bool, containerID string) (strin
 		return "", errors.New("environment/docker: container cgroup is not visible from this cgroup namespace")
 	}
 	return "", errors.New("environment/docker: no cpu controller found in cgroup file")
+}
+
+// cgroupPathHasContainer reports whether one component of a cgroup path is the
+// container's own cgroup: "<id>" (cgroupfs driver, /docker/<id>) or
+// "<prefix>-<id>.scope" (systemd driver, docker-<id>.scope or libpod-<id>.scope).
+// A substring match is not enough, since another unit could have the ID inside
+// its name (e.g. docker-<id>-monitor.scope).
+func cgroupPathHasContainer(cgroupPath, containerID string) bool {
+	for _, c := range strings.Split(cgroupPath, "/") {
+		if c == containerID || (strings.HasSuffix(c, "-"+containerID+".scope") && len(c) > len(containerID)+len("-.scope")) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeCpuBurst writes a burst value in microseconds into the cpu cgroup of the
