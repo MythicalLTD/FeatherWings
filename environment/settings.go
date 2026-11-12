@@ -129,7 +129,9 @@ func (l Limits) AsContainerResources() container.Resources {
 	// @see https://github.com/pterodactyl/panel/issues/3988
 	if l.CpuLimit > 0 {
 		period := config.Get().Docker.CpuPeriodMicroseconds()
-		resources.CPUQuota = l.CpuLimit * period / 100
+		// The kernel rejects a CFS quota below 1ms, which a small CPU limit with a
+		// short custom cpu_period could otherwise produce.
+		resources.CPUQuota = max(l.CpuLimit*period/100, 1_000)
 		resources.CPUPeriod = period
 		if shares := config.Get().Docker.CpuShares; shares > 0 {
 			resources.CPUShares = shares
