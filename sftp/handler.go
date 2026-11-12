@@ -255,8 +255,16 @@ func (h *Handler) Filecmd(request *sftp.Request) error {
 		l = l.WithField("target", request.Target)
 	}
 
+	// Enforce the egg file denylist before performing any operation.
 	if err := h.fs.IsIgnored(request.Filepath); err != nil {
 		return err
+	}
+	// Also check the target path (Rename/Symlink). Otherwise a file could be renamed
+	// or linked onto a denylisted path, bypassing the Fileread/Filewrite checks.
+	if request.Target != "" {
+		if err := h.fs.IsIgnored(request.Target); err != nil {
+			return err
+		}
 	}
 
 	switch request.Method {

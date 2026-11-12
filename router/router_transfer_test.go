@@ -85,6 +85,7 @@ func newTransferHarness(t *testing.T, panel *transferTestPanel) *transferHarness
 	cfg.AuthenticationToken = "test-token"
 	cfg.System.Data = filepath.Join(root, "volumes")
 	cfg.System.MachineID.Enable = false
+	cfg.System.BackupDirectory = filepath.Join(root, "backups")
 	config.Set(cfg)
 
 	settings, err := json.Marshal(map[string]string{"uuid": transferTestUUID})
@@ -93,6 +94,11 @@ func newTransferHarness(t *testing.T, panel *transferTestPanel) *transferHarness
 		Settings:             settings,
 		ProcessConfiguration: &remote.ProcessConfiguration{},
 	}
+
+	// A failed transfer whose container could not be removed (there is no Docker
+	// in tests) keeps its claim on purpose; start every test without one.
+	incomingClaims.release(transferTestUUID)
+	t.Cleanup(func() { incomingClaims.release(transferTestUUID) })
 
 	mgr := wserver.NewEmptyManager(panel)
 	return &transferHarness{t: t, router: Configure(mgr, panel), mgr: mgr, panel: panel}
@@ -228,7 +234,7 @@ func TestCompletedTransferIsFinishedWhenPanelFails(t *testing.T) {
 	s := h.seedServer()
 	tr := h.startInFlightReceive(s)
 
-	completeIncomingTransfer(h.mgr, tr, true)
+	completeIncomingTransfer(h.mgr, tr, true, incomingTransferFiles{})
 
 	assert.False(t, s.IsTransferring())
 	assert.Nil(t, transfer.Incoming().Get(transferTestUUID))
@@ -244,7 +250,7 @@ func TestFailedTransferRemovesReceivedServer(t *testing.T) {
 	require.NoError(t, s.EnsureDataDirectoryExists())
 	require.NoError(t, os.WriteFile(filepath.Join(s.Filesystem().Path(), "received.txt"), []byte("data"), 0o644))
 
-	completeIncomingTransfer(h.mgr, tr, false)
+	completeIncomingTransfer(h.mgr, tr, false, incomingTransferFiles{})
 
 	_, registered := h.mgr.Get(transferTestUUID)
 	assert.False(t, registered)
@@ -282,4 +288,233 @@ func TestDeleteTransferForUnknownServer(t *testing.T) {
 	h.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+// A failed transfer on a shared storage pool never deletes the server's data
+// directory: it is the source node's live data.
+func TestFailedPooledTransferKeepsSourceData(t *testing.T) {
+	panel := &transferTestPanel{}
+	h := newTransferHarness(t, panel)
+	s := h.seedServer()
+	tr := h.startInFlightReceive(s)
+	require.NoError(t, s.EnsureDataDirectoryExists())
+	live := filepath.Join(s.Filesystem().Path(), "world.dat")
+	require.NoError(t, os.WriteFile(live, []byte("live data"), 0o644))
+
+	ok := completeIncomingTransfer(h.mgr, tr, false, incomingTransferFiles{pooled: true})
+
+	assert.True(t, ok)
+	b, err := os.ReadFile(live)
+	require.NoError(t, err, "the source's data was deleted by a failed pooled transfer")
+	assert.Equal(t, "live data", string(b))
+	_, registered := h.mgr.Get(transferTestUUID)
+	assert.False(t, registered)
+	assert.Equal(t, []bool{false}, panel.statuses)
+}
+
+// A pooled request whose environment cannot be created leaves the shared data
+// directory alone.
+func TestPooledTransferFailureOverHTTPKeepsSourceData(t *testing.T) {
+	h := newTransferHarness(t, &transferTestPanel{})
+	cfg := config.Get()
+	cfg.System.Transfers.StoragePool.Enabled = true
+	cfg.System.Transfers.StoragePool.PoolName = "shared"
+	config.Set(cfg)
+
+	dataDir := filepath.Join(cfg.System.Data, transferTestUUID)
+	require.NoError(t, os.MkdirAll(dataDir, 0o700))
+	live := filepath.Join(dataDir, "world.dat")
+	require.NoError(t, os.WriteFile(live, []byte("live data"), 0o644))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/transfers", nil)
+	req.Header.Set("Authorization", "Bearer "+signTransferTestToken(t, transferTestUUID))
+	req.Header.Set("X-Storage-Pool", "shared")
+	w := httptest.NewRecorder()
+	h.router.ServeHTTP(w, req)
+
+	// Without Docker the environment cannot be created, so the transfer fails;
+	// with Docker it succeeds. Either way the data must still be there.
+	b, err := os.ReadFile(live)
+	require.NoError(t, err, "a pooled transfer (status %d) deleted the source's data", w.Code)
+	assert.Equal(t, "live data", string(b))
+}
+
+// A non-pooled transfer is refused when the server's files already exist on this
+// node, and those files are not touched.
+func TestTransferRefusedWhenDataDirectoryExists(t *testing.T) {
+	panel := &transferTestPanel{}
+	h := newTransferHarness(t, panel)
+	dataDir := filepath.Join(config.Get().System.Data, transferTestUUID)
+	require.NoError(t, os.MkdirAll(dataDir, 0o700))
+	existing := filepath.Join(dataDir, "existing.txt")
+	require.NoError(t, os.WriteFile(existing, []byte("keep"), 0o644))
+
+	archive := buildTransferTestArchive(t, map[string]string{"received.txt": "data"})
+	body, contentType := transferTestMultipart(t, archive, strings.Repeat("0", 64))
+	w := h.postTransfer(body, contentType, signTransferTestToken(t, transferTestUUID))
+
+	require.Equal(t, http.StatusConflict, w.Code)
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "keep", string(b))
+	_, err = os.Stat(filepath.Join(dataDir, "received.txt"))
+	assert.True(t, os.IsNotExist(err))
+	assert.Empty(t, panel.statuses)
+}
+
+// A request for a server whose earlier transfer is still claimed (running, or
+// being cleaned up) is refused.
+func TestTransferRefusedWhileClaimed(t *testing.T) {
+	h := newTransferHarness(t, &transferTestPanel{})
+	require.True(t, incomingClaims.claim(transferTestUUID))
+	t.Cleanup(func() { incomingClaims.release(transferTestUUID) })
+
+	archive := buildTransferTestArchive(t, map[string]string{"received.txt": "data"})
+	body, contentType := transferTestMultipart(t, archive, strings.Repeat("0", 64))
+	w := h.postTransfer(body, contentType, signTransferTestToken(t, transferTestUUID))
+
+	require.Equal(t, http.StatusConflict, w.Code)
+	_, err := os.Stat(filepath.Join(config.Get().System.Data, transferTestUUID))
+	assert.True(t, os.IsNotExist(err))
+}
+
+// A failed transfer removes the backups it received but keeps a backup that was
+// already on this node, unchanged.
+func TestFailedTransferRemovesOnlyReceivedBackups(t *testing.T) {
+	h := newTransferHarness(t, &transferTestPanel{})
+	cfg := config.Get()
+	cfg.System.Transfers.PerformChecksumChecks = true
+	config.Set(cfg)
+
+	backupDir := filepath.Join(cfg.System.BackupDirectory, transferTestUUID)
+	require.NoError(t, os.MkdirAll(backupDir, 0o700))
+	const existingID = "0b6f3c7e-5d0a-4b8e-9f1c-2a3b4c5d6e7f"
+	const newID = "7e1d2c3b-4a59-4687-8f9e-0a1b2c3d4e5f"
+	existing := filepath.Join(backupDir, existingID+".tar.gz")
+	require.NoError(t, os.WriteFile(existing, []byte("original"), 0o600))
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for _, id := range []string{existingID, newID} {
+		part, err := mw.CreateFormFile("backup_"+id+".tar.gz", id+".tar.gz")
+		require.NoError(t, err)
+		_, err = part.Write([]byte("received"))
+		require.NoError(t, err)
+	}
+	part, err := mw.CreateFormFile("archive", "archive.tar.gz")
+	require.NoError(t, err)
+	_, err = part.Write(buildTransferTestArchive(t, map[string]string{"received.txt": "data"}))
+	require.NoError(t, err)
+	// A wrong archive checksum makes the transfer fail after the backups arrived.
+	require.NoError(t, mw.WriteField("checksum", strings.Repeat("0", 64)))
+	require.NoError(t, mw.Close())
+
+	w := h.postTransfer(&buf, mw.FormDataContentType(), signTransferTestToken(t, transferTestUUID))
+	require.NotEqual(t, http.StatusAccepted, w.Code)
+
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err, "a backup that was already on the node was removed")
+	assert.Equal(t, "original", string(b), "a backup that was already on the node was overwritten")
+	_, err = os.Stat(filepath.Join(backupDir, newID+".tar.gz"))
+	assert.True(t, os.IsNotExist(err), "a backup received by the failed transfer is still on disk")
+	entries, err := os.ReadDir(backupDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), ".transfer-"), "temporary backup file %s left behind", e.Name())
+	}
+	_, err = os.Stat(filepath.Join(cfg.System.Data, transferTestUUID))
+	assert.True(t, os.IsNotExist(err))
+}
+
+// Received backups are stored like backups created on this node: 0600 files in
+// a 0700 directory.
+func TestReceivedBackupsArePrivate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "backups")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	tmp, sum, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("data"))
+	require.NoError(t, err)
+	assert.Len(t, sum, 64)
+	final := filepath.Join(dir, "a.tar.gz")
+	created, err := commitReceivedBackups(map[string]string{final: tmp})
+	require.NoError(t, err)
+	assert.Equal(t, []string{final}, created)
+
+	st, err := os.Stat(final)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), st.Mode().Perm())
+	_, err = os.Stat(tmp)
+	assert.True(t, os.IsNotExist(err))
+
+	// Replacing a backup that already exists does not report it as created.
+	tmp2, _, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("data"))
+	require.NoError(t, err)
+	created, err = commitReceivedBackups(map[string]string{final: tmp2})
+	require.NoError(t, err)
+	assert.Empty(t, created)
+}
+
+// If moving one received backup into place fails, the backups that were already
+// on this node are restored unchanged and no received backup is left in place.
+func TestCommitReceivedBackupsRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "a.tar.gz")
+	require.NoError(t, os.WriteFile(existing, []byte("original"), 0o600))
+	fresh := filepath.Join(dir, "b.tar.gz")
+
+	tmpA, _, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("received a"))
+	require.NoError(t, err)
+	tmpB, _, err := stageReceivedBackup(dir, "b.tar.gz", strings.NewReader("received b"))
+	require.NoError(t, err)
+
+	// Fail the last move of a staged backup into place, whichever it is.
+	prev := renameFile
+	t.Cleanup(func() { renameFile = prev })
+	moved := 0
+	renameFile = func(from, to string) error {
+		if from == tmpA || from == tmpB {
+			moved++
+			if moved == 2 {
+				return errors.New("injected rename failure")
+			}
+		}
+		return os.Rename(from, to)
+	}
+
+	created, err := commitReceivedBackups(map[string]string{existing: tmpA, fresh: tmpB})
+	require.Error(t, err)
+	assert.Empty(t, created)
+
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(b))
+	_, err = os.Stat(fresh)
+	assert.True(t, os.IsNotExist(err))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), ".transfer-old-", "a moved-aside backup was left behind")
+	}
+}
+
+// A destination that cannot be replaced is detected before anything is moved.
+func TestCommitReceivedBackupsRefusesNonRegularDestination(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "a.tar.gz")
+	require.NoError(t, os.WriteFile(existing, []byte("original"), 0o600))
+	blocked := filepath.Join(dir, "b.tar.gz")
+	require.NoError(t, os.Mkdir(blocked, 0o700))
+
+	tmpA, _, err := stageReceivedBackup(dir, "a.tar.gz", strings.NewReader("received a"))
+	require.NoError(t, err)
+	tmpB, _, err := stageReceivedBackup(dir, "b.tar.gz", strings.NewReader("received b"))
+	require.NoError(t, err)
+
+	_, err = commitReceivedBackups(map[string]string{existing: tmpA, blocked: tmpB})
+	require.Error(t, err)
+	b, err := os.ReadFile(existing)
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(b))
+	_, err = os.Stat(tmpA)
+	assert.NoError(t, err, "staged files are left for the caller to remove")
 }

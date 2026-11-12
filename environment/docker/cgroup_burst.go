@@ -38,47 +38,89 @@ func cpuBurstMicroseconds(quota int64, percent int64) int64 {
 
 // resolveCgroupCpuFile parses the contents of a /proc/<pid>/cgroup file and
 // returns the absolute path of the CFS burst file for that process's cgroup.
-func resolveCgroupCpuFile(procCgroup string, v2 bool) (string, error) {
+// The cgroup path must contain the container ID so that a recycled PID, which
+// would belong to an unrelated cgroup, is never written to. This holds for both
+// the /docker/<id> and docker-<id>.scope layouts.
+func resolveCgroupCpuFile(procCgroup string, v2 bool, containerID string) (string, error) {
+	if containerID == "" {
+		return "", errors.New("environment/docker: container ID is required to resolve cgroup path")
+	}
+	outsideNamespace := false
 	for _, line := range strings.Split(procCgroup, "\n") {
 		parts := strings.SplitN(line, ":", 3)
-		if len(parts) != 3 || !strings.HasPrefix(parts[2], "/") || strings.Contains(parts[2], "..") {
+		if len(parts) != 3 || !strings.HasPrefix(parts[2], "/") {
 			continue
 		}
+		// Paths are rendered relative to the reader's cgroup namespace. A target
+		// outside of it shows up as /../.. and cannot be resolved safely.
+		if strings.Contains(parts[2], "..") {
+			outsideNamespace = true
+			continue
+		}
+
+		var file string
 		if v2 {
-			if parts[0] == "0" && parts[1] == "" {
-				return path.Join("/sys/fs/cgroup", parts[2], "cpu.max.burst"), nil
+			if parts[0] != "0" || parts[1] != "" {
+				continue
 			}
-			continue
-		}
-		for _, controller := range strings.Split(parts[1], ",") {
-			if controller == "cpu" {
-				return path.Join("/sys/fs/cgroup/cpu", parts[2], "cpu.cfs_burst_us"), nil
+			file = path.Join("/sys/fs/cgroup", parts[2], "cpu.max.burst")
+		} else {
+			for _, controller := range strings.Split(parts[1], ",") {
+				if controller == "cpu" {
+					file = path.Join("/sys/fs/cgroup/cpu", parts[2], "cpu.cfs_burst_us")
+					break
+				}
+			}
+			if file == "" {
+				continue
 			}
 		}
+
+		if !cgroupPathHasContainer(parts[2], containerID) {
+			return "", errors.Errorf("environment/docker: cgroup path %q does not belong to container %s", parts[2], containerID)
+		}
+		return file, nil
+	}
+	if outsideNamespace {
+		return "", errors.New("environment/docker: container cgroup is not visible from this cgroup namespace")
 	}
 	return "", errors.New("environment/docker: no cpu controller found in cgroup file")
 }
 
+// cgroupPathHasContainer reports whether one component of a cgroup path is the
+// container's own cgroup: "<id>" (cgroupfs driver, /docker/<id>) or
+// "<prefix>-<id>.scope" (systemd driver, docker-<id>.scope or libpod-<id>.scope).
+// A substring match is not enough, since another unit could have the ID inside
+// its name (e.g. docker-<id>-monitor.scope).
+func cgroupPathHasContainer(cgroupPath, containerID string) bool {
+	for _, c := range strings.Split(cgroupPath, "/") {
+		if c == containerID || (strings.HasSuffix(c, "-"+containerID+".scope") && len(c) > len(containerID)+len("-.scope")) {
+			return true
+		}
+	}
+	return false
+}
+
 // writeCpuBurst writes a burst value in microseconds into the cpu cgroup of the
-// given process. This is expected to fail on kernels older than 5.14 or when the
-// cgroup hierarchy is not writable by Wings, so failures are only logged.
-func writeCpuBurst(l *log.Entry, pid int, burst int64) {
+// given container process. This is expected to fail on kernels older than 5.14 or
+// when the cgroup hierarchy is not writable by Wings, so failures are only logged.
+func writeCpuBurst(l *log.Entry, containerID string, pid int, burst int64) {
 	if pid <= 0 {
 		return
 	}
-	if err := writeBurstFile(pid, burst); err != nil {
+	if err := writeBurstFile(containerID, pid, burst); err != nil {
 		logBurstFailure(l.WithField("error", err), burst)
 		return
 	}
 	l.WithField("burst_us", burst).Debug("updated container cpu burst")
 }
 
-func writeBurstFile(pid int, burst int64) error {
+func writeBurstFile(containerID string, pid int, burst int64) error {
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cgroup")
 	if err != nil {
 		return err
 	}
-	f, err := resolveCgroupCpuFile(string(b), cgroupV2())
+	f, err := resolveCgroupCpuFile(string(b), cgroupV2(), containerID)
 	if err != nil {
 		return err
 	}
@@ -101,24 +143,29 @@ func logBurstFailure(l *log.Entry, burst int64) {
 }
 
 // SetCpuBurst applies the configured CFS burst to a running container based on
-// the CFS quota in microseconds it was created with. This is a no-op when
-// bursting is disabled or the container has no CPU limit.
+// the CFS quota in microseconds it was created with. When bursting is disabled
+// or the container has no CPU limit, the burst is cleared instead, so a value
+// left over from an earlier configuration does not outlive the setting.
 func SetCpuBurst(ctx context.Context, cli *client.Client, containerID string, quota int64) {
 	cfg := config.Get().Docker.CpuBurst
-	if !cfg.Enabled || quota <= 0 {
-		return
+
+	var burst int64
+	if cfg.Enabled {
+		// Returns 0 when quota <= 0 or percent <= 0.
+		burst = cpuBurstMicroseconds(quota, cfg.Percent)
 	}
+
 	c, err := cli.ContainerInspect(ctx, containerID)
 	if err != nil || c.State == nil {
 		return
 	}
-	writeCpuBurst(log.WithField("container_id", containerID), c.State.Pid, cpuBurstMicroseconds(quota, cfg.Percent))
+	writeCpuBurst(log.WithField("container_id", containerID), c.ID, c.State.Pid, burst)
 }
 
 // applyCpuBurst applies the configured CFS burst to the environment's container
-// using its current CPU limit.
+// using the same CPU quota that is applied to the container itself.
 func (e *Environment) applyCpuBurst(ctx context.Context) {
-	quota := e.Configuration.Limits().CpuLimit * config.Get().Docker.CpuPeriodMicroseconds() / 100
+	quota := e.Configuration.Limits().AsContainerResources().CPUQuota
 	SetCpuBurst(ctx, e.client, e.Id, quota)
 }
 
@@ -126,6 +173,6 @@ func (e *Environment) applyCpuBurst(ctx context.Context) {
 // happen before a quota change is applied since the kernel rejects a quota lower
 // than the current burst. It runs even when bursting is disabled so a value set
 // before the feature was turned off cannot block future quota changes.
-func (e *Environment) clearCpuBurst(pid int) {
-	writeCpuBurst(e.log(), pid, 0)
+func (e *Environment) clearCpuBurst(containerID string, pid int) {
+	writeCpuBurst(e.log(), containerID, pid, 0)
 }
