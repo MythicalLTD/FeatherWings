@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/apex/log"
@@ -400,6 +401,12 @@ func queueRestartCommand(command string) bool {
 	return true
 }
 
+// updateConfigMu serializes the whole configuration update, from reading the
+// current config through writing it to disk, setting it globally and rotating
+// the Panel client credentials. Without it, overlapping requests can leave the
+// global config on one token while the shared client uses another.
+var updateConfigMu sync.Mutex
+
 // postUpdateConfiguration updates the running configuration for this Wings instance.
 // @Summary Update runtime configuration
 // @Tags System
@@ -412,6 +419,8 @@ func queueRestartCommand(command string) bool {
 // @Security NodeToken
 // @Router /api/update [post]
 func postUpdateConfiguration(c *gin.Context) {
+	updateConfigMu.Lock()
+	defer updateConfigMu.Unlock()
 	cfg := config.Get()
 
 	if cfg.IgnorePanelConfigUpdates {
