@@ -14,6 +14,7 @@ import (
 	"github.com/apex/log"
 	"github.com/mythicalltd/featherwings/config"
 	"github.com/mythicalltd/featherwings/internal/progress"
+	"github.com/mythicalltd/featherwings/server/backup"
 	"github.com/mythicalltd/featherwings/server/filesystem"
 )
 
@@ -38,6 +39,16 @@ func (a *Archive) StreamBackups(ctx context.Context, mp *multipart.Writer) error
 	if len(a.transfer.BackupUUIDs) == 0 {
 		a.transfer.Log().Debug("no backups specified for transfer")
 		return nil
+	}
+
+	// Move any of the requested backups still stored in the legacy flat layout into
+	// the server's backup directory so they are included in the transfer. If one
+	// cannot be moved the transfer fails, rather than completing without a backup
+	// the Panel expects to be on the new node.
+	for _, id := range a.transfer.BackupUUIDs {
+		if err := backup.NewLocal(nil, id, a.transfer.Server.ID(), "").MigrateLegacy(); err != nil {
+			return fmt.Errorf("transfer: failed to move backup %s from legacy location: %w", id, err)
+		}
 	}
 
 	cfg := config.Get()

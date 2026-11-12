@@ -135,10 +135,47 @@ type DockerConfiguration struct {
 	// automatically set to true if KVM is available on the host system, otherwise false.
 	EnableNativeKVM bool `json:"enable_native_kvm" yaml:"enable_native_kvm"`
 
-	LogConfig struct {
-		Type   string            `default:"local" json:"type" yaml:"type"`
-		Config map[string]string `default:"{\"max-size\":\"5m\",\"max-file\":\"1\",\"compress\":\"false\",\"mode\":\"non-blocking\"}" json:"config" yaml:"config"`
-	} `json:"log_config" yaml:"log_config"`
+	LogConfig DockerLogConfiguration `json:"log_config" yaml:"log_config"`
+}
+
+// DockerLogConfiguration is the Docker logging driver, and its options, used for
+// server and installation containers.
+type DockerLogConfiguration struct {
+	Type   string            `default:"local" json:"type" yaml:"type"`
+	Config map[string]string `default:"{\"max-size\":\"5m\",\"max-file\":\"1\",\"compress\":\"false\",\"mode\":\"non-blocking\"}" json:"config" yaml:"config"`
+}
+
+// UnmarshalYAML decodes the logging configuration without leaking the default
+// options of the "local" driver into the options of a different driver. Those
+// defaults are populated before the configuration file is decoded, and decoding
+// into the existing map would merge them with the user's options, which other
+// drivers (fluentd, loki, syslog, ...) reject as unknown log options.
+//
+// Options for the "local" driver are still merged with the defaults so existing
+// configurations that only override some of them keep working.
+func (l *DockerLogConfiguration) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	raw := struct {
+		Type   string            `yaml:"type"`
+		Config map[string]string `yaml:"config"`
+	}{Type: l.Type}
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	if raw.Type == "local" {
+		merged := make(map[string]string, len(l.Config)+len(raw.Config))
+		for k, v := range l.Config {
+			merged[k] = v
+		}
+		for k, v := range raw.Config {
+			merged[k] = v
+		}
+		l.Config = merged
+	} else {
+		l.Config = raw.Config
+	}
+	l.Type = raw.Type
+	return nil
 }
 
 // RuntimeReconciliationConfiguration controls detection and recovery of Docker

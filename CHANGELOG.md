@@ -9,6 +9,14 @@
 - SFTP rename and symlink check the target path against the egg's file denylist, not only the source. Ported from pelican/wings#210. by @nayskutzu
 - The CPU burst cgroup path must belong to the container, so a reused PID cannot get the burst written into an unrelated cgroup. A disabled burst is cleared on reattach, and the CPU quota is at least 1ms. Ported from pelican/wings#210. by @nayskutzu
 
+### Fixed
+
+- A kill sent while a server is still booting waits up to 30 seconds for the boot to finish instead of being lost or leaving a running server shown as offline. Ported from pelican/wings#233. by @nayskutzu
+- Docker log drivers other than `local` (fluentd, loki, syslog, ...) no longer get the `local` driver's default options merged in, which made Docker refuse to create the container with "unknown log opt". Ported from pelican/wings#229. by @nayskutzu
+- Invalid, badly signed or expired tokens on downloads, uploads and transfers return 401 instead of 500 and are no longer logged as server errors. Ported from pelican/wings#247. by @nayskutzu
+- Local backups stored in the flat layout used by Pterodactyl Wings (`<backup_dir>/<backup>.tar.gz`) are moved into the server's backup folder when they are downloaded, restored, deleted or transferred, so they no longer 404 in the panel and stay on disk. Wings warns on startup if any are left. Ported from pelican/wings#232. by @nayskutzu
+- Configuration updates from the panel are applied one at a time, so overlapping updates cannot leave Wings and its panel client on different tokens. Ported from pelican/wings#210. by @nayskutzu
+
 ## v1.5.0
 
 ### Added

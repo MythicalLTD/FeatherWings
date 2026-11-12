@@ -1,9 +1,11 @@
 package router
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -51,5 +53,61 @@ func TestPostUpdateConfigurationRotatesCredentials(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected client credentials to be rotated")
+	}
+}
+
+// Overlapping configuration updates are applied one at a time, so the global
+// configuration and the Panel client always end up on the same token.
+func TestPostUpdateConfigurationIsSerialized(t *testing.T) {
+	t.Setenv("WINGS_TOKEN_ID", "")
+	t.Setenv("WINGS_TOKEN", "")
+
+	cfg, err := config.NewAtPath(filepath.Join(t.TempDir(), "config.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.AuthenticationTokenId = "old-id"
+	cfg.AuthenticationToken = "old-token"
+	if err := cfg.ResolveToken(false); err != nil {
+		t.Fatal(err)
+	}
+	config.Set(cfg)
+
+	const updates = 25
+	credentials := make(chan [2]string, updates)
+	manager := server.NewEmptyManager(backupTestRemoteClient{credentials: credentials})
+
+	var wg sync.WaitGroup
+	for i := 0; i < updates; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Set("manager", manager)
+			body := fmt.Sprintf(`{"token_id":"id-%d","token":"token-%d"}`, i, i)
+			c.Request = httptest.NewRequest("POST", "/api/update", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			postUpdateConfiguration(c)
+			if recorder.Code != 200 {
+				t.Errorf("update %d: expected status 200, got %d", i, recorder.Code)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(credentials)
+
+	var last [2]string
+	n := 0
+	for got := range credentials {
+		last = got
+		n++
+	}
+	if n != updates {
+		t.Fatalf("expected %d credential rotations, got %d", updates, n)
+	}
+	final := config.Get()
+	if last != [2]string{final.Token.ID, final.Token.Token} {
+		t.Fatalf("config is on %s/%s but the client was last given %s/%s", final.Token.ID, final.Token.Token, last[0], last[1])
 	}
 }
