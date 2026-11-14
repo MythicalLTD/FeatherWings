@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -216,6 +217,54 @@ func safeProxySlug(s string) string {
 	return out
 }
 
+// proxyUpstreamHeaders are the headers every proxied location sends to the server behind it.
+//
+//   - proxy_http_version 1.1 plus Upgrade/Connection let WebSocket handshakes through (nginx speaks HTTP/1.0 to
+//     upstreams by default and drops both headers, which breaks live chats, consoles and similar features).
+//     The client's own Connection header is passed on instead of a fixed "upgrade", so no `map` block is needed in
+//     the http context and the config also loads on nodes whose nginx.conf was never touched.
+//   - X-Forwarded-Proto tells the application whether the visitor used http or https.
+const proxyUpstreamHeaders = `proxy_http_version 1.1;
+%[1]sproxy_set_header Upgrade $http_upgrade;
+%[1]sproxy_set_header Connection $http_connection;
+%[1]sproxy_set_header X-Forwarded-Proto $scheme;`
+
+// buildHTTPProxyConfig renders the plain-HTTP nginx server block (used before a certificate exists and for
+// proxies without SSL). upstream is host:port, already bracketed for IPv6.
+func buildHTTPProxyConfig(domain, upstream string) string {
+	return "server {\n\t\tlisten 80;\n\t\tserver_name " + domain + ";\n\n" +
+		"\t\tlocation / {\n" +
+		"\t\t\tproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n" +
+		"\t\t\tproxy_set_header Host $http_host;\n" +
+		"\t\t\t" + fmt.Sprintf(proxyUpstreamHeaders, "\t\t\t") + "\n" +
+		"\t\t\tproxy_pass http://" + upstream + ";\n" +
+		"\t\t}\n\n" +
+		"\t\tlocation /.well-known/acme-challenge/ {\n" +
+		"\t\t\tproxy_set_header Host $host;\n" +
+		"\t\t\tproxy_pass http://127.0.0.1:81$request_uri;\n" +
+		"\t\t}\n\t}"
+}
+
+// buildTLSProxyConfig renders the HTTP->HTTPS redirect plus the HTTPS server block.
+func buildTLSProxyConfig(domain, certPath, keyPath, upstream string) string {
+	return "server {\n\tlisten 80;\n\tserver_name " + domain + ";\n\treturn 301 https://$server_name$request_uri;\n}\n\n" +
+		"server {\n\tlisten 443 ssl http2;\n\tserver_name " + domain + ";\n\n" +
+		"\tssl_certificate " + certPath + ";\n\tssl_certificate_key " + keyPath + ";\n" +
+		"\tssl_session_cache shared:SSL:10m;\n\tssl_protocols TLSv1.2 TLSv1.3;\n" +
+		"\tssl_ciphers \"ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384\";\n" +
+		"\tssl_prefer_server_ciphers on;\n\n" +
+		"\tlocation / {\n" +
+		"\t\tproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n" +
+		"\t\tproxy_set_header Host $http_host;\n" +
+		"\t\t" + fmt.Sprintf(proxyUpstreamHeaders, "\t\t") + "\n" +
+		"\t\tproxy_pass http://" + upstream + ";\n" +
+		"\t}\n\n" +
+		"\tlocation /.well-known/acme-challenge/ {\n" +
+		"\t\tproxy_set_header Host $host;\n" +
+		"\t\tproxy_pass http://127.0.0.1:81$request_uri;\n" +
+		"\t}\n}"
+}
+
 // proxyTargetHost brackets IPv6 literals so they form a valid nginx proxy_pass
 // authority ("[::1]:port"). IPv4 addresses are returned unchanged.
 func proxyTargetHost(ip string) string {
@@ -298,21 +347,7 @@ func postServerProxyCreate(c *gin.Context) {
 
 	configName := safeProxySlug(data.Domain) + "_" + data.Port + ".conf"
 
-	nginxconfig := []byte(`server {
-		listen 80;
-		server_name ` + data.Domain + `;
-
-		location / {
-			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-			proxy_set_header Host $http_host;
-			proxy_pass http://` + proxyTargetHost(data.IP) + `:` + data.Port + `;
-		}
-
-		location /.well-known/acme-challenge/ {
-			proxy_set_header Host $host;
-			proxy_pass http://127.0.0.1:81$request_uri;
-		}
-	}`)
+	nginxconfig := []byte(buildHTTPProxyConfig(data.Domain, proxyTargetHost(data.IP)+":"+data.Port))
 
 	err := os.WriteFile("/etc/nginx/sites-available/"+configName, nginxconfig, 0644)
 	if err != nil {
@@ -437,34 +472,7 @@ func postServerProxyCreate(c *gin.Context) {
 			return
 		}
 
-		nginxconfig = []byte(`server {
-	listen 80;
-	server_name ` + data.Domain + `;
-	return 301 https://$server_name$request_uri;
-}
-
-server {
-	listen 443 ssl http2;
-	server_name ` + data.Domain + `;
-
-	ssl_certificate ` + certPath + `;
-	ssl_certificate_key ` + keyPath + `;
-	ssl_session_cache shared:SSL:10m;
-	ssl_protocols TLSv1.2 TLSv1.3;
-	ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
-	ssl_prefer_server_ciphers on;
-
-	location / {
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header Host $http_host;
-		proxy_pass http://` + proxyTargetHost(data.IP) + `:` + data.Port + `;
-	}
-
-	location /.well-known/acme-challenge/ {
-		proxy_set_header Host $host;
-		proxy_pass http://127.0.0.1:81$request_uri;
-	}
-}`)
+		nginxconfig = []byte(buildTLSProxyConfig(data.Domain, certPath, keyPath, proxyTargetHost(data.IP)+":"+data.Port))
 
 		err := os.WriteFile("/etc/nginx/sites-available/"+configName, nginxconfig, 0644)
 		if err != nil {
