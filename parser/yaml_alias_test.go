@@ -187,6 +187,20 @@ func TestUpdateYaml_AddedMappingKeepsWholeFloat(t *testing.T) {
 	}
 }
 
+// Changing a key of an alias copy must not turn the copy's unchanged whole
+// float into an integer when the copy is rebuilt from the new values.
+func TestUpdateYaml_AliasCopyKeepsWholeFloat(t *testing.T) {
+	src := "base: &b\n  ratio: 2.0\n  name: a\ncopy: *b\n"
+	out, _ := updateYamlString(t, `[{"match": "copy.name", "replace_with": "b"}]`, src)
+	got := decodeYamlString(t, out)
+	if !reflect.DeepEqual(got["base"], map[string]interface{}{"ratio": 2.0, "name": "a"}) {
+		t.Errorf("unexpected base %#v\n%s", got["base"], out)
+	}
+	if !reflect.DeepEqual(got["copy"], map[string]interface{}{"ratio": 2.0, "name": "b"}) {
+		t.Errorf("alias copy changed type: copy = %#v\n%s", got["copy"], out)
+	}
+}
+
 // aliasFanOutYaml returns a document whose last key, through aliases of
 // aliases, expands to 10^3 copies of a list of leaf items. The padding comes
 // first so the YAML decoder's alias ratio limit accepts it.

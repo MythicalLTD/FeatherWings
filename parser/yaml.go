@@ -214,7 +214,19 @@ func yamlValueEqual(got, want, orig interface{}, hasOrig bool) bool {
 			i, ok := new(big.Int).SetString(s, 10)
 			return ok && !math.IsInf(g, 0) && !math.IsNaN(g) && new(big.Float).SetFloat64(g).Cmp(new(big.Float).SetInt(i)) == 0
 		case int, int64, uint64:
-			return !strings.ContainsAny(s, ".eE") && fmt.Sprint(g) == s
+			if strings.ContainsAny(s, ".eE") || fmt.Sprint(g) != s {
+				return false
+			}
+			// A float of the original document that was not replaced reaches want
+			// as an integer through JSON, and must stay a float. Otherwise
+			// rebuilding an alias copy from want would turn its 2.0 into 2.
+			if of, ok := orig.(float64); hasOrig && ok {
+				i, ok := new(big.Int).SetString(s, 10)
+				if ok && !math.IsInf(of, 0) && !math.IsNaN(of) && new(big.Float).SetFloat64(of).Cmp(new(big.Float).SetInt(i)) == 0 {
+					return false
+				}
+			}
+			return true
 		default:
 			return false
 		}
