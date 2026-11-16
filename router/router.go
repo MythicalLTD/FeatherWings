@@ -106,7 +106,9 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 
 	// These routes use signed URLs to validate access to the resource being requested.
 	router.GET("/download/backup", getDownloadBackup)
+	router.HEAD("/download/backup", getDownloadBackup)
 	router.GET("/download/file", getDownloadFile)
+	router.HEAD("/download/file", getDownloadFile)
 	router.POST("/upload/file", postServerUploadFiles)
 	router.GET("/upload/chunk", getServerChunkedUpload)
 	router.POST("/upload/chunk", postServerChunkedUpload)

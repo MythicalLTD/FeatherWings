@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Ported download and YAML config fixes from pelican/wings by @nayskutzu:
+  - Backup and file download links can be used again until they expire instead of only once, so browsers (Chromium download protection), antivirus software, download managers and reconnects no longer get a 404 near the end of large downloads. Downloads support `Range`, `If-Range` and `HEAD`, so they can be resumed. Upload links stay single-use. Ported from pelican/wings#231.
+  - Egg YAML config files keep their comments, blank lines, key order, indentation and quoting when values are replaced, and are not rewritten at all when nothing changed. Merge keys are written as plain `<<` (no `!!merge` tag), which js-yaml can read. Ported from pelican/wings#234 and the YAML part of pelican/wings#247.
+
 ## v1.5.1
 
 ### Security
