@@ -442,6 +442,8 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		}).Warn("found local backups stored in the legacy location, they will be moved into their server's backup directory when next downloaded, restored, deleted or transferred")
 	}
 
+	startMetricsListener()
+
 	autotls, _ := cmd.Flags().GetBool("auto-tls")
 	tlshostname, _ := cmd.Flags().GetString("tls-hostname")
 	if autotls && tlshostname == "" {
@@ -723,4 +725,40 @@ for this issue, it will be closed.[reset]
 
 `))
 	os.Exit(1)
+}
+
+// startMetricsListener serves /metrics and the health probes on their own
+// address when a metrics port is configured. A listener on a public address is
+// refused unless it is protected by a token or an IP allowlist.
+func startMetricsListener() {
+	mc := config.Get().Metrics
+	if !mc.Enabled {
+		return
+	}
+	if mc.Port == 0 {
+		if strings.TrimSpace(mc.Token) == "" && len(mc.AllowedIPs) == 0 {
+			log.Warn("metrics: enabled on the main API listener without a token or allowed_ips, /metrics will answer 404 until one is set")
+		} else {
+			log.Info("metrics: serving /metrics on the main API listener")
+		}
+		return
+	}
+	if !router.MetricsListenerProtected(mc) {
+		log.WithField("host", mc.Host).Error("metrics: refusing to listen on a non-loopback address without a token or allowed_ips")
+		return
+	}
+	addr := net.JoinHostPort(mc.Host, strconv.Itoa(mc.Port))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           router.MetricsHandler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+	}
+	log.WithField("listen", addr).Info("metrics: serving /metrics and /health on a dedicated listener")
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.WithError(err).Error("metrics: listener stopped")
+		}
+	}()
 }

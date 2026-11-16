@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"github.com/mythicalltd/featherwings/internal/metrics"
 	"net/http"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ func postServerTransfer(c *gin.Context) {
 	manager := middleware.ExtractManager(c)
 
 	notifyPanelOfFailure := func() {
+		metrics.TransfersTotal.WithLabelValues("outgoing", "failure").Inc()
 		if err := manager.Client().SetTransferStatus(context.Background(), s.ID(), false); err != nil {
 			s.Log().WithField("subsystem", "transfer").
 				WithField("status", false).
@@ -121,6 +123,7 @@ func postServerTransfer(c *gin.Context) {
 		// the server state on the destination node, we just need to make sure
 		// we clean up our statuses for failure.
 
+		metrics.TransfersTotal.WithLabelValues("outgoing", "success").Inc()
 		trnsfr.Log().Debug("transfer complete")
 	}()
 

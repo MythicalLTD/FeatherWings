@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/tar"
+	"github.com/mythicalltd/featherwings/internal/metrics"
 	"io"
 	"io/fs"
 	"os"
@@ -86,7 +87,18 @@ func (s *Server) getServerwideIgnoredFiles() (string, error) {
 // Backup performs a server backup and then emits the event over the server
 // websocket. We let the actual backup system handle notifying the panel of the
 // status, but that won't emit a websocket event.
-func (s *Server) Backup(b backup.BackupInterface) error {
+func (s *Server) Backup(b backup.BackupInterface) (err error) {
+	metrics.BackupsInProgress.Inc()
+	defer metrics.BackupsInProgress.Dec()
+	failed := true
+	defer func() {
+		if failed {
+			metrics.BackupsTotal.WithLabelValues("failure").Inc()
+		} else {
+			metrics.BackupsTotal.WithLabelValues("success").Inc()
+		}
+	}()
+
 	ignored := b.Ignored()
 	if b.Ignored() == "" {
 		if i, err := s.getServerwideIgnoredFiles(); err != nil {
@@ -139,6 +151,7 @@ func (s *Server) Backup(b backup.BackupInterface) error {
 		"file_size":     ad.Size,
 	})
 
+	failed = false
 	return nil
 }
 

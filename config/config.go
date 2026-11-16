@@ -660,6 +660,48 @@ type Configuration struct {
 
 	// IgnorePanelConfigUpdates causes confiuration updates that are sent by the panel to be ignored.
 	IgnorePanelConfigUpdates bool `json:"ignore_panel_config_updates" yaml:"ignore_panel_config_updates"`
+
+	// Metrics controls the Prometheus metrics endpoint.
+	Metrics MetricsConfiguration `json:"-" yaml:"metrics"`
+
+	// Health controls the thresholds used by the readiness check.
+	Health HealthConfiguration `json:"-" yaml:"health"`
+}
+
+// MetricsConfiguration controls the Prometheus /metrics endpoint. It is off by
+// default. The endpoint is never served on a public address without a bearer
+// token or an IP allowlist.
+type MetricsConfiguration struct {
+	// Enabled turns on the /metrics endpoint.
+	Enabled bool `default:"false" json:"enabled" yaml:"enabled"`
+
+	// Host and Port give a separate listener for /metrics and the health
+	// endpoints. When Port is 0, /metrics is served on the main API listener
+	// instead and requires a token or an allowlist.
+	Host string `default:"127.0.0.1" json:"host" yaml:"host"`
+	Port int    `default:"0" json:"port" yaml:"port"`
+
+	// Token, when set, must be sent as "Authorization: Bearer <token>".
+	Token string `json:"-" yaml:"token"`
+
+	// AllowedIPs, when set, limits access to these IP addresses or CIDR ranges.
+	// When both Token and AllowedIPs are set, a request must pass both.
+	AllowedIPs []string `json:"allowed_ips" yaml:"allowed_ips"`
+
+	// PerServer exports CPU, memory, disk, network, state and uptime for every
+	// server, labelled by server UUID.
+	PerServer bool `default:"true" json:"per_server" yaml:"per_server"`
+}
+
+// HealthConfiguration controls the thresholds of the /health/ready check.
+type HealthConfiguration struct {
+	// MinFreeDiskMb is the free space, in MiB, the server data directory must
+	// have for the node to be ready.
+	MinFreeDiskMb int64 `default:"1024" json:"min_free_disk_mb" yaml:"min_free_disk_mb"`
+
+	// PanelContactMaxAge is how long, in seconds, a successful Panel request
+	// counts as proof the Panel is reachable before it is probed again.
+	PanelContactMaxAge int `default:"300" json:"panel_contact_max_age" yaml:"panel_contact_max_age"`
 }
 
 // PanelConfiguration contains the only configuration values the Panel is allowed

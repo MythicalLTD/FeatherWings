@@ -1,0 +1,44 @@
+# Example alerting rules for FeatherWings.
+groups:
+  - name: featherwings
+    rules:
+      - alert: FeatherWingsDown
+        expr: up{job=~"featherwings.*"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Wings on {{ $labels.instance }} is not answering scrapes"
+      - alert: FeatherWingsDockerUnreachable
+        expr: featherwings_docker_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Docker is not reachable from Wings on {{ $labels.instance }}"
+      - alert: FeatherWingsSFTPDown
+        expr: featherwings_sftp_listening == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "SFTP is not accepting connections on {{ $labels.instance }}"
+      - alert: FeatherWingsPanelUnreachable
+        expr: time() - featherwings_panel_last_contact_timestamp_seconds > 900 and featherwings_panel_last_contact_timestamp_seconds > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Wings on {{ $labels.instance }} has not reached the Panel for 15 minutes"
+      - alert: FeatherWingsBackupFailures
+        expr: increase(featherwings_backups_total{result="failure"}[1h]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Backups failed on {{ $labels.instance }} in the last hour"
+      - alert: FeatherWingsTransferFailures
+        expr: increase(featherwings_transfers_total{result="failure"}[1h]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Server transfers failed on {{ $labels.instance }} in the last hour"
+      - alert: FeatherWingsServerHighMemory
+        expr: featherwings_server_memory_bytes / featherwings_server_memory_limit_bytes > 0.95 and featherwings_server_memory_limit_bytes > 0
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "Server {{ $labels.server }} on {{ $labels.instance }} is using over 95% of its memory limit"

@@ -56,6 +56,13 @@ func (m *Manager) Remove(transfer *Transfer) {
 	}
 }
 
+// Len returns the number of transfers in the manager.
+func (m *Manager) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.transfers)
+}
+
 // Get gets a transfer from the manager using a server ID.
 func (m *Manager) Get(id string) *Transfer {
 	m.mu.RLock()

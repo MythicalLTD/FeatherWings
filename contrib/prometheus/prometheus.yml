@@ -1,0 +1,49 @@
+# Example Prometheus scrape configuration for FeatherWings.
+# See docs/observability.md for how to enable the endpoint in config.yml.
+scrape_configs:
+  # Option A: dedicated metrics listener (metrics.port set, e.g. 9101).
+  # Bound to 127.0.0.1 it needs no token; bound to another address it needs
+  # metrics.token and/or metrics.allowed_ips.
+  - job_name: featherwings
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      # Same value as metrics.token in the Wings config.yml.
+      credentials_file: /etc/prometheus/featherwings-metrics.token
+    static_configs:
+      - targets:
+          - node1.example.com:9101
+          - node2.example.com:9101
+
+  # Option B: /metrics on the main Wings API (metrics.port: 0). A token or
+  # allowed_ips is required there, otherwise Wings answers 404.
+  - job_name: featherwings-api
+    scrape_interval: 30s
+    metrics_path: /metrics
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/featherwings-metrics.token
+    static_configs:
+      - targets:
+          - node3.example.com:8080
+
+  # Readiness through the blackbox exporter (optional). /health/ready answers
+  # 200 when ready and 503 when a critical check fails.
+  - job_name: featherwings-ready
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://node3.example.com:8080/health/ready
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

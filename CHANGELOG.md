@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Health checks and Prometheus metrics. `/health/live` and `/health/ready` return JSON with a result for each check (Docker, data directory writable, free disk space, SFTP listener, Panel reachability), answering 200 or 503; check messages are only shown to authenticated callers. An optional `/metrics` endpoint (off by default, `metrics:` in config.yml) exports Go and process metrics, API request counts and latency, per-server state, CPU, memory, disk, network and uptime by server UUID, servers by state, backups and transfers in progress and failed, SFTP sessions, websocket connections, Docker reachability and Panel contact. It can use its own listener, and is never served on a public address without a bearer token or an IP allowlist. Example Prometheus scrape config, alert rules and a Grafana dashboard are in `contrib/`, see `docs/observability.md`. by @nayskutzu
+
 ### Fixed
 
 - Ported download and YAML config fixes from pelican/wings by @nayskutzu:
