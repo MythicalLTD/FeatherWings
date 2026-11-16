@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mythicalltd/featherwings/internal/metrics"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -561,6 +562,12 @@ out:
 func completeIncomingTransfer(manager *server.Manager, trnsfr *transfer.Transfer, successful bool, written incomingTransferFiles) bool {
 	// Remove the transfer from the list of incoming transfers.
 	transfer.Incoming().Remove(trnsfr)
+
+	if successful {
+		metrics.TransfersTotal.WithLabelValues("incoming", "success").Inc()
+	} else {
+		metrics.TransfersTotal.WithLabelValues("incoming", "failure").Inc()
+	}
 
 	cleanedUp := true
 	if !successful {

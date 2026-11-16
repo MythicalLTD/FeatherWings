@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/mythicalltd/featherwings/internal/metrics"
 	"io"
 	"net/http"
 	"strconv"
@@ -157,8 +158,12 @@ func (c *client) requestOnce(ctx context.Context, method, path string, body io.R
 
 	res, err := c.httpClient.Do(req)
 	if err != nil {
+		if ctx.Err() == nil {
+			metrics.RecordPanelResponse(0, err)
+		}
 		return nil, err
 	}
+	metrics.RecordPanelResponse(res.StatusCode, nil)
 
 	bodyBytes, err := io.ReadAll(res.Body)
 	if err != nil {

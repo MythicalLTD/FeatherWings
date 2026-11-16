@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"github.com/mythicalltd/featherwings/internal/metrics"
 	"io"
 	"net"
 	"net/netip"
@@ -236,6 +237,9 @@ func (c *SFTPServer) Run() error {
 		listener = network.LimitListener(listener, c.MaxConnections, "sftp")
 	}
 
+	metrics.SetSFTPListening(true)
+	defer metrics.SetSFTPListening(false)
+
 	public := string(ssh.MarshalAuthorizedKey(private.PublicKey()))
 	log.WithField("listen", c.Listen).WithField("public_key", strings.Trim(public, "\n")).Info("sftp server listening for connections")
 
@@ -289,6 +293,8 @@ func (c *SFTPServer) serve(listener net.Listener, conf *ssh.ServerConfig) error 
 				return
 			}
 			defer c.sessions.release(user)
+			metrics.SFTPSessions.Inc()
+			defer metrics.SFTPSessions.Dec()
 			if err := c.handle(sconn, chans, reqs); err != nil {
 				log.WithField("error", err).WithField("ip", conn.RemoteAddr().String()).Error("sftp: failed to accept inbound connection")
 			}

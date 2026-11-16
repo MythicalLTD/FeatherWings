@@ -68,6 +68,8 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	if err := router.SetTrustedProxies(config.Get().Api.TrustedProxies); err != nil {
 		panic(errors.WithStack(err))
 	}
+	observeManager(m)
+	router.Use(requestMetrics())
 	router.Use(middleware.AttachRequestID(), middleware.CaptureErrors(), middleware.SetAccessControlHeaders())
 	router.Use(middleware.AttachServerManager(m), middleware.AttachApiClient(client))
 
@@ -103,6 +105,12 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	if config.Get().Api.Docs.Enabled {
 		registerDocumentationRoutes(router)
 	}
+
+	// Health probes are public; /health/ready only shows check messages to
+	// authenticated callers. /metrics is protected, see getMetrics.
+	router.GET("/health/live", getHealthLive)
+	router.GET("/health/ready", getHealthReady)
+	router.GET("/metrics", getMetrics)
 
 	// These routes use signed URLs to validate access to the resource being requested.
 	router.GET("/download/backup", getDownloadBackup)

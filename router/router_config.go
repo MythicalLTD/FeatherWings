@@ -800,6 +800,28 @@ func generateConfigSchema() []ConfigSchemaField {
 			},
 		},
 		{
+			Key:         "metrics",
+			Type:        "object",
+			Description: "Prometheus /metrics endpoint",
+			Fields: []ConfigSchemaField{
+				{Key: "enabled", Type: "boolean", Description: "Serve Prometheus metrics", Default: false},
+				{Key: "host", Type: "string", Description: "Bind address of the dedicated metrics listener", Default: "127.0.0.1"},
+				{Key: "port", Type: "integer", Description: "Port of the dedicated metrics listener, 0 serves /metrics on the main API (token or allowed_ips required)", Default: 0},
+				{Key: "token", Type: "string", Description: "Bearer token required to read /metrics"},
+				{Key: "allowed_ips", Type: "array", Description: "IP addresses or CIDR ranges allowed to read /metrics"},
+				{Key: "per_server", Type: "boolean", Description: "Export metrics for every server, labelled by server UUID", Default: true},
+			},
+		},
+		{
+			Key:         "health",
+			Type:        "object",
+			Description: "Readiness check thresholds",
+			Fields: []ConfigSchemaField{
+				{Key: "min_free_disk_mb", Type: "integer", Description: "Free space in MiB the data directory needs for the node to be ready", Default: 1024},
+				{Key: "panel_contact_max_age", Type: "integer", Description: "Seconds a successful Panel request counts as proof the Panel is reachable", Default: 300},
+			},
+		},
+		{
 			Key:         "allowed_mounts",
 			Type:        "array",
 			Description: "List of allowed mount points",
