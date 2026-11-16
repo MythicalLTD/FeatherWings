@@ -71,7 +71,7 @@ func (f *ConfigurationFile) updateYaml(src []byte) ([]byte, bool, error) {
 		return out, true, err
 	}
 
-	if out, ok := patchYamlScalars(src, doc.Content[0], origValue, next); ok {
+	if out, ok := patchYamlScalars(src, doc.Content[0], origValue, next, orig); ok {
 		return out, true, nil
 	}
 
@@ -80,7 +80,7 @@ func (f *ConfigurationFile) updateYaml(src []byte) ([]byte, bool, error) {
 	// anchor, so if the result is not exactly what was intended the aliases are
 	// expanded into copies and the merge is retried.
 	for _, expand := range []bool{false, true} {
-		if out, ok := mergeYamlDocument(src, expand, origValue, next); ok {
+		if out, ok := mergeYamlDocument(src, expand, origValue, next, orig); ok {
 			return out, true, nil
 		}
 	}
@@ -97,8 +97,9 @@ func (f *ConfigurationFile) updateYaml(src []byte) ([]byte, bool, error) {
 // mergeYamlDocument applies the changes to the parsed node tree of src and
 // re-encodes it. If expandAliases is set, every alias is first replaced by a copy
 // of the node it refers to. It returns false if the result does not decode to
-// next.
-func mergeYamlDocument(src []byte, expandAliases bool, orig, next interface{}) ([]byte, bool) {
+// next. origYaml is the original document as decoded from YAML, see
+// yamlDecodesTo.
+func mergeYamlDocument(src []byte, expandAliases bool, orig, next, origYaml interface{}) ([]byte, bool) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(src, &doc); err != nil || len(doc.Content) == 0 {
 		return nil, false
@@ -124,7 +125,7 @@ func mergeYamlDocument(src []byte, expandAliases bool, orig, next interface{}) (
 		return nil, false
 	}
 	out := buf.Bytes()
-	if !yamlDecodesTo(out, next) {
+	if !yamlDecodesTo(out, next, origYaml) {
 		return nil, false
 	}
 	return withLineEndings(src, out), true
@@ -141,29 +142,38 @@ func withLineEndings(src, out []byte) []byte {
 // yamlDecodesTo reports whether the YAML document out decodes to want, in the
 // same representation the replacements were applied to. The decoded value is
 // compared directly rather than through JSON, which would turn a float such as
-// 1.0 into the integer 1.
-func yamlDecodesTo(out []byte, want interface{}) bool {
+// 1.0 into the integer 1. origYaml is the original document decoded from YAML,
+// which tells an unchanged float apart from an integer, see yamlValueEqual.
+func yamlDecodesTo(out []byte, want, origYaml interface{}) bool {
 	got, err := yamlToJsonValue(out)
 	if err != nil {
 		return false
 	}
-	return yamlValueEqual(got, want)
+	return yamlValueEqual(got, want, origYaml, true)
 }
 
 // yamlValueEqual compares a decoded YAML value with a JSON value decoded with
 // UseNumber. A number that is written as a float in want must decode as a
-// float. One written as an integer may decode as either, since floats from the
-// original document reach want through JSON, which writes 1.0 as 1.
-func yamlValueEqual(got, want interface{}) bool {
+// float. One written as an integer must decode as an integer, unless the
+// original document (orig, present when hasOrig is set) had that same float at
+// this position: floats from the original document reach want through JSON,
+// which writes 1.0 as 1. Without this, changing an anchored 1 to 1.0 in place
+// would also turn an alias copy that should stay 1 into 1.0 and still verify.
+func yamlValueEqual(got, want, orig interface{}, hasOrig bool) bool {
 	switch w := want.(type) {
 	case map[string]interface{}:
 		g, ok := got.(map[string]interface{})
 		if !ok || len(g) != len(w) {
 			return false
 		}
+		om, isMap := orig.(map[string]interface{})
 		for k, wv := range w {
 			gv, ok := g[k]
-			if !ok || !yamlValueEqual(gv, wv) {
+			if !ok {
+				return false
+			}
+			ov, inOrig := om[k]
+			if !yamlValueEqual(gv, wv, ov, hasOrig && isMap && inOrig) {
 				return false
 			}
 		}
@@ -173,8 +183,14 @@ func yamlValueEqual(got, want interface{}) bool {
 		if !ok || len(g) != len(w) {
 			return false
 		}
+		os, isSlice := orig.([]interface{})
 		for i := range w {
-			if !yamlValueEqual(g[i], w[i]) {
+			var ov interface{}
+			inOrig := hasOrig && isSlice && i < len(os)
+			if inOrig {
+				ov = os[i]
+			}
+			if !yamlValueEqual(g[i], w[i], ov, inOrig) {
 				return false
 			}
 		}
@@ -186,6 +202,11 @@ func yamlValueEqual(got, want interface{}) bool {
 			if strings.ContainsAny(s, ".eE") {
 				f, err := w.Float64()
 				return err == nil && f == g
+			}
+			// An integer in want only matches a float that was already in the
+			// original document; otherwise an integer changed type.
+			if of, ok := orig.(float64); !hasOrig || !ok || of != g {
+				return false
 			}
 			// Compare an integer exactly: converting it to a float64 would round
 			// integers above 2^53, so 9007199254740993 would match the float
@@ -348,7 +369,7 @@ type yamlPatch struct {
 // patchYamlScalars replaces the changed scalar values of the document in place.
 // It returns false if a change cannot be applied this way, or the patched
 // document does not decode to the expected value.
-func patchYamlScalars(src []byte, root *yaml.Node, orig, next interface{}) ([]byte, bool) {
+func patchYamlScalars(src []byte, root *yaml.Node, orig, next, origYaml interface{}) ([]byte, bool) {
 	lines := strings.Split(string(src), "\n")
 	runes := make([][]rune, len(lines))
 	for i, l := range lines {
@@ -381,7 +402,7 @@ func patchYamlScalars(src []byte, root *yaml.Node, orig, next interface{}) ([]by
 	out := []byte(strings.Join(lines, "\n"))
 
 	// Make sure the patched document means exactly what was intended.
-	if !yamlDecodesTo(out, next) {
+	if !yamlDecodesTo(out, next, origYaml) {
 		return nil, false
 	}
 	return out, true
@@ -626,35 +647,41 @@ func mergeYamlNode(n *yaml.Node, orig, next interface{}, root bool) {
 	*n = *replacement
 }
 
-// buildYamlNode encodes v as a new node. v is part of the value the result is
-// verified against, and normalizeYamlTypes rewrites maps and slices in place, so
-// a copy of v is normalized.
+// buildYamlNode encodes v as a new node. Numbers are written as they were
+// given, so a whole float such as 1.0 stays a float instead of being encoded as
+// the integer 1, and map keys are sorted as the encoder would sort them. v is
+// part of the value the result is verified against and is not modified.
 func buildYamlNode(v interface{}) *yaml.Node {
+	switch typed := v.(type) {
+	case json.Number:
+		tag := "!!int"
+		if strings.ContainsAny(typed.String(), ".eE") {
+			tag = "!!float"
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: typed.String()}
+	case map[string]interface{}:
+		keys := make([]string, 0, len(typed))
+		for k := range typed {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		n := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		for _, k := range keys {
+			n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}, buildYamlNode(typed[k]))
+		}
+		return n
+	case []interface{}:
+		n := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, item := range typed {
+			n.Content = append(n.Content, buildYamlNode(item))
+		}
+		return n
+	}
 	n := &yaml.Node{}
-	if err := n.Encode(normalizeYamlTypes(copyJsonValue(v))); err != nil {
+	if err := n.Encode(v); err != nil {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: fmt.Sprint(v)}
 	}
 	return n
-}
-
-// copyJsonValue returns a deep copy of the maps and slices in v.
-func copyJsonValue(v interface{}) interface{} {
-	switch typed := v.(type) {
-	case map[string]interface{}:
-		cp := make(map[string]interface{}, len(typed))
-		for k, item := range typed {
-			cp[k] = copyJsonValue(item)
-		}
-		return cp
-	case []interface{}:
-		cp := make([]interface{}, len(typed))
-		for i, item := range typed {
-			cp[i] = copyJsonValue(item)
-		}
-		return cp
-	default:
-		return v
-	}
 }
 
 // detectYamlIndent returns the indentation width used by the document, falling

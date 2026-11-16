@@ -144,6 +144,49 @@ func TestUpdateYaml_AliasedLargeInteger(t *testing.T) {
 	}
 }
 
+// Changing an anchored integer to an equal float must not change the type of
+// the alias copy. Patching the anchor in place turns copy.count into 1.0 too,
+// which is numerically equal to the unchanged integer 1, so the verification has
+// to compare the YAML type of values that were not replaced.
+func TestUpdateYaml_AliasedIntegerToEqualFloat(t *testing.T) {
+	src := "base: &b\n  count: 1\ncopy: *b\n"
+	out, changed := updateYamlString(t, `[{"match": "base.count", "replace_with": 1.0}]`, src)
+	if !changed {
+		t.Fatal("expected the document to change")
+	}
+	got := decodeYamlString(t, out)
+	if !reflect.DeepEqual(got["base"], map[string]interface{}{"count": 1.0}) {
+		t.Errorf("unexpected base %#v\n%s", got["base"], out)
+	}
+	if !reflect.DeepEqual(got["copy"], map[string]interface{}{"count": 1}) {
+		t.Errorf("alias user changed type: copy = %#v\n%s", got["copy"], out)
+	}
+}
+
+// An unchanged float that JSON writes as an integer (2.0 becomes 2) still
+// verifies, so other changes keep the in-place patch and the comments.
+func TestUpdateYaml_UnchangedWholeFloatKept(t *testing.T) {
+	src := "# keep\nratio: 2.0\nname: a\n"
+	out, _ := updateYamlString(t, `[{"match": "name", "replace_with": "b"}]`, src)
+	if out != "# keep\nratio: 2.0\nname: b\n" {
+		t.Errorf("unexpected output:\n%s", out)
+	}
+}
+
+// A whole float inside a newly added mapping is written as a float, so the node
+// tree merge verifies and the comments are kept.
+func TestUpdateYaml_AddedMappingKeepsWholeFloat(t *testing.T) {
+	src := "# keep\na: 1\n"
+	out, _ := updateYamlString(t, `[{"match": "base.count", "replace_with": 1.0}]`, src)
+	if !strings.Contains(out, "# keep") {
+		t.Errorf("expected comments to be kept:\n%s", out)
+	}
+	got := decodeYamlString(t, out)
+	if !reflect.DeepEqual(got["base"], map[string]interface{}{"count": 1.0}) {
+		t.Errorf("unexpected base %#v\n%s", got["base"], out)
+	}
+}
+
 // aliasFanOutYaml returns a document whose last key, through aliases of
 // aliases, expands to 10^3 copies of a list of leaf items. The padding comes
 // first so the YAML decoder's alias ratio limit accepts it.
