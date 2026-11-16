@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Egg YAML config updates no longer change the type of a value shared through a YAML alias: changing an anchored `1` to `1.0` leaves the alias copy as `1`, and whole floats such as `1.0` stay floats in newly added keys. When a replaced value is shared through an alias, the alias is written as a plain copy of the old value. CI, nightly, release and Docker builds use Go 1.27.4, and tests run on Go 1.26.11 and 1.27.4. by @nayskutzu
 - Ported download and YAML config fixes from pelican/wings by @nayskutzu:
   - Backup and file download links can be used again until they expire instead of only once, so browsers (Chromium download protection), antivirus software, download managers and reconnects no longer get a 404 near the end of large downloads. Downloads support `Range`, `If-Range` and `HEAD`, so they can be resumed. Upload links stay single-use. Ported from pelican/wings#231.
   - Egg YAML config files keep their comments, blank lines, key order, indentation and quoting when values are replaced, and are not rewritten at all when nothing changed. Merge keys are written as plain `<<` (no `!!merge` tag), which js-yaml can read. Ported from pelican/wings#234 and the YAML part of pelican/wings#247.
