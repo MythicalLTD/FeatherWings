@@ -36,6 +36,8 @@ func (s *Server) Mounts() []environment.Mount {
 
 	cfg := config.Get()
 
+	m = append(m, passwdMounts(cfg)...)
+
 	if cfg.System.MachineID.Enable {
 		// Hytale wants a machine-id in order to encrypt tokens for the server.
 		// So add a mount to `/etc/machine-id` to a source that contains the
@@ -209,4 +211,35 @@ func isAllowedMountSource(source string, allowed string) bool {
 		return true
 	}
 	return strings.HasPrefix(source, allowed+string(filepath.Separator))
+}
+
+// passwdMounts returns the read-only /etc/passwd and /etc/group mounts for the
+// generated container user files, when system.user.mount_passwd is enabled.
+// A file that does not exist is skipped, since Docker refuses to start a
+// container with a missing bind mount source.
+func passwdMounts(cfg *config.Configuration) []environment.Mount {
+	u := cfg.System.User
+	if !u.Passwd {
+		return nil
+	}
+	var m []environment.Mount
+	for _, f := range []struct{ source, target string }{
+		{u.PasswdFile, "/etc/passwd"},
+		{u.GroupFile, "/etc/group"},
+	} {
+		if f.source == "" {
+			continue
+		}
+		if st, err := os.Stat(f.source); err != nil || !st.Mode().IsRegular() {
+			log.WithField("path", f.source).Debug("skipping container user file mount, file is missing")
+			continue
+		}
+		m = append(m, environment.Mount{
+			Default:  true,
+			Target:   f.target,
+			Source:   f.source,
+			ReadOnly: true,
+		})
+	}
+	return m
 }

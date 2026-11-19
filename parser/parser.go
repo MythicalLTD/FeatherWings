@@ -184,9 +184,7 @@ func (f *ConfigurationFile) UnmarshalJSON(data []byte) error {
 
 	f.Replace = []ConfigurationFileReplacement{}
 	if replaceRaw, ok := m["replace"]; ok && replaceRaw != nil {
-		if err := json.Unmarshal(*replaceRaw, &f.Replace); err != nil {
-			log.WithField("file", f.FileName).WithField("error", err).Warn("failed to unmarshal configuration file replacement")
-		}
+		f.Replace = decodeReplacements(f.FileName, *replaceRaw)
 	}
 
 	// test if "create_file" exists, if not just assume true
@@ -201,6 +199,37 @@ func (f *ConfigurationFile) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// decodeReplacements decodes the "replace" array of a configuration file one
+// element at a time. An element that cannot be decoded, including null and
+// non-object elements, is logged and skipped, and the others are kept in order,
+// so one bad replacement in an egg does not disable all the others. A value that
+// is not an array is logged and gives no replacements.
+func decodeReplacements(file string, raw []byte) []ConfigurationFileReplacement {
+	out := []ConfigurationFileReplacement{}
+
+	var elements []json.RawMessage
+	if err := json.Unmarshal(raw, &elements); err != nil {
+		log.WithField("file", file).WithField("error", err).Warn("configuration file replacements are not an array, ignoring them")
+		return out
+	}
+
+	for i, element := range elements {
+		trimmed := bytes.TrimSpace(element)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			log.WithField("file", file).WithField("index", i).Warn("skipping configuration file replacement that is not an object")
+			continue
+		}
+		var r ConfigurationFileReplacement
+		if err := json.Unmarshal(element, &r); err != nil {
+			log.WithField("file", file).WithField("index", i).WithField("error", err).Warn("skipping configuration file replacement that could not be decoded")
+			continue
+		}
+		out = append(out, r)
+	}
+
+	return out
 }
 
 // Reads a key as text. The Panel encodes a numeric key such as "25565" as a JSON number,

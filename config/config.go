@@ -290,10 +290,12 @@ type SystemConfiguration struct {
 		Uid int `yaml:"uid"`
 		Gid int `yaml:"gid"`
 
-		// Passwd controls weather a passwd file is mounted in the container
-		// at /etc/passwd to resolve missing user issues
+		// Passwd controls whether generated passwd and group files are mounted
+		// read-only in the container at /etc/passwd and /etc/group, so the
+		// container user has a name and a group.
 		Passwd     bool   `json:"mount_passwd" yaml:"mount_passwd" default:"true"`
 		PasswdFile string `json:"passwd_file" yaml:"passwd_file" default:"/etc/featherpanel/passwd"`
+		GroupFile  string `json:"group_file" yaml:"group_file" default:"/etc/featherpanel/group"`
 	} `yaml:"user"`
 
 	// MachineID controls the mounting of a generated `/etc/machine-id` file into containers started by Wings.
@@ -1056,19 +1058,6 @@ func ConfigureDirectories() error {
 		return err
 	}
 
-	log.WithField("filepath", _config.System.User.PasswdFile).Debug("ensuring passwd file exists")
-	if passwd, err := os.Create(_config.System.User.PasswdFile); err != nil {
-		return err
-	} else {
-		// the WriteFile method returns an error if unsuccessful
-		err := os.WriteFile(passwd.Name(), []byte(fmt.Sprintf("container:x:%d:%d::/home/container:/usr/sbin/nologin", _config.System.User.Uid, _config.System.User.Gid)), 0644)
-		// handle this error
-		if err != nil {
-			// print it out
-			fmt.Println(err)
-		}
-	}
-
 	// There are a non-trivial number of users out there whose data directories are actually a
 	// symlink to another location on the disk. If we do not resolve that final destination at this
 	// point things will appear to work, but endless errors will be encountered when we try to
@@ -1122,6 +1111,45 @@ func ConfigureDirectories() error {
 		}
 	}
 
+	return nil
+}
+
+// PasswdFileContents returns the passwd entry for the container user.
+func PasswdFileContents(uid, gid int) string {
+	return fmt.Sprintf("container:x:%d:%d::/home/container:/usr/sbin/nologin\n", uid, gid)
+}
+
+// GroupFileContents returns the group entry for the container user's group.
+func GroupFileContents(gid int) string {
+	return fmt.Sprintf("container:x:%d:container\n", gid)
+}
+
+// ConfigurePasswd writes the passwd and group files that are mounted into
+// server containers at /etc/passwd and /etc/group. Nothing is written when
+// system.user.mount_passwd is disabled.
+//
+// This function IS NOT thread-safe.
+func ConfigurePasswd() error {
+	u := _config.System.User
+	if !u.Passwd {
+		return nil
+	}
+	files := []struct{ path, contents string }{
+		{u.PasswdFile, PasswdFileContents(u.Uid, u.Gid)},
+		{u.GroupFile, GroupFileContents(u.Gid)},
+	}
+	for _, f := range files {
+		if f.path == "" {
+			continue
+		}
+		log.WithField("filepath", f.path).Debug("ensuring container user file exists")
+		if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil { //nolint:gosec // mounted read-only into containers
+			return errors.Wrapf(err, "config: could not create directory for %s", f.path)
+		}
+		if err := os.WriteFile(f.path, []byte(f.contents), 0o644); err != nil { //nolint:gosec // mounted read-only into containers
+			return errors.Wrapf(err, "config: could not write %s", f.path)
+		}
+	}
 	return nil
 }
 

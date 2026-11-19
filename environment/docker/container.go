@@ -3,6 +3,7 @@ package docker
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"runtime"
@@ -12,7 +13,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
-	"github.com/buger/jsonparser"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	dockerImage "github.com/docker/docker/api/types/image"
@@ -493,8 +493,10 @@ func (e *Environment) ensureImageExists(image string) error {
 		imagePullOptions.RegistryAuth = b64
 	}
 
-	out, err := e.client.ImagePull(ctx, image, imagePullOptions)
-	if err != nil {
+	// fallbackToLocal is used when the pull fails, either when it is requested or
+	// part way through the stream. If the image already exists locally the error
+	// is logged and the local image is used.
+	fallbackToLocal := func(pullErr error) error {
 		images, ierr := e.client.ImageList(ctx, dockerImage.ListOptions{})
 		if ierr != nil {
 			// Well damn, something has gone really wrong here, just go ahead and abort there
@@ -511,7 +513,7 @@ func (e *Environment) ensureImageExists(image string) error {
 				log.WithFields(log.Fields{
 					"image":        image,
 					"container_id": e.Id,
-					"err":          err.Error(),
+					"err":          pullErr.Error(),
 				}).Warn("unable to pull requested image from remote source, however the image exists locally")
 
 				// Okay, we found a matching container image, in that case just go ahead and return
@@ -520,31 +522,154 @@ func (e *Environment) ensureImageExists(image string) error {
 			}
 		}
 
-		return errors.Wrapf(err, "environment/docker: failed to pull \"%s\" image for server", image)
+		return errors.Wrapf(pullErr, "environment/docker: failed to pull \"%s\" image for server", image)
+	}
+
+	out, err := e.client.ImagePull(ctx, image, imagePullOptions)
+	if err != nil {
+		return fallbackToLocal(err)
 	}
 	defer out.Close()
 
 	log.WithField("image", image).Debug("pulling docker image... this could take a bit of time")
 
-	// I'm not sure what the best approach here is, but this will block execution until the image
-	// is done being pulled, which is what we need.
-	scanner := bufio.NewScanner(out)
-
-	for scanner.Scan() {
-		b := scanner.Bytes()
-		status, _ := jsonparser.GetString(b, "status")
-		progress, _ := jsonparser.GetString(b, "progress")
-
-		e.Events().Publish(environment.DockerImagePullStatus, status+" "+progress)
-	}
-
-	if err := scanner.Err(); err != nil {
+	// This blocks until the image is done being pulled, which is what we need.
+	if err := ReadImagePull(out, func(status string) {
+		e.Events().Publish(environment.DockerImagePullStatus, status)
+	}); err != nil {
+		if IsImagePullStreamError(err) {
+			return fallbackToLocal(err)
+		}
 		return err
 	}
 
 	log.WithField("image", image).Debug("completed docker image pull")
 
 	return nil
+}
+
+// imagePullMessage is a single message of the JSON stream Docker returns for
+// an image pull.
+type imagePullMessage struct {
+	ID             string `json:"id"`
+	Status         string `json:"status"`
+	Progress       string `json:"progress"`
+	ProgressDetail *struct {
+		Current int64  `json:"current"`
+		Total   int64  `json:"total"`
+		Units   string `json:"units"`
+	} `json:"progressDetail"`
+	Error       string `json:"error"`
+	ErrorDetail *struct {
+		Message string `json:"message"`
+	} `json:"errorDetail"`
+}
+
+// imagePullStreamError is an error Docker reported inside the pull stream,
+// after the pull request itself was accepted, such as a missing manifest, a
+// registry rate limit or a failed layer download.
+type imagePullStreamError struct {
+	message string
+}
+
+func (e *imagePullStreamError) Error() string {
+	return e.message
+}
+
+// IsImagePullStreamError reports whether err is a failure Docker reported in
+// the stream of an image pull, as returned by ReadImagePull.
+func IsImagePullStreamError(err error) bool {
+	var streamErr *imagePullStreamError
+	return errors.As(err, &streamErr)
+}
+
+// ReadImagePull reads the JSON stream returned by an image pull until it ends,
+// passing a status line for each progress message to publish. Docker answers a
+// pull with 200 and reports failures as a message in the stream, so those are
+// returned as an *imagePullStreamError.
+func ReadImagePull(r io.Reader, publish func(string)) error {
+	decoder := json.NewDecoder(r)
+	for {
+		var msg imagePullMessage
+		if err := decoder.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return errors.Wrap(err, "environment/docker: failed to read image pull progress")
+		}
+
+		if msg.ErrorDetail != nil && msg.ErrorDetail.Message != "" {
+			return &imagePullStreamError{message: msg.ErrorDetail.Message}
+		}
+		if msg.Error != "" {
+			return &imagePullStreamError{message: msg.Error}
+		}
+		if msg.ErrorDetail != nil {
+			return &imagePullStreamError{message: "image pull failed without an error message"}
+		}
+
+		progress := msg.Progress
+		if p := msg.ProgressDetail; p != nil && (p.Current > 0 || p.Total > 0) {
+			progress = formatPullProgress(p.Current, p.Total, p.Units)
+		}
+
+		parts := make([]string, 0, 3)
+		for _, part := range []string{msg.ID, msg.Status, progress} {
+			if part = strings.TrimSpace(part); part != "" {
+				parts = append(parts, part)
+			}
+		}
+		if len(parts) > 0 {
+			publish(strings.Join(parts, " "))
+		}
+	}
+}
+
+// formatPullProgress formats the progress of a single layer of an image pull,
+// such as "[=========>          ] 45% (20.3 MiB/45.0 MiB)".
+func formatPullProgress(current, total int64, units string) string {
+	const width = 20
+
+	if current < 0 {
+		current = 0
+	}
+	if units == "s" {
+		return fmt.Sprintf("%ds elapsed", current)
+	}
+	if units != "" && units != "bytes" {
+		return fmt.Sprintf("%d %s", current, units)
+	}
+	if total <= 0 {
+		if current > 0 {
+			return formatPullBytes(current)
+		}
+		return ""
+	}
+	if current > total {
+		current = total
+	}
+
+	ratio := float64(current) / float64(total)
+	filled := int(ratio * width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">" + strings.Repeat(" ", width-filled-1)
+	}
+	return fmt.Sprintf("[%s] %d%% (%s/%s)", bar, int(ratio*100), formatPullBytes(current), formatPullBytes(total))
+}
+
+// formatPullBytes formats a byte count using binary units.
+func formatPullBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit && exp < 5; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (e *Environment) convertMounts() []mount.Mount {

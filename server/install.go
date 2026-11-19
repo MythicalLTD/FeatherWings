@@ -1,12 +1,12 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"text/template"
@@ -99,7 +99,19 @@ func (s *Server) Reinstall() error {
 }
 
 // Internal installation function used to simplify reporting back to the Panel.
-func (s *Server) internalInstall() error {
+//
+// A panic anywhere in the installation process is turned into an error, so the
+// Panel is told the install failed and the Wings process keeps running. Install
+// is always called from a background goroutine, where an unrecovered panic
+// would take down the whole daemon.
+func (s *Server) internalInstall() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.Log().WithField("panic", r).WithField("stack", string(debug.Stack())).Error("recovered from a panic during the installation process")
+			err = errors.Errorf("install: installation process panicked: %v", r)
+		}
+	}()
+
 	script, err := s.client.GetInstallationScript(s.Context(), s.ID())
 	if err != nil {
 		return err
@@ -290,8 +302,7 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 		imagePullOptions.RegistryAuth = b64
 	}
 
-	r, err := ip.client.ImagePull(ip.Server.Context(), ip.Script.ContainerImage, imagePullOptions)
-	if err != nil {
+	fallbackToLocal := func(pullErr error) error {
 		images, ierr := ip.client.ImageList(ip.Server.Context(), dockerImage.ListOptions{})
 		if ierr != nil {
 			// Well damn, something has gone really wrong here, just go ahead and abort there
@@ -307,7 +318,7 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 
 				log.WithFields(log.Fields{
 					"image": ip.Script.ContainerImage,
-					"err":   err.Error(),
+					"err":   pullErr.Error(),
 				}).Warn("unable to pull requested image from remote source, however the image exists locally")
 
 				// Okay, we found a matching container image, in that case just go ahead and return
@@ -316,19 +327,25 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 			}
 		}
 
-		return err
+		return pullErr
+	}
+
+	r, err := ip.client.ImagePull(ip.Server.Context(), ip.Script.ContainerImage, imagePullOptions)
+	if err != nil {
+		return fallbackToLocal(err)
 	}
 	defer r.Close()
 
 	log.WithField("image", ip.Script.ContainerImage).Debug("pulling docker image... this could take a bit of time")
 
-	// Block continuation until the image has been pulled successfully.
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		log.Debug(scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
+	// Block continuation until the image has been pulled successfully. Docker
+	// reports a failed pull inside the stream, so check it for errors.
+	if err := docker.ReadImagePull(r, func(status string) {
+		log.WithField("image", ip.Script.ContainerImage).Debug(status)
+	}); err != nil {
+		if docker.IsImagePullStreamError(err) {
+			return fallbackToLocal(err)
+		}
 		return err
 	}
 
@@ -370,9 +387,17 @@ func (ip *InstallationProcess) AfterExecute(containerId string) error {
 		Follow:     false,
 	})
 
-	if err != nil && !client.IsErrNotFound(err) {
-		return err
+	if err != nil {
+		if !client.IsErrNotFound(err) {
+			return err
+		}
+		// The installer container was removed before its output could be read,
+		// for example by a container prune. There is nothing to copy into the
+		// installation log, and the reader is nil.
+		ip.Server.Log().WithField("container_id", containerId).Warn("installation container no longer exists, skipping installation log")
+		return nil
 	}
+	defer reader.Close()
 
 	// Get kernel version using the kernel package
 	v, err := kernel.GetKernelVersion()
@@ -554,6 +579,11 @@ func (ip *InstallationProcess) Execute() (string, error) {
 	// If there is an error during the streaming output just report it and do nothing else, the
 	// install can still run, the console just won't have any output.
 	go func(id string) {
+		defer func() {
+			if r := recover(); r != nil {
+				ip.Server.Log().WithField("panic", r).WithField("stack", string(debug.Stack())).Error("recovered from a panic while streaming installation output")
+			}
+		}()
 		ip.Server.Events().Publish(DaemonMessageEvent, "Starting installation process, this could take a few minutes...")
 		if err := ip.StreamOutput(ctx, id); err != nil {
 			ip.Server.Log().WithField("error", err).Warn("error connecting to server install stream output")

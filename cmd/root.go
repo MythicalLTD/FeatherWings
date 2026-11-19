@@ -165,6 +165,10 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 		log.WithField("error", err).Fatal("failed to create featherpanel system user")
 		return
 	}
+	if err := config.ConfigurePasswd(); err != nil {
+		log.WithField("error", err).Fatal("failed to write passwd and group files for containers")
+		return
+	}
 	log.WithFields(log.Fields{
 		"username": config.Get().System.Username,
 		"uid":      config.Get().System.User.Uid,
