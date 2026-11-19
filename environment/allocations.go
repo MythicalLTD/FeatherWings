@@ -90,6 +90,13 @@ func (a *Allocations) DockerBindings() nat.PortMap {
 			}
 			kept = append(kept, alloc)
 		}
+		// A port left without any binding must be removed. Docker fills an empty
+		// binding list with a binding on every interface at a random host port,
+		// which would publish an allocation that ISPN is meant to keep private.
+		if len(kept) == 0 {
+			delete(out, p)
+			continue
+		}
 		out[p] = kept
 	}
 

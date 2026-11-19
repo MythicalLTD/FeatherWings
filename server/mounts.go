@@ -35,6 +35,15 @@ func (s *Server) Mounts() []environment.Mount {
 	}
 
 	cfg := config.Get()
+	custom := s.customMounts()
+
+	// A custom mount for /etc/passwd or /etc/group replaces the generated
+	// file, since Docker refuses two mounts with the same destination.
+	for _, pm := range passwdMounts(cfg) {
+		if !hasMountTarget(custom, pm.Target) {
+			m = append(m, pm)
+		}
+	}
 
 	if cfg.System.MachineID.Enable {
 		// Hytale wants a machine-id in order to encrypt tokens for the server.
@@ -48,7 +57,17 @@ func (s *Server) Mounts() []environment.Mount {
 	}
 
 	// Also include any of this server's custom mounts when returning them.
-	return append(m, s.customMounts()...)
+	return append(m, custom...)
+}
+
+// hasMountTarget reports whether any of the mounts uses the given target.
+func hasMountTarget(mounts []environment.Mount, target string) bool {
+	for _, m := range mounts {
+		if filepath.Clean(m.Target) == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Returns the custom mounts for a given server after verifying that they are within a list of
@@ -209,4 +228,35 @@ func isAllowedMountSource(source string, allowed string) bool {
 		return true
 	}
 	return strings.HasPrefix(source, allowed+string(filepath.Separator))
+}
+
+// passwdMounts returns the read-only /etc/passwd and /etc/group mounts for the
+// generated container user files, when system.user.mount_passwd is enabled.
+// A file that does not exist is skipped, since Docker refuses to start a
+// container with a missing bind mount source.
+func passwdMounts(cfg *config.Configuration) []environment.Mount {
+	u := cfg.System.User
+	if !u.Passwd {
+		return nil
+	}
+	var m []environment.Mount
+	for _, f := range []struct{ source, target string }{
+		{u.PasswdFile, "/etc/passwd"},
+		{u.GroupFile, "/etc/group"},
+	} {
+		if f.source == "" {
+			continue
+		}
+		if st, err := os.Stat(f.source); err != nil || !st.Mode().IsRegular() {
+			log.WithField("path", f.source).Debug("skipping container user file mount, file is missing")
+			continue
+		}
+		m = append(m, environment.Mount{
+			Default:  true,
+			Target:   f.target,
+			Source:   f.source,
+			ReadOnly: true,
+		})
+	}
+	return m
 }

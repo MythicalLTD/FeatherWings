@@ -3768,8 +3768,12 @@ const docTemplate = `{
                         "gid": {
                             "type": "integer"
                         },
+                        "group_file": {
+                            "type": "string",
+                            "default": "/etc/featherpanel/group"
+                        },
                         "mount_passwd": {
-                            "description": "Passwd controls weather a passwd file is mounted in the container\nat /etc/passwd to resolve missing user issues",
+                            "description": "Passwd controls whether generated passwd and group files are mounted\nread-only in the container at /etc/passwd and /etc/group, so the\ncontainer user has a name and a group.",
                             "type": "boolean",
                             "default": true
                         },
