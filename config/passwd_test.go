@@ -75,3 +75,36 @@ func TestGroupFileDefault(t *testing.T) {
 		t.Fatalf("GroupFile default = %q", c.System.User.GroupFile)
 	}
 }
+
+func TestConfigurePasswdUsesContainerIDsInRootlessMode(t *testing.T) {
+	dir := t.TempDir()
+	c, err := NewAtPath(filepath.Join(dir, "config.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AuthenticationToken = "test-token"
+	c.System.User.Uid = 1000
+	c.System.User.Gid = 1000
+	c.System.User.Rootless.Enabled = true
+	c.System.User.Rootless.ContainerUID = 0
+	c.System.User.Rootless.ContainerGID = 0
+	c.System.User.PasswdFile = filepath.Join(dir, "passwd")
+	c.System.User.GroupFile = filepath.Join(dir, "group")
+	Set(c)
+
+	if err := ConfigurePasswd(); err != nil {
+		t.Fatalf("ConfigurePasswd() error = %v", err)
+	}
+	for path, want := range map[string]string{
+		c.System.User.PasswdFile: "container:x:0:0::/home/container:/usr/sbin/nologin\n",
+		c.System.User.GroupFile:  "container:x:0:container\n",
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Fatalf("%s = %q, want %q", path, got, want)
+		}
+	}
+}

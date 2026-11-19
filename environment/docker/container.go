@@ -496,33 +496,25 @@ func (e *Environment) ensureImageExists(image string) error {
 	// fallbackToLocal is used when the pull fails, either when it is requested or
 	// part way through the stream. If the image already exists locally the error
 	// is logged and the local image is used.
+	// fallbackToLocal is used when the pull fails, either when it is requested or
+	// part way through the stream. If the image already exists locally the error
+	// is logged and the local image is used. The image is looked up by reference,
+	// so equivalent forms such as "alpine:latest" and
+	// "docker.io/library/alpine:latest" both match.
 	fallbackToLocal := func(pullErr error) error {
-		images, ierr := e.client.ImageList(ctx, dockerImage.ListOptions{})
-		if ierr != nil {
-			// Well damn, something has gone really wrong here, just go ahead and abort there
-			// isn't much anything we can do to try and self-recover from this.
-			return errors.Wrap(ierr, "environment/docker: failed to list images")
-		}
-
-		for _, img := range images {
-			for _, t := range img.RepoTags {
-				if t != image {
-					continue
-				}
-
-				log.WithFields(log.Fields{
-					"image":        image,
-					"container_id": e.Id,
-					"err":          pullErr.Error(),
-				}).Warn("unable to pull requested image from remote source, however the image exists locally")
-
-				// Okay, we found a matching container image, in that case just go ahead and return
-				// from this function, since there is nothing else we need to do here.
-				return nil
+		if _, ierr := e.client.ImageInspect(ctx, image); ierr != nil {
+			if !client.IsErrNotFound(ierr) {
+				return errors.Wrap(ierr, "environment/docker: failed to inspect local image")
 			}
+			return errors.Wrapf(pullErr, "environment/docker: failed to pull \"%s\" image for server", image)
 		}
 
-		return errors.Wrapf(pullErr, "environment/docker: failed to pull \"%s\" image for server", image)
+		log.WithFields(log.Fields{
+			"image":        image,
+			"container_id": e.Id,
+			"err":          pullErr.Error(),
+		}).Warn("unable to pull requested image from remote source, however the image exists locally")
+		return nil
 	}
 
 	out, err := e.client.ImagePull(ctx, image, imagePullOptions)

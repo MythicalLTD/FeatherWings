@@ -1134,9 +1134,15 @@ func ConfigurePasswd() error {
 	if !u.Passwd {
 		return nil
 	}
+	// Containers run as the configured container user in rootless mode, not as
+	// the host user Wings runs as, so the entries must use those IDs.
+	uid, gid := u.Uid, u.Gid
+	if u.Rootless.Enabled {
+		uid, gid = u.Rootless.ContainerUID, u.Rootless.ContainerGID
+	}
 	files := []struct{ path, contents string }{
-		{u.PasswdFile, PasswdFileContents(u.Uid, u.Gid)},
-		{u.GroupFile, GroupFileContents(u.Gid)},
+		{u.PasswdFile, PasswdFileContents(uid, gid)},
+		{u.GroupFile, GroupFileContents(gid)},
 	}
 	for _, f := range files {
 		if f.path == "" {

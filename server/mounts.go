@@ -35,8 +35,15 @@ func (s *Server) Mounts() []environment.Mount {
 	}
 
 	cfg := config.Get()
+	custom := s.customMounts()
 
-	m = append(m, passwdMounts(cfg)...)
+	// A custom mount for /etc/passwd or /etc/group replaces the generated
+	// file, since Docker refuses two mounts with the same destination.
+	for _, pm := range passwdMounts(cfg) {
+		if !hasMountTarget(custom, pm.Target) {
+			m = append(m, pm)
+		}
+	}
 
 	if cfg.System.MachineID.Enable {
 		// Hytale wants a machine-id in order to encrypt tokens for the server.
@@ -50,7 +57,17 @@ func (s *Server) Mounts() []environment.Mount {
 	}
 
 	// Also include any of this server's custom mounts when returning them.
-	return append(m, s.customMounts()...)
+	return append(m, custom...)
+}
+
+// hasMountTarget reports whether any of the mounts uses the given target.
+func hasMountTarget(mounts []environment.Mount, target string) bool {
+	for _, m := range mounts {
+		if filepath.Clean(m.Target) == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Returns the custom mounts for a given server after verifying that they are within a list of

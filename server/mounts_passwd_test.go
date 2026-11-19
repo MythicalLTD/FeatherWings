@@ -101,3 +101,41 @@ func TestMountsSkipMissingPasswdFiles(t *testing.T) {
 		t.Fatalf("expected missing files not to be mounted, got %+v", m)
 	}
 }
+
+// A custom mount targeting /etc/passwd replaces the generated file instead of
+// producing two mounts with the same destination, which Docker refuses.
+func TestCustomPasswdMountReplacesGeneratedFile(t *testing.T) {
+	root := setupMountTest(t, "mnt/")
+	mkdirs(t, root, "mnt/users")
+	files := t.TempDir()
+	config.Update(func(c *config.Configuration) {
+		c.System.User.Passwd = true
+		c.System.User.PasswdFile = filepath.Join(files, "passwd")
+		c.System.User.GroupFile = filepath.Join(files, "group")
+	})
+	for _, p := range []string{"passwd", "group"} {
+		if err := os.WriteFile(filepath.Join(files, p), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newPasswdTestServer(t)
+	s.cfg.Mounts = []Mount{{Source: filepath.Join(root, "mnt", "users"), Target: "/etc/passwd/"}}
+	m := s.Mounts()
+
+	count := 0
+	for _, mount := range m {
+		if filepath.Clean(mount.Target) == "/etc/passwd" {
+			count++
+			if mount.Source != filepath.Join(root, "mnt", "users") {
+				t.Fatalf("expected the custom mount to win, got %+v", mount)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one /etc/passwd mount, got %d in %+v", count, m)
+	}
+	if got := findMount(m, "/etc/group"); got == nil || got.Source != filepath.Join(files, "group") {
+		t.Fatalf("expected the generated /etc/group mount to be kept, got %+v", m)
+	}
+}

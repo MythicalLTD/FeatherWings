@@ -302,32 +302,22 @@ func (ip *InstallationProcess) pullInstallationImage() error {
 		imagePullOptions.RegistryAuth = b64
 	}
 
+	// fallbackToLocal uses an existing local copy of the image when the pull
+	// fails. The image is looked up by reference, so equivalent forms such as
+	// "alpine:latest" and "docker.io/library/alpine:latest" both match.
 	fallbackToLocal := func(pullErr error) error {
-		images, ierr := ip.client.ImageList(ip.Server.Context(), dockerImage.ListOptions{})
-		if ierr != nil {
-			// Well damn, something has gone really wrong here, just go ahead and abort there
-			// isn't much anything we can do to try and self-recover from this.
-			return ierr
-		}
-
-		for _, img := range images {
-			for _, t := range img.RepoTags {
-				if t != ip.Script.ContainerImage {
-					continue
-				}
-
-				log.WithFields(log.Fields{
-					"image": ip.Script.ContainerImage,
-					"err":   pullErr.Error(),
-				}).Warn("unable to pull requested image from remote source, however the image exists locally")
-
-				// Okay, we found a matching container image, in that case just go ahead and return
-				// from this function, since there is nothing else we need to do here.
-				return nil
+		if _, ierr := ip.client.ImageInspect(ip.Server.Context(), ip.Script.ContainerImage); ierr != nil {
+			if !client.IsErrNotFound(ierr) {
+				return ierr
 			}
+			return pullErr
 		}
 
-		return pullErr
+		log.WithFields(log.Fields{
+			"image": ip.Script.ContainerImage,
+			"err":   pullErr.Error(),
+		}).Warn("unable to pull requested image from remote source, however the image exists locally")
+		return nil
 	}
 
 	r, err := ip.client.ImagePull(ip.Server.Context(), ip.Script.ContainerImage, imagePullOptions)
