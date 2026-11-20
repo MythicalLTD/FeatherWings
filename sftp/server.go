@@ -283,7 +283,7 @@ func (c *SFTPServer) serve(listener net.Listener, conf *ssh.ServerConfig) error 
 			sconn, chans, reqs, err := handshake(conn, conf, c.limits.handshakeTimeout)
 			c.pending.release(key)
 			if err != nil {
-				log.WithField("error", err).WithField("ip", conn.RemoteAddr().String()).Error("sftp: failed to accept inbound connection")
+				logHandshakeFailure(err, conn.RemoteAddr().String())
 				return
 			}
 			user := sessionKey(sconn)
@@ -311,6 +311,22 @@ func sessionKey(sconn *ssh.ServerConn) string {
 		}
 	}
 	return strings.ToLower(sconn.User())
+}
+
+// logHandshakeFailure logs a connection that did not complete the SSH handshake.
+//
+// A peer that simply closes the connection (io.EOF) is what a TCP port check,
+// a load balancer health probe or a port scanner does. That is not an error of
+// this daemon, and logging it at error level every minute buries the failures
+// that matter (bad protocol, failed key exchange, timeouts), so it is only
+// logged at debug level.
+func logHandshakeFailure(err error, ip string) {
+	entry := log.WithField("error", err).WithField("ip", ip)
+	if errors.Is(err, io.EOF) {
+		entry.Debug("sftp: connection closed before the handshake completed")
+		return
+	}
+	entry.Error("sftp: failed to accept inbound connection")
 }
 
 // handshake performs the SSH handshake, including authentication, on the
