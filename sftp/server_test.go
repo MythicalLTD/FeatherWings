@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"runtime"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apex/log"
+	"github.com/apex/log/handlers/memory"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -201,5 +204,28 @@ func TestAuthenticatedConnectionsAreLimitedPerUser(t *testing.T) {
 	t.Cleanup(func() { _ = other.Close() })
 	if closedWithin(other, time.Millisecond*500) {
 		t.Fatal("expected a connection for another user to stay open")
+	}
+}
+
+// A peer that closes the connection before the handshake completes (a TCP port
+// check, a health probe, a scanner) is logged at debug level; real handshake
+// failures stay errors.
+func TestHandshakeFailureLogLevel(t *testing.T) {
+	h := memory.New()
+	old := log.Log
+	log.Log = &log.Logger{Handler: h, Level: log.DebugLevel}
+	defer func() { log.Log = old }()
+
+	logHandshakeFailure(io.EOF, "192.0.2.10:1234")
+	logHandshakeFailure(errors.New("ssh: no common algorithm for key exchange"), "192.0.2.11:1234")
+
+	if len(h.Entries) != 2 {
+		t.Fatalf("expected 2 log entries, got %d", len(h.Entries))
+	}
+	if h.Entries[0].Level != log.DebugLevel {
+		t.Errorf("EOF must be logged at debug level, got %s", h.Entries[0].Level)
+	}
+	if h.Entries[1].Level != log.ErrorLevel {
+		t.Errorf("other handshake failures must stay at error level, got %s", h.Entries[1].Level)
 	}
 }
