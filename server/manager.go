@@ -239,6 +239,11 @@ func (m *Manager) InitServer(uuid string, data remote.ServerConfigurationRespons
 	meta := docker.Metadata{
 		Image: s.Config().Container.Image,
 	}
+	// Known from the start, so a stop command sent on any attach path (boot or a
+	// later re-attach) marks the server as stopping, not only after a full sync.
+	if pc := s.ProcessConfiguration(); pc != nil {
+		meta.Stop = pc.Stop
+	}
 
 	if env, err := docker.New(s.ID(), &meta, envCfg); err != nil {
 		return nil, err

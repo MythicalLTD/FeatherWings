@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/mythicalltd/featherwings/system"
 
 	"github.com/mythicalltd/featherwings/environment"
-	"github.com/mythicalltd/featherwings/remote"
 )
 
 var dockerEvents = []string{
@@ -235,14 +233,6 @@ func (s *Server) onConsoleOutput(data []byte) {
 		}
 	}
 
-	// If the command sent to the server is one that should stop the server we will need to
-	// set the server to be in a stopping state, otherwise crash detection will kick in and
-	// cause the server to unexpectedly restart on the user.
-	if s.IsRunning() {
-		stop := processConfiguration.Stop
-
-		if stop.Type == remote.ProcessStopCommand && bytes.Equal(v, []byte(stop.Value)) {
-			s.Environment.SetState(environment.ProcessStoppingState)
-		}
-	}
+	// The stopping state is set by the environment when the stop command is sent
+	// (see SendCommand), never from what the process prints.
 }
