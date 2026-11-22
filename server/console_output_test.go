@@ -55,3 +55,35 @@ func TestConsoleOutputIsCheckedAsItIsRead(t *testing.T) {
 		t.Fatal("expected the line to be processed once it could be checked")
 	}
 }
+
+// recordingStateEnvironment reports a fixed state and records every state change.
+type recordingStateEnvironment struct {
+	environment.ProcessEnvironment
+	state string
+	set   []string
+}
+
+func (e *recordingStateEnvironment) State() string { return e.state }
+
+func (e *recordingStateEnvironment) SetState(st string) { e.set = append(e.set, st) }
+
+// A console line that equals the stop command does not change the server state;
+// only sending the stop command does.
+func TestConsoleOutputMatchingTheStopCommandKeepsTheState(t *testing.T) {
+	cfg, err := config.NewAtPath(filepath.Join(t.TempDir(), "config.yml"))
+	require.NoError(t, err)
+	cfg.AuthenticationToken = "test-token"
+	config.Set(cfg)
+
+	s, err := New(nil)
+	require.NoError(t, err)
+	env := &recordingStateEnvironment{state: environment.ProcessRunningState}
+	s.Environment = env
+	s.procConfig = &remote.ProcessConfiguration{}
+	s.procConfig.Stop.Type = remote.ProcessStopCommand
+	s.procConfig.Stop.Value = "stop"
+
+	s.onConsoleOutput([]byte("stop"))
+
+	require.Empty(t, env.set)
+}
