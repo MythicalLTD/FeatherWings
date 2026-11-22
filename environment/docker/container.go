@@ -114,15 +114,9 @@ func (e *Environment) Attach(ctx context.Context) error {
 			e.SetState(environment.ProcessOfflineState)
 		}()
 
-		go func() {
-			if err := e.pollResources(pollCtx); err != nil {
-				if !errors.Is(err, context.Canceled) {
-					e.log().WithField("error", err).Error("error during environment resource polling")
-				} else {
-					e.log().Warn("stopping server resource polling: context canceled")
-				}
-			}
-		}()
+		// Single entry point for the stats poller so a later EnsureResourcePolling
+		// (runtime reconcile) cannot start a second loop for the same container.
+		e.EnsureResourcePolling(pollCtx)
 
 		if err := system.ScanReader(stream.Reader, func(v []byte) {
 			e.logCallbackMx.Lock()
