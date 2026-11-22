@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- A server's state is no longer changed by its console output: a line that equals the egg's stop command does not put a running server into the stopping state. The stopping state is set when the stop command is actually sent, so crash detection and feature detection keep working. by @nayskutzu
+- A server's state is no longer changed by its console output: a line that equals the egg's stop command does not put a running server into the stopping state. The stopping state is set when the stop command is actually sent (the egg's stop command is now known from start-up, so this also works for servers that were re-attached after a restart of Wings), so crash detection and feature detection keep working. by @nayskutzu
 
 ## v1.5.2
 
