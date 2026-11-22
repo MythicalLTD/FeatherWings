@@ -103,19 +103,51 @@ func (e *Environment) isStatsInactive() bool {
 // (crash/restart races, orphaned containers) returns early and never starts it:
 // the console keeps streaming while CPU, memory and disk stay at 0 forever.
 // Callers that recover such a runtime call this to (re)start polling.
+//
+// If a loop is already running for a different context, the request is kept
+// and the running loop hands over to it when it exits. This covers a
+// replacement attach session that asks for polling while the previous
+// session's loop is still shutting down: without the hand-over the request
+// would be dropped and the new session would have no polling at all.
 func (e *Environment) EnsureResourcePolling(ctx context.Context) {
-	if !e.pollActive.CompareAndSwap(false, true) {
+	e.ensurePolling(ctx, e.pollResources)
+}
+
+func (e *Environment) ensurePolling(ctx context.Context, run func(context.Context) error) {
+	e.pollMu.Lock()
+	if e.pollActive {
+		if ctx != e.pollCtx {
+			e.pollNext = ctx
+		}
+		e.pollMu.Unlock()
 		return
 	}
+	e.pollActive = true
+	e.pollCtx = ctx
+	e.pollMu.Unlock()
 
 	go func() {
-		defer e.pollActive.Store(false)
-		if err := e.pollResources(ctx); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				e.log().WithField("error", err).Error("error during environment resource polling")
-			} else {
-				e.log().Warn("stopping server resource polling: context canceled")
+		for {
+			if err := run(ctx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					e.log().WithField("error", err).Error("error during environment resource polling")
+				} else {
+					e.log().Warn("stopping server resource polling: context canceled")
+				}
 			}
+
+			e.pollMu.Lock()
+			next := e.pollNext
+			e.pollNext = nil
+			if next == nil || next.Err() != nil {
+				e.pollActive = false
+				e.pollCtx = nil
+				e.pollMu.Unlock()
+				return
+			}
+			ctx = next
+			e.pollCtx = next
+			e.pollMu.Unlock()
 		}
 	}()
 }
