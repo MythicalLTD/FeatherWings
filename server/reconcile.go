@@ -149,6 +149,19 @@ func (s *Server) tryRecoverRuntime(ctx context.Context, finalState, reason strin
 	return ReconcileResult{Action: "recovered", Status: status, Message: reason}, nil
 }
 
+// ensureResourcePolling makes sure a stats poller runs for a container Wings
+// believes is online. It is a no-op for environments that do not implement it.
+func (s *Server) ensureResourcePolling() {
+	if s.Environment == nil || s.ctx == nil {
+		return
+	}
+	if rp, ok := s.Environment.(interface {
+		EnsureResourcePolling(context.Context)
+	}); ok {
+		rp.EnsureResourcePolling(s.ctx)
+	}
+}
+
 // ReconcileResult describes what a reconciliation pass decided for a server.
 type ReconcileResult struct {
 	Action  string `json:"action"`
@@ -275,6 +288,10 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 			if aerr != nil {
 				s.Log().WithField("error", aerr).Warn("runtime reconcile: failed to re-attach orphan container")
 			} else {
+				// Attach() is a no-op when Wings still holds a stream reference, and that
+				// path never starts the stats poller: CPU/memory stay at 0 while the console
+				// keeps working. Make sure a poller is running for the recovered container.
+				s.ensureResourcePolling()
 				s.setRuntimeStatus(RuntimeStatusOK, "re-attached orphan container")
 				return ReconcileResult{Action: "reattached", Status: RuntimeStatusOK, Message: "re-attached orphan container"}, nil
 			}
@@ -282,6 +299,11 @@ func (s *Server) ReconcileRuntime(ctx context.Context) (ReconcileResult, error) 
 	}
 
 	s.setRuntimeStatus(RuntimeStatusOK, "")
+	// A long-running server whose stats poller died (stale stream after a crash or
+	// restart) is repaired here instead of waiting for the next full restart.
+	if state == environment.ProcessRunningState {
+		s.ensureResourcePolling()
+	}
 	return ReconcileResult{Action: "noop", Status: RuntimeStatusOK}, nil
 }
 

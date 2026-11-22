@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
@@ -53,6 +54,11 @@ type Environment struct {
 	// Holds the active Docker stats body so a superseding stream can close the
 	// previous reader when pollResources reopens after EOF/stall.
 	stats io.ReadCloser
+
+	// Guards the single resource polling goroutine. Re-attaching to a container
+	// that Wings already believes it is attached to (crash/restart races) never
+	// started a poller, which left CPU and memory at 0 while the console worked.
+	pollActive atomic.Bool
 
 	emitter *events.Bus
 

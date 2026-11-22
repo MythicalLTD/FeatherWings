@@ -97,6 +97,29 @@ func (e *Environment) isStatsInactive() bool {
 	return st == environment.ProcessOfflineState || st == environment.ProcessErrorState
 }
 
+// EnsureResourcePolling starts the resource polling loop unless it is already
+// running. The polling goroutine is normally created when Wings attaches to a
+// container, but a re-attach to a container Wings already considers attached
+// (crash/restart races, orphaned containers) returns early and never starts it:
+// the console keeps streaming while CPU, memory and disk stay at 0 forever.
+// Callers that recover such a runtime call this to (re)start polling.
+func (e *Environment) EnsureResourcePolling(ctx context.Context) {
+	if !e.pollActive.CompareAndSwap(false, true) {
+		return
+	}
+
+	go func() {
+		defer e.pollActive.Store(false)
+		if err := e.pollResources(ctx); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				e.log().WithField("error", err).Error("error during environment resource polling")
+			} else {
+				e.log().Warn("stopping server resource polling: context canceled")
+			}
+		}
+	}()
+}
+
 // streamResources opens a single Docker stats stream and publishes events until
 // the stream ends, the context is canceled, or the process goes offline.
 func (e *Environment) streamResources(ctx context.Context, uptime *int64) error {
