@@ -111,3 +111,37 @@ func TestEnsurePollingDropsStaleRequests(t *testing.T) {
 		t.Fatalf("expected 1 polling run, got %d", n)
 	}
 }
+
+// A request that is already canceled must not replace a live pending request.
+func TestEnsurePollingCanceledRequestKeepsLivePending(t *testing.T) {
+	e := newPollTestEnv()
+
+	started := make(chan context.Context, 4)
+	run := func(ctx context.Context) error {
+		started <- ctx
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	e.ensurePolling(ctxA, run)
+	<-started
+
+	ctxB, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+	e.ensurePolling(ctxB, run)
+
+	ctxC, cancelC := context.WithCancel(context.Background())
+	cancelC()
+	e.ensurePolling(ctxC, run)
+
+	cancelA()
+	select {
+	case got := <-started:
+		if got != ctxB {
+			t.Fatal("hand-over did not use the live pending request")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("live pending request was lost")
+	}
+}

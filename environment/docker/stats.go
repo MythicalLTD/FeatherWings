@@ -114,6 +114,11 @@ func (e *Environment) EnsureResourcePolling(ctx context.Context) {
 }
 
 func (e *Environment) ensurePolling(ctx context.Context, run func(context.Context) error) {
+	// A request whose session is already gone must not replace a live one.
+	if ctx.Err() != nil {
+		return
+	}
+
 	e.pollMu.Lock()
 	if e.pollActive {
 		if ctx != e.pollCtx {
