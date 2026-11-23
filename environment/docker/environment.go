@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"emperror.dev/errors"
@@ -58,7 +57,12 @@ type Environment struct {
 	// Guards the single resource polling goroutine. Re-attaching to a container
 	// that Wings already believes it is attached to (crash/restart races) never
 	// started a poller, which left CPU and memory at 0 while the console worked.
-	pollActive atomic.Bool
+	// pollNext holds a request made while a loop was running (for example by a
+	// replacement attach session); the running loop hands over to it on exit.
+	pollMu     sync.Mutex
+	pollActive bool
+	pollCtx    context.Context
+	pollNext   context.Context
 
 	emitter *events.Bus
 
