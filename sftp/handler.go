@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
@@ -204,7 +205,20 @@ func (h *Handler) Filewrite(request *sftp.Request) (io.WriterAt, error) {
 	if slot == nil {
 		return nil, sftp.ErrSSHFxFailure
 	}
-	f, err := h.fs.Touch(request.Filepath, os.O_RDWR|os.O_TRUNC)
+	pflags := request.Pflags()
+	if pflags.Creat && pflags.Excl && sterr == nil {
+		slot.close()
+		return nil, sftp.ErrSSHFxFailure
+	}
+	// Only truncate the file when the client asked for it. Clients resuming an
+	// upload open the existing file without SSH_FXF_TRUNC and continue writing
+	// at its current size, so truncating it here would drop what was already
+	// uploaded.
+	flag := os.O_RDWR
+	if pflags.Trunc {
+		flag |= os.O_TRUNC
+	}
+	f, err := h.fs.Touch(request.Filepath, flag)
 	if err != nil {
 		slot.close()
 		l.WithField("flags", request.Flags).WithField("error", err).Error("failed to open existing file on system")
@@ -219,6 +233,34 @@ func (h *Handler) Filewrite(request *sftp.Request) (io.WriterAt, error) {
 	}
 	h.events.MustLog(event, FileAction{Entity: request.Filepath})
 	return quotaWriterAt{WriterAt: f, server: h.server, slot: slot}, nil
+}
+
+// setstatChanges are the changes a Setstat request asks for. Only the
+// attributes the client sent are applied, so a request that only sets the
+// times does not change the permissions.
+type setstatChanges struct {
+	mode         *os.FileMode
+	times        bool
+	atime, mtime time.Time
+}
+
+func parseSetstat(request *sftp.Request) (setstatChanges, error) {
+	var changes setstatChanges
+	mode, err := setstatMode(request)
+	if err != nil {
+		return changes, err
+	}
+	flags := request.AttrFlags()
+	if flags.Permissions {
+		changes.mode = &mode
+	}
+	if flags.Acmodtime {
+		attrs := request.Attributes()
+		changes.times = true
+		changes.atime = time.Unix(int64(attrs.Atime), 0)
+		changes.mtime = time.Unix(int64(attrs.Mtime), 0)
+	}
+	return changes, nil
 }
 
 func setstatMode(request *sftp.Request) (os.FileMode, error) {
@@ -274,16 +316,27 @@ func (h *Handler) Filecmd(request *sftp.Request) error {
 		if !h.can(PermissionFileUpdate) {
 			return sftp.ErrSSHFxPermissionDenied
 		}
-		mode, err := setstatMode(request)
+		changes, err := parseSetstat(request)
 		if err != nil {
 			return err
 		}
-		if err := h.fs.Chmod(request.Filepath, mode); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return sftp.ErrSSHFxNoSuchFile
+		if changes.mode != nil {
+			if err := h.fs.Chmod(request.Filepath, *changes.mode); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return sftp.ErrSSHFxNoSuchFile
+				}
+				l.WithField("error", err).Error("failed to perform setstat on item")
+				return sftp.ErrSSHFxFailure
 			}
-			l.WithField("error", err).Error("failed to perform setstat on item")
-			return sftp.ErrSSHFxFailure
+		}
+		if changes.times {
+			if err := h.fs.Chtimes(request.Filepath, changes.atime, changes.mtime); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return sftp.ErrSSHFxNoSuchFile
+				}
+				l.WithField("error", err).Error("failed to set times on item")
+				return sftp.ErrSSHFxFailure
+			}
 		}
 		break
 	// Support renaming a file (aka Move).
