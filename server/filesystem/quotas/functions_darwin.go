@@ -20,6 +20,11 @@ func AddQuota(serverID int, serverUUID string) error {
 	return errUnsupported
 }
 
+// EnsureQuota is unsupported on macOS.
+func EnsureQuota(serverID int, serverUUID string) error {
+	return errUnsupported
+}
+
 // SetQuota is unsupported on macOS.
 func SetQuota(limit int64, serverUUID string) error {
 	return errUnsupported

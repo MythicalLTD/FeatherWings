@@ -285,12 +285,8 @@ func (s *Server) Sync() error {
 
 	// Update the disk space limits for the server whenever the configuration for
 	// it changes.
-	if config.Get().System.Quotas.Enabled {
-		if err = quotas.SetQuota(s.DiskSpace(), s.ID()); err != nil {
-			return err
-		}
-	} else {
-		s.fs.SetDiskLimit(s.DiskSpace())
+	if err := s.syncDiskLimit(); err != nil {
+		return err
 	}
 
 	s.SyncWithEnvironment()
@@ -400,6 +396,30 @@ func (s *Server) ProcessConfiguration() *remote.ProcessConfiguration {
 // Filesystem returns an instance of the filesystem for this server.
 func (s *Server) Filesystem() *filesystem.Filesystem {
 	return s.fs
+}
+
+var (
+	ensureQuota = quotas.EnsureQuota
+	setQuota    = quotas.SetQuota
+)
+
+// syncDiskLimit applies the server's disk limit. With quotas the server's data
+// directory is made first when it is missing, for example after it was
+// removed by hand, and its quota project is set on it again; otherwise the
+// quota can't be applied and a reinstall, which is the way to restore the
+// directory, would fail before it gets to make it.
+func (s *Server) syncDiskLimit() error {
+	if !config.Get().System.Quotas.Enabled {
+		s.fs.SetDiskLimit(s.DiskSpace())
+		return nil
+	}
+	if err := s.EnsureDataDirectoryExists(); err != nil {
+		return err
+	}
+	if err := ensureQuota(s.Config().Pid, s.ID()); err != nil {
+		return err
+	}
+	return setQuota(s.DiskSpace(), s.ID())
 }
 
 // EnsureDataDirectoryExists ensures that the data directory for the server

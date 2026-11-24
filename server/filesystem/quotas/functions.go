@@ -9,8 +9,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
-	"github.com/parkervcp/fsquota"
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/parkervcp/fsquota"
 )
 
 const (
@@ -86,6 +86,19 @@ func AddQuota(serverID int, serverUUID string) (err error) {
 		return exfsProject{ID: serverID, Name: serverUUID, BasePath: config.Get().System.Data}.addProject()
 	}
 
+	return errors.New("failed to set a quota")
+}
+
+// EnsureQuota makes sure the server is a quota project and that its data
+// directory carries the project, which is lost when the directory is removed
+// and made again.
+func EnsureQuota(serverID int, serverUUID string) error {
+	if t := fsType.Load(); t == FSEXT4 || t == FSXFS {
+		if project, err := getProject(serverUUID); err == nil {
+			return project.enableEXFSQuota()
+		}
+		return AddQuota(serverID, serverUUID)
+	}
 	return errors.New("failed to set a quota")
 }
 
