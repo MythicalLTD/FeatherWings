@@ -114,8 +114,14 @@ func (l Limits) AsContainerResources() container.Resources {
 		Memory:            l.BoundedMemoryLimit(),
 		MemoryReservation: l.MemoryLimit * 1024 * 1024,
 		MemorySwap:        l.ConvertedSwap(),
-		OomKillDisable:    boolPtr(!l.OOMKiller),
 		PidsLimit:         &pids,
+	}
+
+	// Disabling the OOM killer only exists on cgroup v1; cgroup v2 has no such
+	// setting, so Docker ignores it there with a warning on every create and
+	// update. Leave it unset on cgroup v2.
+	if !cgroupV2() {
+		resources.OomKillDisable = boolPtr(!l.OOMKiller)
 	}
 
 	// Only set the block IO weight when the host's cgroup hierarchy can honor it.
@@ -162,6 +168,15 @@ func (l Limits) AsContainerResources() container.Resources {
 	}
 
 	return resources
+}
+
+// cgroupV2 reports whether the host uses the unified cgroup v2 hierarchy.
+var cgroupV2 = func() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	_, err := os.Stat("/sys/fs/cgroup/cgroup.controllers")
+	return err == nil
 }
 
 // blkioWeightSupported reports whether the host's cgroup hierarchy can honor a
