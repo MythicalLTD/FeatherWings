@@ -8,11 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"emperror.dev/errors"
 	"github.com/apex/log"
-	"github.com/parkervcp/fsquota"
 	"github.com/mythicalltd/featherwings/config"
+	"github.com/parkervcp/fsquota"
 )
 
 var exfs struct {
@@ -41,22 +42,64 @@ var (
 	projectsTemplate = template.Must(template.New("projects").Parse(projectsTemplateSrc))
 )
 
+var (
+	lookupProject = fsquota.LookupProject
+	// setProjectHardLimit and projectHardLimit wrap fsquota so tests can
+	// replace them; quotactl needs root and a filesystem with project quotas.
+	setProjectHardLimit = func(path string, project *fsquota.Project, byteLimit uint64) error {
+		limits := fsquota.Limits{}
+		limits.Bytes.SetHard(byteLimit)
+		_, err := fsquota.SetProjectQuota(path, project, limits)
+		return err
+	}
+	projectHardLimit = func(path string, project *fsquota.Project) (uint64, error) {
+		info, err := fsquota.GetProjectInfo(path, project)
+		if err != nil {
+			return 0, err
+		}
+		return info.Bytes.GetHard(), nil
+	}
+)
+
+func isQuotaReadBackError(err error) bool {
+	var serr *os.SyscallError
+	if !errors.As(err, &serr) || serr.Syscall != "quotactl" {
+		return false
+	}
+	return errors.Is(serr.Err, syscall.ESRCH) || errors.Is(serr.Err, syscall.ENOENT)
+}
+
+// quotaBlockSize is the unit quotactl stores limits in; a limit read back is
+// rounded down to it.
+const quotaBlockSize = 1024
+
 // setQuota sets the quota in bytes for the specified server uuid
 // A limit of 0 is treated as unlimited by xfs and ext4
 func (q exfsProject) setQuota(byteLimit uint64) (err error) {
 	serverDirPath := filepath.Join(q.BasePath, q.Name)
 	log.WithFields(log.Fields{"server_path": serverDirPath, "limit_bytes": byteLimit}).Debug("setting quota")
-	serverProject, err := fsquota.LookupProject(q.Name)
+	serverProject, err := lookupProject(q.Name)
 	if err != nil {
 		return
 	}
 
-	limits := fsquota.Limits{}
-
-	limits.Bytes.SetHard(byteLimit)
-
-	if _, err = fsquota.SetProjectQuota(serverDirPath, serverProject, limits); err != nil {
-		return
+	if err = setProjectHardLimit(serverDirPath, serverProject, byteLimit); err != nil {
+		// fsquota reads the quota back as a user quota after setting the
+		// project quota, which fails with ESRCH when no user with the
+		// project's ID has a quota (ESRCH), or with ENOENT when user quotas
+		// are on as well, even though the project quota was set. Read it back
+		// as a project quota and accept it when it matches.
+		if !isQuotaReadBackError(err) {
+			return
+		}
+		hard, readErr := projectHardLimit(serverDirPath, serverProject)
+		if readErr != nil {
+			return errors.Wrap(err, "quota could not be read back: "+readErr.Error())
+		}
+		if hard != byteLimit/quotaBlockSize*quotaBlockSize {
+			return errors.Wrapf(err, "quota read back as %d bytes instead of %d", hard, byteLimit)
+		}
+		err = nil
 	}
 
 	log.WithField("server_path", serverDirPath).Debug("quota set")
