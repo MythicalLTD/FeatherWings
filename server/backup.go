@@ -228,7 +228,9 @@ func (s *Server) restoreEntry(file string, info fs.FileInfo, r io.Reader) error 
 		if err := s.Filesystem().CreateDirectory(filepath.Dir(file), "/"); err != nil {
 			return err
 		}
-		if err := s.Filesystem().Symlink(h.Linkname, file); err != nil && !errors.Is(err, os.ErrExist) {
+		// A file or link already at this path is replaced so the restored
+		// server matches the backup; a directory there is kept.
+		if err := s.Filesystem().ReplaceWithSymlink(h.Linkname, file); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 		return nil

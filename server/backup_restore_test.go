@@ -193,3 +193,33 @@ func TestRestoreTruncatesBeforeRestoring(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(before, after), "the server directory should be kept")
 }
+
+// Restoring without deleting the server's files first replaces a file or a
+// symlink at the path of a symlink in the backup, and keeps a directory.
+func TestRestoreReplacesExistingEntryWithSymlink(t *testing.T) {
+	s, backupDir, root := newRestoreTestServer(t)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "file-link"), []byte("old content"), 0o644))
+	require.NoError(t, os.Symlink("old-target", filepath.Join(root, "link-link")))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "dir-link"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dir-link", "keep.txt"), []byte("keep"), 0o644))
+
+	writeRestoreTestArchive(t, backupDir, func(tw *tar.Writer) {
+		addRestoreTestFile(t, tw, "a.txt", 0o644, "hello")
+		for _, name := range []string{"file-link", "link-link", "dir-link"} {
+			addRestoreTestHeader(t, tw, &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: "a.txt", Mode: 0o777})
+		}
+	})
+
+	require.NoError(t, s.RestoreBackup(restoreTestLocal(), nil, false))
+
+	for _, name := range []string{"file-link", "link-link"} {
+		target, err := os.Readlink(filepath.Join(root, name))
+		require.NoError(t, err, name)
+		assert.Equal(t, "a.txt", target, name)
+	}
+	st, err := os.Lstat(filepath.Join(root, "dir-link"))
+	require.NoError(t, err)
+	assert.True(t, st.IsDir(), "an existing directory is kept")
+	_, err = os.Stat(filepath.Join(root, "dir-link", "keep.txt"))
+	assert.NoError(t, err)
+}

@@ -352,6 +352,28 @@ func (fs *Filesystem) Symlink(oldpath, newpath string) error {
 	return fs.unixFS.Symlink(oldpath, newpath)
 }
 
+// ReplaceWithSymlink creates newpath as a symlink to oldpath, replacing a file
+// or symlink that is already there. An existing directory is left alone and
+// reported with ErrExist, since replacing it would drop everything inside.
+func (fs *Filesystem) ReplaceWithSymlink(oldpath, newpath string) error {
+	err := fs.unixFS.Symlink(oldpath, newpath)
+	if err == nil || !errors.Is(err, ufs.ErrExist) {
+		return err
+	}
+	st, lerr := fs.unixFS.Lstat(newpath)
+	if lerr != nil {
+		return lerr
+	}
+	if st.IsDir() {
+		return err
+	}
+	// Remove through the quota so the size of the replaced file is freed.
+	if err := fs.unixFS.Remove(newpath); err != nil {
+		return err
+	}
+	return fs.unixFS.Symlink(oldpath, newpath)
+}
+
 // needsChown reports whether the file's uid/gid differ from the configured daemon user.
 func needsChown(st ufs.FileInfo, uid, gid int) bool {
 	sys, ok := st.Sys().(*unix.Stat_t)
