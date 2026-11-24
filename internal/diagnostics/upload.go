@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/goccy/go-json"
 )
@@ -39,8 +40,18 @@ type pasteUploadResponse struct {
 	Error   string `json:"error"`
 }
 
+// maxUploadResponseSize is the largest response read from the paste service.
+const maxUploadResponseSize = 64 * 1024
+
+// uploadTimeout bounds how long an upload may take when the caller did not set
+// a shorter deadline.
+const uploadTimeout = 30 * time.Second
+
 // UploadReport posts diagnostics content to the given mclo.gs-compatible paste API endpoint and returns the resulting URL.
 func UploadReport(ctx context.Context, apiURL string, content string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
+	defer cancel()
+
 	if apiURL == "" {
 		return "", ErrMissingUploadAPIURL
 	}
@@ -71,9 +82,14 @@ func UploadReport(ctx context.Context, apiURL string, content string) (string, e
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	// The paste service only answers with a short JSON document, so do not read
+	// more than that from it.
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxUploadResponseSize+1))
 	if err != nil {
 		return "", fmt.Errorf("failed to read upload response: %w", err)
+	}
+	if len(body) > maxUploadResponseSize {
+		return "", errors.New("upload response is too large")
 	}
 
 	if res.StatusCode != http.StatusOK {

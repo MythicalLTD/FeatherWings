@@ -10,6 +10,9 @@ var (
 	ErrServerIsInstalling   = errors.New("server is currently installing")
 	ErrServerIsTransferring = errors.New("server is currently being transferred")
 	ErrServerIsRestoring    = errors.New("server is currently being restored")
+	// ErrLifecycleBusy is returned when an installation, transfer or restore is
+	// requested while one of them is already running for the server.
+	ErrLifecycleBusy = errors.New("another installation, transfer or restore is already in progress for this server")
 )
 
 type crashTooFrequent struct{}

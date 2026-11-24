@@ -525,3 +525,41 @@ func TestCommitReceivedBackupsRefusesNonRegularDestination(t *testing.T) {
 	_, err = os.Stat(tmpA)
 	assert.NoError(t, err, "staged files are left for the caller to remove")
 }
+
+// A checksum part far larger than any real checksum is refused without being
+// read into memory, and the received files are removed.
+func TestTransferRefusesOversizedChecksum(t *testing.T) {
+	h := newTransferHarness(t, &transferTestPanel{})
+
+	// Send the checksum before the archive, so the request is refused as soon
+	// as the checksum is read.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	require.NoError(t, mw.WriteField("checksum", strings.Repeat("a", 4*1024*1024)))
+	part, err := mw.CreateFormFile("archive", "archive.tar.gz")
+	require.NoError(t, err)
+	_, err = part.Write(buildTransferTestArchive(t, map[string]string{"received.txt": "data"}))
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	w := h.postTransfer(&body, mw.FormDataContentType(), signTransferTestToken(t, transferTestUUID))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "checksum")
+
+	_, err = os.Stat(filepath.Join(config.Get().System.Data, transferTestUUID, "received.txt"))
+	assert.True(t, os.IsNotExist(err), "a file from a refused receive is still on disk")
+	_, registered := h.mgr.Get(transferTestUUID)
+	assert.False(t, registered)
+}
+
+func TestReadTransferChecksumLimit(t *testing.T) {
+	b, err := readTransferChecksum(strings.NewReader(strings.Repeat("f", 64)))
+	require.NoError(t, err)
+	require.Len(t, b, 64)
+
+	_, err = readTransferChecksum(strings.NewReader(strings.Repeat("f", maxChecksumSize)))
+	require.NoError(t, err)
+
+	_, err = readTransferChecksum(strings.NewReader(strings.Repeat("f", maxChecksumSize+1)))
+	require.ErrorIs(t, err, errChecksumTooLarge)
+}

@@ -84,6 +84,27 @@ type incomingTransferFiles struct {
 	installLogPath string
 }
 
+// maxChecksumSize is the most that is read of a checksum sent with a transfer.
+// A SHA-256 checksum is 64 hexadecimal characters, so anything much longer is
+// invalid and is not read into memory.
+const maxChecksumSize = 128
+
+// errChecksumTooLarge is returned for a transfer checksum over maxChecksumSize.
+var errChecksumTooLarge = errors.New("transfer checksum is larger than the maximum allowed size")
+
+// readTransferChecksum reads a checksum part of a transfer request, reading at
+// most maxChecksumSize bytes of it.
+func readTransferChecksum(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxChecksumSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxChecksumSize {
+		return nil, errChecksumTooLarge
+	}
+	return b, nil
+}
+
 // postTransfers handles an incoming server transfer stream initiated by another node.
 // @Summary Receive server transfer
 // @Tags Transfers
@@ -355,8 +376,12 @@ out:
 				trnsfr.Log().Debug("received archive checksum")
 				// Always consume the checksum part if present so the body is fully read.
 				// Calagopus sends "checksum"; FeatherWings historically sent "checksum_archive".
-				checksumData, err := io.ReadAll(p)
+				checksumData, err := readTransferChecksum(p)
 				if err != nil {
+					if errors.Is(err, errChecksumTooLarge) {
+						c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+						return
+					}
 					middleware.CaptureAndAbort(c, err)
 					return
 				}
@@ -460,8 +485,12 @@ out:
 				trnsfr.Log().WithField("backup", backupName).Debug("received backup checksum")
 
 				// Always consume the checksum part if present so the body is fully read.
-				checksumData, err := io.ReadAll(p)
+				checksumData, err := readTransferChecksum(p)
 				if err != nil {
+					if errors.Is(err, errChecksumTooLarge) {
+						c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+						return
+					}
 					middleware.CaptureAndAbort(c, err)
 					return
 				}

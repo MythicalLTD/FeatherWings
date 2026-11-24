@@ -59,3 +59,47 @@ func TestRestoreOfMissingBackupKeepsFiles(t *testing.T) {
 	require.NoError(t, err, "the server's files were deleted although the backup could not be found")
 	require.False(t, s.IsRestoring())
 }
+
+// A restore requested while the server is being installed is refused with a
+// 409 and leaves both the files and the install state alone.
+func TestRestoreIsRefusedWhileInstalling(t *testing.T) {
+	previous := config.Get()
+	t.Cleanup(func() { config.Set(previous) })
+	cfg, err := config.NewAtPath(filepath.Join(t.TempDir(), "config.yml"))
+	require.NoError(t, err)
+	cfg.AuthenticationToken = "test-token"
+	cfg.System.Data = t.TempDir()
+	cfg.System.BackupDirectory = t.TempDir()
+	config.Set(cfg)
+
+	const uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	settings, err := json.Marshal(map[string]any{"uuid": uuid})
+	require.NoError(t, err)
+	client := backupTestRemoteClient{}
+	s, err := wserver.NewEmptyManager(client).InitServer(uuid, remote.ServerConfigurationResponse{Settings: settings, ProcessConfiguration: &remote.ProcessConfiguration{}})
+	require.NoError(t, err)
+	t.Cleanup(s.CtxCancel)
+	s.Environment = backupTestEnvironment{}
+	keep := filepath.Join(s.Filesystem().Path(), "keep.txt")
+	require.NoError(t, os.WriteFile(keep, []byte("important"), 0o644))
+	require.True(t, s.StartInstalling())
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	backupID := "6a3c2f6e-1b7d-4c8e-9f0a-2d4b6c8e0f12"
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/servers/"+uuid+"/backup/"+backupID+"/restore", strings.NewReader(`{"adapter":"wings","truncate_directory":true}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "server", Value: uuid}, {Key: "backup", Value: backupID}}
+	c.Set("server", s)
+	c.Set("api_client", client)
+	c.Set("logger", log.WithField("test", t.Name()))
+
+	postServerRestoreBackup(c)
+
+	require.Equal(t, http.StatusConflict, w.Code)
+	_, err = os.Stat(keep)
+	require.NoError(t, err)
+	require.False(t, s.IsRestoring())
+	require.True(t, s.IsInstalling())
+}

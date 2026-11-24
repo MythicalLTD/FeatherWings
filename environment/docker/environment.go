@@ -71,6 +71,12 @@ type Environment struct {
 
 	// Tracks the environment state.
 	st *system.AtomicString
+
+	// reattachedAt and reattachedCount track how often the attached stream of a
+	// running container was lost, so that one that keeps losing it is
+	// terminated instead of attached to again forever. Guarded by mu.
+	reattachedAt    time.Time
+	reattachedCount int
 }
 
 // New creates a new base Docker environment. The ID passed through will be the

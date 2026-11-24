@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -40,6 +41,18 @@ func (s *Server) Install() error {
 }
 
 func (s *Server) install(reinstall bool) error {
+	// Do not start an installation while the server is being installed,
+	// transferred or restored. The Panel was already answered with a 202, so tell
+	// it the install did not complete, but leave the environment state alone
+	// since the other operation owns the server.
+	if s.IsInProtectedState() {
+		s.Log().Warn("refusing install: another installation, transfer or restore is already in progress")
+		if serr := s.SyncInstallState(false, reinstall); serr != nil {
+			s.Log().WithField("error", serr).Warn("failed to notify the Panel that the install was refused")
+		}
+		return ErrLifecycleBusy
+	}
+
 	var err error
 	if !s.Config().SkipEggScripts {
 		// Send the start event so the Panel can automatically update. We don't
@@ -66,6 +79,12 @@ func (s *Server) install(reinstall bool) error {
 		}
 
 		l.Warn("failed to notify panel of server install state")
+	}
+
+	// Another installation, transfer or restore claimed the server first; it owns
+	// the environment state and its completion events.
+	if errors.Is(err, ErrLifecycleBusy) {
+		return err
 	}
 
 	// Ensure that the server is marked as offline at this point, otherwise you
@@ -178,14 +197,37 @@ func (s *Server) SetTransferring(state bool) {
 	}
 }
 
+// startLifecycle marks the server as being in one of the mutually exclusive
+// lifecycle states (installing, transferring or restoring) in a single step,
+// returning false if any of them is already set. Each of these replaces the
+// server's files, so only one of them may run at a time.
+func (s *Server) startLifecycle(flag *system.AtomicBool) bool {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.installing.Load() || s.transferring.Load() || s.restoring.Load() {
+		return false
+	}
+	flag.Store(true)
+	s.Sftp().CancelAll()
+	return true
+}
+
+// StartInstalling marks the server as installing, returning false if it is
+// already installing, or if it is being transferred or restored.
+func (s *Server) StartInstalling() bool {
+	return s.startLifecycle(s.installing)
+}
+
 // StartTransferring marks the server as being transferred, returning false if
 // it already is, or if it is being installed or restored.
 func (s *Server) StartTransferring() bool {
-	if s.IsInstalling() || s.IsRestoring() || !s.transferring.SwapIf(true) {
-		return false
-	}
-	s.Sftp().CancelAll()
-	return true
+	return s.startLifecycle(s.transferring)
+}
+
+// StartRestoring marks the server as restoring a backup, returning false if it
+// already is, or if it is being installed or transferred.
+func (s *Server) StartRestoring() bool {
+	return s.startLifecycle(s.restoring)
 }
 
 func (s *Server) IsRestoring() bool {
@@ -221,10 +263,9 @@ func (ip *InstallationProcess) RemoveContainer() error {
 // are stored in an installation log in the server's configuration directory.
 func (ip *InstallationProcess) Run() error {
 	ip.Server.Log().Debug("acquiring installation process lock")
-	if !ip.Server.installing.SwapIf(true) {
-		return errors.New("install: cannot obtain installation lock")
+	if !ip.Server.StartInstalling() {
+		return ErrLifecycleBusy
 	}
-	ip.Server.Sftp().CancelAll()
 	// We now have an exclusive lock on this installation process. Ensure that whenever this
 	// process is finished that the semaphore is released so that other processes and be executed
 	// without encountering a wait timeout.
@@ -419,7 +460,7 @@ func (ip *InstallationProcess) AfterExecute(containerId string) error {
 |
 | Environment Variables
 | ------------------------------
-{{ range $key, $value := .Server.GetEnvironmentVariables }}  {{ $value }}
+{{ range $key, $value := .Environment }}  {{ $value }}
 {{ end }}
 
 |
@@ -434,9 +475,11 @@ func (ip *InstallationProcess) AfterExecute(containerId string) error {
 	data := struct {
 		*InstallationProcess
 		KernelVersion string
+		Environment   []string
 	}{
 		InstallationProcess: ip,
 		KernelVersion:       v.String(),
+		Environment:         redactEnvironment(ip.Server.GetEnvironmentVariables()),
 	}
 
 	if err := tmpl.Execute(f, data); err != nil {
@@ -659,7 +702,7 @@ func (ip *InstallationProcess) resourceLimits() container.Resources {
 
 	// Create a copy of the configuration, so we're not accidentally making
 	// changes to the underlying server build data.
-	c := *ip.Server.Config()
+	c := ip.Server.cfg.snapshot()
 	cfg := c.Build
 	if cfg.MemoryLimit < limits.Memory {
 		cfg.MemoryLimit = limits.Memory
@@ -694,4 +737,78 @@ func (s *Server) SyncInstallState(successful, reinstall bool) error {
 		Successful: successful,
 		Reinstall:  reinstall,
 	})
+}
+
+// redactedValue replaces the value of a sensitive variable in the installation log.
+const redactedValue = "********"
+
+// minSearchedSecretLength is the length a sensitive value needs before it is also
+// searched for in the other variables: shorter values ("1", "true", "false")
+// would hide unrelated text.
+const minSearchedSecretLength = 6
+
+// sensitiveKeyWords are matched anywhere in a variable name, sensitiveKeyParts
+// only as a whole part of it (RCON_PASS, API_KEY, STEAM_ACC for the Steam game
+// server token), so names like BYPASS_CHECK or MONKEY_MODE are kept.
+var (
+	sensitiveKeyWords = []string{"PASSWORD", "PASSWD", "TOKEN", "SECRET", "CREDENTIAL", "LICENSE", "PRIVATE", "APIKEY", "WEBHOOK", "RCONPASS"}
+	sensitiveKeyParts = []string{"PASS", "PW", "PWD", "KEY", "AUTH", "ACC", "GSLT"}
+)
+
+// isSensitiveVariable reports whether the value of the environment variable with
+// this name looks like a password, a token or a key.
+func isSensitiveVariable(name string) bool {
+	name = strings.ToUpper(name)
+	for _, word := range sensitiveKeyWords {
+		if strings.Contains(name, word) {
+			return true
+		}
+	}
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' || r == '.' }) {
+		for _, p := range sensitiveKeyParts {
+			if part == p {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// redactEnvironment hides the values of sensitive variables before they are
+// written to the installation log, which the Panel can show to subusers. Those
+// values are also hidden wherever they appear in another variable, such as
+// STARTUP, which holds the start command with every variable already replaced.
+func redactEnvironment(env []string) []string {
+	var secrets []string
+	out := make([]string, len(env))
+	for i, e := range env {
+		name, value, ok := strings.Cut(e, "=")
+		if ok && value != "" && isSensitiveVariable(name) {
+			if len(value) >= minSearchedSecretLength {
+				secrets = append(secrets, value)
+			}
+			out[i] = name + "=" + redactedValue
+			continue
+		}
+		out[i] = e
+	}
+	if len(secrets) == 0 {
+		return out
+	}
+
+	// Replace the longest values first, so a secret that contains another one is
+	// fully hidden.
+	sort.Slice(secrets, func(a, b int) bool { return len(secrets[a]) > len(secrets[b]) })
+	pairs := make([]string, 0, len(secrets)*2)
+	for _, secret := range secrets {
+		pairs = append(pairs, secret, redactedValue)
+	}
+	replacer := strings.NewReplacer(pairs...)
+	for i, e := range out {
+		name, value, ok := strings.Cut(e, "=")
+		if ok && value != redactedValue {
+			out[i] = name + "=" + replacer.Replace(value)
+		}
+	}
+	return out
 }

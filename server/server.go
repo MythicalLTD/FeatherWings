@@ -73,6 +73,9 @@ type Server struct {
 	installing   *system.AtomicBool
 	transferring *system.AtomicBool
 	restoring    *system.AtomicBool
+	// lifecycleMu makes the check-and-set of the installing, transferring and
+	// restoring states a single step, so that only one of them runs at a time.
+	lifecycleMu sync.Mutex
 
 	// The console throttler instance used to control outputs.
 	throttler    *ConsoleThrottle
@@ -314,7 +317,7 @@ func (s *Server) Sync() error {
 func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) error {
 	prevEnabled, prevDirectory := s.Config().GetFastDL()
 
-	c := Configuration{
+	c := configurationData{
 		CrashDetectionEnabled: config.Get().System.CrashDetection.CrashDetectionEnabled,
 	}
 	if err := json.Unmarshal(cfg.Settings, &c); err != nil {
@@ -343,14 +346,9 @@ func (s *Server) SyncWithConfiguration(cfg remote.ServerConfigurationResponse) e
 	s.cfg.mu.Lock()
 	defer s.cfg.mu.Unlock()
 
-	// Lock the new configuration. Since we have the deferred Unlock above we need
-	// to make sure that the NEW configuration object is already locked since that
-	// defer is running on the memory address for "s.cfg.mu" which we're explicitly
-	// changing on the next line.
-	c.mu.Lock()
-
-	//goland:noinspection GoVetCopyLock
-	s.cfg = c
+	// Only replace the values, never the mutex, since other goroutines may be
+	// waiting to acquire it and would never be woken if it were overwritten.
+	s.cfg.configurationData = c
 
 	s.Lock()
 	s.procConfig = cfg.ProcessConfiguration
@@ -527,7 +525,7 @@ func (s *Server) ToAPIResponse() APIResponse {
 		State:         s.Environment.State(),
 		IsSuspended:   s.IsSuspended(),
 		Utilization:   s.Proc(),
-		Configuration: *s.Config(),
+		Configuration: s.cfg.snapshot(),
 		Runtime:       s.Runtime(),
 	}
 }

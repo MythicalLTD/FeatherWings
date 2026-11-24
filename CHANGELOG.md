@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Server lifecycle and diagnostics hardening by @nayskutzu:
+  - Installs, backup restores and transfers of a server can no longer run at the same time. A restore, install or reinstall requested while one of them is in progress is answered with 409, and an install that loses the race is reported to the panel as unsuccessful without touching the running operation.
+  - The installation log no longer contains the values of password, token, key, license and similar egg variables. They are shown as `********`, also where they appear inside `STARTUP`.
+  - Diagnostics reports (`wings diagnostics` and `/api/system/diagnostics`) remove the node token, the metrics token, JWTs and `token` query parameters from the whole report, including the included `wings.log` lines, and endpoints are removed from the logs as well when they are not included. Uploads time out after 30 seconds and read at most 64 KiB of the paste service's answer.
+  - Syncing a server's configuration from the panel replaces only its values and keeps the lock that guards them, so requests waiting on the configuration during a sync can no longer stay blocked.
+  - Checksums sent with an incoming transfer are read up to 128 bytes; a larger one is refused with 400.
+  - When the console stream of a running container ends, Wings retries a failed inspect before deciding anything, attaches again up to 3 times in 5 minutes, and terminates the container if its state cannot be read or it cannot be attached to, instead of marking the server offline while the container may still be running.
 - Resource polling (CPU, memory, disk) keeps running when the console attach stream is replaced while the container is still running. A polling request made by the new attach session while the previous session's loop is still shutting down is kept and taken over when that loop exits, instead of being dropped, so usage no longer stays at 0 when runtime reconciliation is disabled. Follow-up to #44. by @nayskutzu
 - A server's state is no longer changed by its console output: a line that equals the egg's stop command does not put a running server into the stopping state. The stopping state is set when the stop command is actually sent (the egg's stop command is now known from start-up, so this also works for servers that were re-attached after a restart of Wings), so crash detection and feature detection keep working. by @nayskutzu
 

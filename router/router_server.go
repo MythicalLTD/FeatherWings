@@ -442,11 +442,19 @@ func postServerImport(c *gin.Context) {
 // @Tags Servers
 // @Param server path string true "Server identifier"
 // @Success 202 {string} string "Accepted"
+// @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security NodeToken
 // @Router /api/servers/{server}/install [post]
 func postServerInstall(c *gin.Context) {
 	s := ExtractServer(c)
+
+	if s.IsInProtectedState() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "This server is already being installed, transferred or restored.",
+		})
+		return
+	}
 
 	go func(s *server.Server) {
 		s.Log().Info("syncing server state with remote source before executing installation process")
@@ -478,6 +486,13 @@ func postServerReinstall(c *gin.Context) {
 	if s.ExecutingPowerAction() {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
 			"error": "Cannot execute server reinstall event while another power action is running.",
+		})
+		return
+	}
+
+	if s.IsInProtectedState() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "This server is already being installed, transferred or restored.",
 		})
 		return
 	}

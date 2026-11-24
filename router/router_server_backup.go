@@ -102,6 +102,7 @@ func postServerBackup(c *gin.Context) {
 // @Param payload body ServerBackupRestoreRequest true "Restore request"
 // @Success 202 {string} string "Accepted"
 // @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Security NodeToken
 // @Router /api/servers/{server}/backup/{backup}/restore [post]
@@ -130,7 +131,14 @@ func postServerRestoreBackup(c *gin.Context) {
 		}
 	}
 
-	s.SetRestoring(true)
+	// Only one restore may run at a time, and never while the server is being
+	// installed or transferred, since each of them replaces the server's files.
+	if !s.StartRestoring() {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error": "This server is already restoring a backup, or is being installed or transferred.",
+		})
+		return
+	}
 	hasError := true
 	defer func() {
 		if !hasError {
