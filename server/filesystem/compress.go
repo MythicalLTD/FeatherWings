@@ -9,6 +9,7 @@ import (
 	"math"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -359,6 +360,7 @@ func (fs *Filesystem) ExtractTransfer(ctx context.Context, r io.Reader) error {
 		Format:       format,
 		Reader:       input,
 		KeepDenylist: true,
+		KeepDirModes: true,
 	})
 }
 
@@ -373,6 +375,10 @@ type extractStreamOptions struct {
 	Reader io.Reader
 	// KeepDenylist extracts files the denylist would otherwise skip.
 	KeepDenylist bool
+	// KeepDirModes gives directories the mode stored in the archive once
+	// everything is extracted. Directories are made 0755 while extracting so
+	// their own files can be written into them.
+	KeepDirModes bool
 }
 
 func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptions) error {
@@ -409,7 +415,8 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 	}
 
 	// Decompress and extract archive
-	return ex.Extract(ctx, opts.Reader, func(ctx context.Context, f archives.FileInfo) error {
+	dirModes := make(map[string]ufs.FileMode)
+	if err := ex.Extract(ctx, opts.Reader, func(ctx context.Context, f archives.FileInfo) error {
 		p := filepath.Join(opts.Directory, f.NameInArchive)
 		// If it is ignored, just don't do anything with the entry and skip over it.
 		if !opts.KeepDenylist {
@@ -422,6 +429,10 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 		if f.IsDir() {
 			if err := fs.mkdirAll(p, 0o755); err != nil {
 				return wrapError(err, opts.FileName)
+			}
+			// The server's root directory keeps the mode Wings gives it.
+			if opts.KeepDirModes && filepath.Clean(p) != filepath.Clean(opts.Directory) {
+				dirModes[p] = f.Mode().Perm()
 			}
 			return nil
 		}
@@ -457,5 +468,30 @@ func (fs *Filesystem) extractStream(ctx context.Context, opts extractStreamOptio
 			return wrapError(err, opts.FileName)
 		}
 		return nil
+	}); err != nil {
+		return err
+	}
+	return fs.applyDirModes(dirModes, opts.FileName)
+}
+
+// applyDirModes sets the given directory modes, deepest directory first so a
+// read-only parent does not get in the way of changing its children.
+func (fs *Filesystem) applyDirModes(modes map[string]ufs.FileMode, archive string) error {
+	paths := make([]string, 0, len(modes))
+	for p := range modes {
+		paths = append(paths, p)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		di, dj := strings.Count(paths[i], "/"), strings.Count(paths[j], "/")
+		if di != dj {
+			return di > dj
+		}
+		return paths[i] > paths[j]
 	})
+	for _, p := range paths {
+		if err := fs.Chmod(p, modes[p]); err != nil {
+			return wrapError(err, archive)
+		}
+	}
+	return nil
 }
