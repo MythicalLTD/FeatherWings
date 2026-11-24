@@ -759,17 +759,10 @@ func (f *ConfigurationFile) parseTomlFile(file ufs.File) error {
 		return err
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if err := file.Truncate(0); err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(file, bytes.NewReader(marshaled)); err != nil {
-		return errors.Wrap(err, "parser: failed to write toml file to disk")
-	}
-	return nil
+	// Write through rewrite like the other formats, so a result that is too
+	// large or doesn't fit in the server's disk space leaves the file as it
+	// was instead of truncating it.
+	return rewrite(file, marshaled)
 }
 
 // normalizeYamlTypes converts json.Number values (produced by UseNumber()) into
