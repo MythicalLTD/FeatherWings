@@ -115,116 +115,199 @@ func (e *Environment) Attach(ctx context.Context) error {
 	return nil
 }
 
-// maxReattachesPerWindow is how many times the stream of a running container is
-// attached to again within reattachWindow before the container is terminated.
+// maxAttachFailuresPerWindow is how many times attaching to a container that
+// Docker confirms is running may fail within reattachWindow before the
+// container is terminated. A container whose stream is lost but that can be
+// attached to again is never terminated for it; frequent losses only slow
+// down how fast it is attached to again.
 const (
-	maxReattachesPerWindow = 3
-	reattachWindow         = 5 * time.Minute
+	maxAttachFailuresPerWindow = 3
+	reattachWindow             = 5 * time.Minute
+	// maxDropsBeforeSlowdown is how many lost streams within reattachWindow
+	// are attached to again straight away.
+	maxDropsBeforeSlowdown = 3
 )
 
-// reattachInspectAttempts and reattachInspectDelay control how often a failed
-// inspect is retried before the container's state is treated as unknown.
+// reattachInspectDelay is the first wait between two attempts to reach Docker
+// and reattachMaxDelay the longest one. reattachWaitLimit bounds how long
+// Wings waits for Docker to answer before it stops waiting; the container is
+// not terminated in that case.
 var (
-	reattachInspectAttempts = 3
-	reattachInspectDelay    = time.Second
+	reattachInspectDelay = time.Second
+	reattachMaxDelay     = 30 * time.Second
+	reattachWaitLimit    = 10 * time.Minute
 )
 
-// reattach is called when the attached stream of a session ends. It attaches to
-// the container again if it is still running and returns true in that case. If
-// that keeps happening, attaching fails, or whether the container is running
-// cannot be determined, the container is terminated rather than left running
-// without being managed: a server marked offline while its container keeps
-// running has no console, stats or disk limit. False is returned once the
-// container is known to have stopped, so the caller marks the server offline.
+// reattach is called when the attached stream of a session ends. It returns
+// false when Docker reports the container stopped or gone, so the caller marks
+// the server offline, and true when the stream was taken care of here.
+//
+//   - While Docker does not answer (for example while dockerd restarts with
+//     live-restore), Wings keeps asking with a backoff and never terminates
+//     the container. If Docker still doesn't answer after reattachWaitLimit,
+//     the server is marked offline without a crash being detected; the
+//     runtime reconciliation attaches to the container again once Docker
+//     reports it running.
+//   - A running container is attached to again.
+//   - The container is only terminated when Docker confirms it is running and
+//     attaching to it failed maxAttachFailuresPerWindow times within
+//     reattachWindow, since it would otherwise run without console, stats or
+//     disk limit.
+//
+// Waiting stops, leaving the state alone, as soon as another attach session
+// takes over or the server's state is changed elsewhere, for example by a
+// power action or the server being deleted.
 func (e *Environment) reattach() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, cancel := context.WithTimeout(context.Background(), reattachWaitLimit)
 	defer cancel()
 
-	c, err := e.inspectForReattach(ctx)
-	if err != nil {
-		if client.IsErrNotFound(err) {
-			return false
-		}
-		e.log().WithField("error", err).Error("could not inspect container after losing its stream, terminating it")
-		e.terminateUnmanaged()
-		return false
-	}
-	if c.State == nil || !c.State.Running {
-		return false
+	startState := e.State()
+	takenOver := func() bool {
+		return e.IsAttached() || e.State() != startState
 	}
 
+	delay := reattachInspectDelay
+	wait := func() bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, reattachMaxDelay)
+		return true
+	}
+
+	drops := e.recordStreamDrop()
+	if drops > maxDropsBeforeSlowdown {
+		// The stream keeps getting lost; don't hammer Docker with attaches.
+		delay = min(reattachInspectDelay*time.Duration(1<<min(drops-maxDropsBeforeSlowdown, 5)), reattachMaxDelay)
+		if !wait() {
+			return e.stopWaiting(takenOver)
+		}
+	}
+
+	for {
+		if takenOver() {
+			return true
+		}
+		running, err := e.inspectRunning(ctx)
+		switch {
+		case client.IsErrNotFound(err):
+			return false
+		case err != nil:
+			e.log().WithField("error", err).Warn("attach stream closed and Docker is not answering; waiting for it before deciding anything")
+			if !wait() {
+				return e.stopWaiting(takenOver)
+			}
+			continue
+		case !running:
+			return false
+		}
+
+		e.log().Warn("attach stream closed while container is still running; attempting re-attach")
+		actx, acancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+		aerr := e.Attach(actx)
+		acancel()
+		if aerr == nil {
+			return true
+		}
+
+		// Only a failure Docker confirms right away, by reporting the container
+		// as still running, counts towards terminating it. When Docker can't
+		// be reached the attach is simply tried again once it answers.
+		running, err = e.inspectRunning(ctx)
+		switch {
+		case client.IsErrNotFound(err):
+			return false
+		case err == nil && !running:
+			return false
+		case err == nil && running:
+			if e.recordAttachFailure() >= maxAttachFailuresPerWindow {
+				e.log().WithField("error", aerr).Error("unable to attach to running container, terminating it")
+				if e.terminateUnmanaged(ctx) {
+					return false
+				}
+				return e.stopWaiting(takenOver)
+			}
+			e.log().WithField("error", aerr).Error("failed to re-attach after unexpected stream close, retrying")
+		default:
+			e.log().WithField("error", aerr).Warn("failed to re-attach while Docker is not answering, retrying")
+		}
+		if !wait() {
+			return e.stopWaiting(takenOver)
+		}
+	}
+}
+
+// stopWaiting is used when reattach stops waiting for Docker. Unless another
+// session took over, the server is marked offline through stopping, so it is
+// not treated as a crash, and the container is left alone.
+func (e *Environment) stopWaiting(takenOver func() bool) bool {
+	if takenOver() {
+		return true
+	}
+	e.log().Error("Docker did not answer in time after the attach stream closed; marking the server offline without terminating the container")
+	e.SetState(environment.ProcessStoppingState)
+	e.SetState(environment.ProcessOfflineState)
+	return true
+}
+
+// inspectRunning reports whether Docker says the container is running.
+func (e *Environment) inspectRunning(ctx context.Context) (bool, error) {
+	ictx, icancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
+	defer icancel()
+	c, err := e.ContainerInspect(ictx)
+	if err != nil {
+		return false, err
+	}
+	return c.State != nil && c.State.Running, nil
+}
+
+// recordStreamDrop counts a lost stream and returns how many were lost within
+// the current reattachWindow.
+func (e *Environment) recordStreamDrop() int {
 	e.mu.Lock()
+	defer e.mu.Unlock()
+	if time.Since(e.droppedAt) > reattachWindow {
+		e.droppedAt = time.Now()
+		e.droppedCount = 0
+	}
+	e.droppedCount++
+	return e.droppedCount
+}
+
+// recordAttachFailure counts a confirmed failure to attach to the running
+// container and returns how many happened within the current reattachWindow.
+func (e *Environment) recordAttachFailure() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if time.Since(e.reattachedAt) > reattachWindow {
 		e.reattachedAt = time.Now()
 		e.reattachedCount = 0
 	}
 	e.reattachedCount++
-	count := e.reattachedCount
-	e.mu.Unlock()
-
-	if count <= maxReattachesPerWindow {
-		e.log().Warn("attach stream closed while container is still running; attempting re-attach")
-		err := e.Attach(ctx)
-		if err == nil {
-			return true
-		}
-		// The container may have only just stopped or been removed, which is
-		// handled like any other stop so that crash detection still applies.
-		ictx, icancel := context.WithTimeout(context.Background(), DefaultDockerOpTimeout)
-		running, ierr := e.IsRunning(ictx)
-		icancel()
-		if client.IsErrNotFound(ierr) || (ierr == nil && !running) {
-			return false
-		}
-		e.log().WithField("error", err).Error("failed to re-attach after unexpected stream close")
-	}
-
-	e.log().Error("unable to stay attached to running container, terminating it")
-	e.terminateUnmanaged()
-	return false
+	return e.reattachedCount
 }
 
-// inspectForReattach inspects the container, retrying a transient error a few
-// times so that a single failed inspect does not decide the container's fate.
-func (e *Environment) inspectForReattach(ctx context.Context) (container.InspectResponse, error) {
-	var c container.InspectResponse
-	var err error
-	for attempt := 0; attempt < reattachInspectAttempts; attempt++ {
-		ictx, icancel := context.WithTimeout(ctx, DefaultDockerOpTimeout)
-		c, err = e.ContainerInspect(ictx)
-		icancel()
-		if err == nil || client.IsErrNotFound(err) {
-			return c, err
-		}
-		select {
-		case <-ctx.Done():
-			return c, err
-		case <-time.After(reattachInspectDelay):
-		}
-	}
-	return c, err
-}
-
-// terminateUnmanagedMaxBackoff is the longest terminateUnmanaged waits between
-// attempts to kill the container.
-var terminateUnmanagedMaxBackoff = 30 * time.Second
-
-// terminateUnmanaged SIGKILLs a container that can no longer be managed, and
-// only returns once the container is known to have stopped or to no longer
-// exist. Docker may be unresponsive for a while, so the kill is retried with a
-// backoff, each attempt with a fresh timeout.
-func (e *Environment) terminateUnmanaged() {
-	backoff := time.Second
+// terminateUnmanaged SIGKILLs a container that Docker reports running but that
+// can't be attached to. A failed kill is retried with a backoff until ctx ends;
+// it returns true once the container is known to be stopped or gone.
+func (e *Environment) terminateUnmanaged(ctx context.Context) bool {
+	backoff := reattachInspectDelay
 	for attempt := 1; ; attempt++ {
-		tctx, tcancel := context.WithTimeout(context.Background(), time.Second*30)
+		tctx, tcancel := context.WithTimeout(ctx, time.Second*30)
 		err := e.Terminate(tctx, "SIGKILL")
 		tcancel()
 		if err == nil {
-			return
+			return true
 		}
-		e.log().WithField("error", err).WithField("attempt", attempt).Error("failed to terminate container that could not be managed, retrying")
-		time.Sleep(backoff)
-		backoff = min(backoff*2, terminateUnmanagedMaxBackoff)
+		e.log().WithField("error", err).WithField("attempt", attempt).Error("failed to terminate container that could not be attached to, retrying")
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, reattachMaxDelay)
 	}
 }
 
